@@ -93,12 +93,8 @@ Main.propTypes = {
   onSelectBlock: PropTypes.func.isRequired,
   selectedBlock: PropTypes.string,
   taskStatusEndpoint: PropTypes.string.isRequired,
-<<<<<<< HEAD
   reportDownloadEndpoint: PropTypes.string.isRequired,
   ShowBtnUi: PropTypes.string.isRequired,
-=======
-  showBtnUi: PropTypes.string.isRequired,
->>>>>>> 432ab31b76... Fixed problem report
 };
 
 Main.defaultProps = {
