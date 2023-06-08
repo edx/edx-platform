@@ -113,3 +113,12 @@ class CourseNotificationPreference(TimeStampedModel):
 
     def __str__(self):
         return f'{self.user.username} - {self.course_id} - {self.notification_preference_config}'
+
+    def get_app_config(self, app_name) -> dict:
+        return self.notification_preference_config.get(app_name, {})
+
+    def get_notification_type_config(self, app_name, notification_type) -> dict:
+        return self.get_app_config(app_name).get(notification_type, {})
+
+    def get_web_config(self, app_name, notification_type) -> bool:
+        return self.get_notification_type_config(app_name, notification_type).get('web', False)
