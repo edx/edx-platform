@@ -4,7 +4,7 @@ Celery task for notifications app
 from celery import shared_task
 from edx_django_utils.monitoring import set_code_owner_attribute
 
-from openedx.core.djangoapps.notifications.models import NotificationPreference
+from openedx.core.djangoapps.notifications.models import CourseNotificationPreference
 
 
 @shared_task
@@ -16,7 +16,7 @@ def send_notifications(user_ids, app_name, notification_type, context, content_u
     from .models import Notification
     user_ids = list(set(user_ids))
     # check if what is preferences of user and make decision to send notification or not
-    preferences = NotificationPreference.objects.filter(
+    preferences = CourseNotificationPreference.objects.filter(
         user_id__in=user_ids,
         course_id=context.get('course_id', None),
     )
@@ -32,7 +32,8 @@ def send_notifications(user_ids, app_name, notification_type, context, content_u
                 app_name=app_name,
                 notification_type=notification_type,
                 content_context=context,
-                content_url=content_url
+                content_url=content_url,
+                course_id=context.get('course_id', None),
             ))
     # send notification to users but use bulk_create
     Notification.objects.bulk_create(notifications)
