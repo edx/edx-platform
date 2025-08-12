@@ -318,6 +318,13 @@ class SupportViewEnrollmentsTests(SharedModuleStoreTestCase, SupportViewTestCase
             course_key=self.course.id,
             deadline=datetime.now(UTC) + timedelta(days=365)
         )
+        self.verification_deadline.save()
+
+        self.enrollment = CourseEnrollmentFactory.create(
+            mode=CourseMode.AUDIT, user=self.student, course_id=self.course.id
+        )
+
+        self.url = reverse('support:enrollment_list', kwargs={'username_or_email': self.student.username})
 
     def assert_dict_contains_subset(self, subset, superset):
         """
@@ -326,13 +333,6 @@ class SupportViewEnrollmentsTests(SharedModuleStoreTestCase, SupportViewTestCase
         """
         for key, value in subset.items():
             assert key in superset and superset[key] == value, f"{key}: {value} not found in superset or does not match"
-        self.verification_deadline.save()
-
-        self.enrollment = CourseEnrollmentFactory.create(
-            mode=CourseMode.AUDIT, user=self.student, course_id=self.course.id
-        )
-
-        self.url = reverse('support:enrollment_list', kwargs={'username_or_email': self.student.username})
 
     def assert_enrollment(self, mode):
         """
