@@ -1671,8 +1671,12 @@ class GetStorageBucketTestCase(TestCase):
             ExpiresIn=KEY_EXPIRATION_IN_SECONDS
         )
 
-        self.assertIn("https://vem_test_bucket.s3.amazonaws.com", upload_url)
+        # Check that the URL contains the expected components
+        self.assertIn("https://s3.amazonaws.com/vem_test_bucket", upload_url)
+        self.assertIn("test_root", upload_url)  # ROOT_PATH from settings
         self.assertIn(edx_video_id, upload_url)
+        self.assertIn("content-type=video%2Fmp4", upload_url)  # URL encoded content type
+        self.assertTrue(upload_url.startswith("https://"))
 
 
 class CourseYoutubeEdxVideoIds(ModuleStoreTestCase):
