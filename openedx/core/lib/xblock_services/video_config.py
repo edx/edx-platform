@@ -7,13 +7,23 @@ for the extracted video block in xblocks-contrib repository.
 """
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from opaque_keys.edx.keys import CourseKey
-from openedx.core.djangoapps.video_config.models import HLSPlaybackEnabledFlag, CourseYoutubeBlockedFlag
-from openedx.core.djangoapps.video_config.toggles import PUBLIC_VIDEO_SHARE, TRANSCRIPT_FEEDBACK
+
+from openedx.core.djangoapps.video_config.models import (
+    CourseYoutubeBlockedFlag,
+    HLSPlaybackEnabledFlag,
+)
+from openedx.core.djangoapps.video_config.toggles import TRANSCRIPT_FEEDBACK
 from openedx.core.djangoapps.video_pipeline.config.waffle import DEPRECATE_YOUTUBE
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 from openedx.core.djangoapps.waffle_utils.models import WaffleFlagCourseOverrideModel
+from openedx.core.lib.xblock_services.video_config_utils import (
+    get_public_video_url,
+    is_public_sharing_enabled,
+)
+from organizations.api import get_course_organization
 
 
 log = logging.getLogger(__name__)
@@ -73,18 +83,6 @@ class VideoConfigService:
         """
         return CourseYoutubeBlockedFlag.feature_enabled(course_id)
 
-    def is_public_video_share_enabled(self, course_id: CourseKey) -> bool:
-        """
-        Check if public video sharing is enabled for the course.
-        
-        Args:
-            course_id: The course key
-            
-        Returns:
-            bool: True if public video sharing is enabled, False otherwise
-        """
-        return PUBLIC_VIDEO_SHARE.is_enabled(course_id)
-
     def is_transcript_feedback_enabled(self, course_id: CourseKey) -> bool:
         """
         Check if transcript feedback is enabled for the course.
@@ -97,76 +95,42 @@ class VideoConfigService:
         """
         return TRANSCRIPT_FEEDBACK.is_enabled(course_id)
 
-    def get_branding_info(self) -> Dict[str, Any]:
+    def get_public_sharing_context(self, video_block, course_id):
         """
-        Get branding information for the course.
-        
-        Returns:
-            Dict[str, Any]: Branding information
-        """
-        try:
-            from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
-            from openedx.core.djangoapps.waffle_utils.models import WaffleFlagCourseOverrideModel
-
-            # TODO: Study how to access BrandingInfoConfig from edx-platform
-            # This is a placeholder implementation
-            # branding_info = BrandingInfoConfig.get_config().get(user_location)
-            return {
-                'logo_url': None,
-                'logo_alt_text': None,
-                'favicon_url': None
-            }
-        except ImportError:
-            log.warning("Could not import branding config, returning default values")
-            return {
-                'logo_url': None,
-                'logo_alt_text': None,
-                'favicon_url': None
-            }
-
-    def get_course_by_id(self, course_id: CourseKey):
-        """
-        Get course information by course ID.
+        Get the complete public sharing context for a video.
         
         Args:
-            course_id: The course key
+            video_block: The video XBlock instance
+            course_id: The course identifier
             
         Returns:
-            Course object or None
+            dict: Context dictionary with sharing information, empty if sharing is disabled
         """
+        context = {}
+
+        if not is_public_sharing_enabled(video_block):
+            return context
+
         try:
-            from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+            # Get public video URL
+            public_video_url = get_public_video_url(video_block)
+            context['public_sharing_enabled'] = True
+            context['public_video_url'] = public_video_url
 
-            # TODO: Study how to access get_course_by_id from edx-platform
-            # This is a placeholder implementation
-            # course = get_course_by_id(self.context_key)
-            # return getattr(course, 'video_sharing_options', None)
-            return None
-        except ImportError:
-            log.warning("Could not import course models, returning None")
-            return None
+            # Get course organization for branding
+            organization = get_course_organization(self.course_id)
 
-    def get_course_organization(self, course_id: CourseKey) -> Optional[str]:
-        """
-        Get the organization for a course.
-        
-        Args:
-            course_id: The course key
-            
-        Returns:
-            Organization string or None
-        """
-        try:
-            from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+            # Get sharing sites information
+            from xmodule.video_block.sharing_sites import sharing_sites_info_for_video
+            sharing_sites_info = sharing_sites_info_for_video(
+                public_video_url,
+                organization=organization
+            )
+            context['sharing_sites_info'] = sharing_sites_info
 
-            # TODO: Study how to access course organization from edx-platform
-            # This is a placeholder implementation
-            # organization = get_course_organization(self.course_id)
-            # template_context['sharing_sites_info'] = sharing_sites_info_for_video(
-            #     public_video_url,
-            #     organization=organization
-            # )
-            return None
-        except ImportError:
-            log.warning("Could not import course models, returning None")
-            return None
+        except Exception as err:
+            log.exception(f"Error getting public sharing context for course ID: {course_id}")
+            # Return empty context on error
+            context = {}
+
+        return context

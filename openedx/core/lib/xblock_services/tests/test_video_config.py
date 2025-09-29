@@ -64,15 +64,6 @@ class TestVideoConfigService(unittest.TestCase):
         }
         self.assertEqual(result, expected)
     
-    # Tests for get_course_by_id method
-    @patch('openedx.core.lib.xblock_services.video_config.log')
-    def test_get_course_by_id_import_error(self, mock_log):
-        """Test get course by ID with import error."""
-        with patch('openedx.core.lib.xblock_services.video_config.CourseOverview', side_effect=ImportError):
-            result = self.service.get_course_by_id(self.course_id)
-            self.assertIsNone(result)
-            mock_log.warning.assert_called_once()
-    
     # Tests for get_course_organization method
     @patch('openedx.core.lib.xblock_services.video_config.log')
     def test_get_course_organization_import_error(self, mock_log):

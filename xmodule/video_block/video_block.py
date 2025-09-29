@@ -38,6 +38,7 @@ from openedx.core.djangoapps.video_pipeline.config.waffle import DEPRECATE_YOUTU
 from openedx.core.lib.cache_utils import request_cached
 from openedx.core.lib.courses import get_course_by_id
 from openedx.core.lib.license import LicenseMixin
+from openedx.core.lib.xblock_services.video_config_utils import get_public_video_url, is_public_sharing_enabled
 from xmodule.contentstore.content import StaticContent
 from xmodule.course_block import (
     COURSE_VIDEO_SHARING_ALL_VIDEOS,
@@ -353,6 +354,7 @@ class _BuiltInVideoBlock(
                 # exception and fallback to whatever we find in the VideoBlock.
                 log.warning("Could not retrieve information from VAL for edx Video ID: %s.", self.edx_video_id)
 
+        # TODO: Remove this special case for China in ticket
         # If the user comes from China use China CDN for html5 videos.
         # 'CN' is China ISO 3166-1 country code.
         # Video caching is disabled for Studio. User_location is always None in Studio.
@@ -500,8 +502,8 @@ class _BuiltInVideoBlock(
             'transcript_download_formats_list': self.fields['transcript_download_format'].values,  # lint-amnesty, pylint: disable=unsubscriptable-object
             'transcript_feedback_enabled': self.is_transcript_feedback_enabled(),
         }
-        if self.is_public_sharing_enabled():
-            public_video_url = self.get_public_video_url()
+        if is_public_sharing_enabled(self):
+            public_video_url = get_public_video_url(self)
             template_context['public_sharing_enabled'] = True
             template_context['public_video_url'] = public_video_url
             organization = get_course_organization(self.course_id)
@@ -511,52 +513,6 @@ class _BuiltInVideoBlock(
             )
 
         return self.runtime.service(self, 'mako').render_lms_template('video.html', template_context)
-
-    def get_course_video_sharing_override(self):
-        """
-        Return course video sharing options override or None
-        """
-        if not self.context_key.is_course:
-            return False  # Only courses support this feature at all (not libraries)
-        try:
-            course = get_course_by_id(self.context_key)
-            return getattr(course, 'video_sharing_options', None)
-
-        # In case the course / modulestore does something weird
-        except Exception as err:  # pylint: disable=broad-except
-            log.exception(f"Error retrieving course for course ID: {self.course_id}")
-            return None
-
-    def is_public_sharing_enabled(self):
-        """
-        Is public sharing enabled for this video?
-        """
-        if not self.context_key.is_course:
-            return False  # Only courses support this feature at all (not libraries)
-        try:
-            # Video share feature must be enabled for sharing settings to take effect
-            feature_enabled = PUBLIC_VIDEO_SHARE.is_enabled(self.context_key)
-        except Exception as err:  # pylint: disable=broad-except
-            log.exception(f"Error retrieving course for course ID: {self.context_key}")
-            return False
-        if not feature_enabled:
-            return False
-
-        # Check if the course specifies a general setting
-        course_video_sharing_option = self.get_course_video_sharing_override()
-
-        # Course can override all videos to be shared
-        if course_video_sharing_option == COURSE_VIDEO_SHARING_ALL_VIDEOS:
-            return True
-
-        # ... or no videos to be shared
-        elif course_video_sharing_option == COURSE_VIDEO_SHARING_NONE:
-            return False
-
-        # ... or can fall back to per-video setting
-        # Equivalent to COURSE_VIDEO_SHARING_PER_VIDEO or None / unset
-        else:
-            return self.public_access
 
     def is_transcript_feedback_enabled(self):
         """
@@ -574,12 +530,6 @@ class _BuiltInVideoBlock(
 
     def get_user_id(self):
         return self.runtime.service(self, 'user').get_current_user().opt_attrs.get(ATTR_KEY_USER_ID)
-
-    def get_public_video_url(self):
-        """
-        Returns the public video url
-        """
-        return fr'{settings.LMS_ROOT_URL}/videos/{str(self.location)}'
 
     def validate(self):
         """
