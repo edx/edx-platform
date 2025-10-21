@@ -6,7 +6,7 @@ on:
   merge_group:
   push:
     branches:
-      - master
+      - release-ulmo
 
 jobs:
   check_migrations:
