@@ -280,53 +280,53 @@ class _ContentSerializer(serializers.Serializer):
     def get_is_new_learner(self, obj):
         """
         Returns whether the content author is a new learner.
-        
+
         A new learner is a user who has enrolled in the course but has not
         yet engaged with any course content beyond viewing the course outline.
         """
         from .utils import is_user_new_learner
-        
+
         # Return False for anonymous content
         if self._is_anonymous(obj) or obj["user_id"] is None:
             return False
-            
+
         # Get the user object
         try:
             user = User.objects.get(id=int(obj["user_id"]))
         except (User.DoesNotExist, ValueError):
             return False
-            
+
         # Get course from context
         course = self.context.get('course')
         if not course:
             return False
-            
+
         return is_user_new_learner(user, course.id)
 
     def get_is_regular_learner(self, obj):
         """
         Returns whether the content author is a regular learner.
-        
+
         A regular learner is a user who has enrolled in the course and has
         engaged with course content (no longer a new learner), but is not staff.
         """
         from .utils import is_user_regular_learner
-        
+
         # Return False for anonymous content
         if self._is_anonymous(obj) or obj["user_id"] is None:
             return False
-            
+
         # Get the user object
         try:
             user = User.objects.get(id=int(obj["user_id"]))
         except (User.DoesNotExist, ValueError):
             return False
-            
+
         # Get course from context
         course = self.context.get('course')
         if not course:
             return False
-            
+
         return is_user_regular_learner(user, course.id)
 
     def get_rendered_body(self, obj):

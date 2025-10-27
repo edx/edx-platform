@@ -502,26 +502,26 @@ def get_captcha_site_key_by_platform(platform: str) -> str | None:
 def is_user_new_learner(user, course_id):
     """
     Determines if a user is a new learner based on their engagement with course content.
-    
+
     A new learner is defined as a user who:
     1. Is enrolled in the course
     2. Has not made progress on any course content (no StudentModule records with meaningful engagement)
     3. Is not staff, moderator, or Community TA
-    
+
     Args:
         user: User object to check
         course_id: Course key to check engagement in
-        
+
     Returns:
         bool: True if user is a new learner, False otherwise
     """
     from lms.djangoapps.courseware.models import StudentModule
     from common.djangoapps.student.models import CourseEnrollment
-    
+
     # Return False if user is None or anonymous
     if not user or not user.is_authenticated:
         return False
-    
+
     # Check if user is enrolled in the course
     try:
         enrollment = CourseEnrollment.objects.get(
@@ -533,7 +533,7 @@ def is_user_new_learner(user, course_id):
             return False
     except CourseEnrollment.DoesNotExist:
         return False
-    
+
     # Check if user has staff/moderator privileges
     # Users with special roles are not considered new learners
     user_roles = get_user_role_names(user, course_id)
@@ -543,10 +543,10 @@ def is_user_new_learner(user, course_id):
         FORUM_ROLE_COMMUNITY_TA,
         FORUM_ROLE_GROUP_MODERATOR
     }
-    
+
     if any(role in privileged_roles for role in user_roles):
         return False
-    
+
     # Check for staff roles using CourseAccessRole
     staff_roles = CourseAccessRole.objects.filter(
         user=user,
@@ -555,7 +555,7 @@ def is_user_new_learner(user, course_id):
     )
     if staff_roles.exists():
         return False
-    
+
     # Check if user has engaged with course content
     # Look for StudentModule records that indicate meaningful engagement
     engagement_modules = StudentModule.objects.filter(
@@ -565,7 +565,7 @@ def is_user_new_learner(user, course_id):
         # Exclude records that don't indicate real engagement
         module_type='course'  # Course-level modules don't indicate content engagement
     )
-    
+
     # Check for any meaningful engagement indicators
     has_engagement = engagement_modules.filter(
         # Look for any of these engagement indicators:
@@ -576,7 +576,7 @@ def is_user_new_learner(user, course_id):
         models.Q(state__isnull=False, state__gt='') |
         models.Q(done__in=['f', 'i'])  # 'f' = finished, 'i' = incomplete but started
     ).exists()
-    
+
     # User is a new learner if they have no meaningful engagement
     return not has_engagement
 
@@ -584,26 +584,26 @@ def is_user_new_learner(user, course_id):
 def is_user_regular_learner(user, course_id):
     """
     Determines if a user is a regular learner (enrolled, not new, not staff).
-    
+
     A regular learner is defined as a user who:
     1. Is enrolled in the course
     2. Has made progress on course content (has StudentModule records with meaningful engagement)
     3. Is not staff, moderator, or Community TA
-    
+
     Args:
         user: User object to check
         course_id: Course key to check engagement in
-        
+
     Returns:
         bool: True if user is a regular learner, False otherwise
     """
     from lms.djangoapps.courseware.models import StudentModule
     from common.djangoapps.student.models import CourseEnrollment
-    
+
     # Return False if user is None or anonymous
     if not user or not user.is_authenticated:
         return False
-    
+
     # Check if user is enrolled in the course
     try:
         enrollment = CourseEnrollment.objects.get(
@@ -615,7 +615,7 @@ def is_user_regular_learner(user, course_id):
             return False
     except CourseEnrollment.DoesNotExist:
         return False
-    
+
     # Check if user has staff/moderator privileges
     # Users with special roles are not considered regular learners
     user_roles = get_user_role_names(user, course_id)
@@ -625,10 +625,10 @@ def is_user_regular_learner(user, course_id):
         FORUM_ROLE_COMMUNITY_TA,
         FORUM_ROLE_GROUP_MODERATOR
     }
-    
+
     if any(role in privileged_roles for role in user_roles):
         return False
-    
+
     # Check for staff roles using CourseAccessRole
     staff_roles = CourseAccessRole.objects.filter(
         user=user,
@@ -637,7 +637,7 @@ def is_user_regular_learner(user, course_id):
     )
     if staff_roles.exists():
         return False
-    
+
     # Check if user has engaged with course content
     # Look for StudentModule records that indicate meaningful engagement
     engagement_modules = StudentModule.objects.filter(
@@ -647,7 +647,7 @@ def is_user_regular_learner(user, course_id):
         # Exclude records that don't indicate real engagement
         module_type='course'  # Course-level modules don't indicate content engagement
     )
-    
+
     # Check for any meaningful engagement indicators
     has_engagement = engagement_modules.filter(
         # Look for any of these engagement indicators:
@@ -658,6 +658,6 @@ def is_user_regular_learner(user, course_id):
         models.Q(state__isnull=False, state__gt='') |
         models.Q(done__in=['f', 'i'])  # 'f' = finished, 'i' = incomplete but started
     ).exists()
-    
+
     # User is a regular learner if they have meaningful engagement
     return has_engagement
