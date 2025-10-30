@@ -23,14 +23,8 @@
 
                     this.config = config;
 
-                    // set a default audio codec if not provided, this helps reduce issues
-                    // switching audio codecs during playback
-                    if (!this.config.defaultAudioCodec) {
-                        this.config.defaultAudioCodec = "mp4a.40.5";
-                    }
-
                     // do common initialization independent of player type
-                    this.init(el, config);
+                    this.init(el, this.config);
 
                     _.bindAll(this, 'playVideo', 'pauseVideo', 'onReady');
 
