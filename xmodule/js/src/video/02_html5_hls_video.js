@@ -24,7 +24,7 @@
                     this.config = config;
 
                     // do common initialization independent of player type
-                    this.init(el, this.config);
+                    this.init(el, config);
 
                     _.bindAll(this, 'playVideo', 'pauseVideo', 'onReady');
 
