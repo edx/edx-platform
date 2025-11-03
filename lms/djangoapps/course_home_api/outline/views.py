@@ -307,7 +307,8 @@ class OutlineTabView(RetrieveAPIView):
         #
         # The long term goal is to remove the Course Blocks API call entirely,
         # so this is a tiny first step in that migration.
-        if course_blocks:
+        user_is_audit = getattr(enrollment, 'mode', '') == 'audit'
+        if course_blocks and not user_is_audit:
             user_course_outline = get_user_course_outline(
                 course_key, request.user, datetime.now(tz=timezone.utc)
             )
@@ -451,6 +452,8 @@ class CourseNavigationBlocksView(RetrieveAPIView):
         allow_public_outline = allow_anonymous and course.course_visibility == COURSE_VISIBILITY_PUBLIC_OUTLINE
         enrollment = CourseEnrollment.get_enrollment(request.user, course_key)
 
+        user_is_audit = getattr(enrollment, 'mode', '') == 'audit'
+
         try:
             user_cohort = get_cohort(request.user, course_key, use_cached=True)
         except ValueError:
@@ -472,15 +475,17 @@ class CourseNavigationBlocksView(RetrieveAPIView):
             course_blocks = cache.get(cache_key)
 
         if not course_blocks:
-            if getattr(enrollment, 'is_active', False) or bool(staff_access):
+            if bool(staff_access) or user_is_audit:
+                course_blocks = get_course_outline_block_tree(request, course_key_string, None)
+            elif getattr(enrollment, 'is_active', False):
                 course_blocks = get_course_outline_block_tree(request, course_key_string, request.user)
             elif allow_public_outline or allow_public or user_is_masquerading:
                 course_blocks = get_course_outline_block_tree(request, course_key_string, None)
-
             if not navigation_sidebar_caching_is_disabled:
                 cache.set(cache_key, course_blocks, self.COURSE_BLOCKS_CACHE_TIMEOUT)
 
-        course_blocks = self.filter_inaccessible_blocks(course_blocks, course_key)
+        if not user_is_audit:
+            course_blocks = self.filter_inaccessible_blocks(course_blocks, course_key)
         course_blocks = self.mark_complete_recursive(course_blocks)
 
         context = self.get_serializer_context()
