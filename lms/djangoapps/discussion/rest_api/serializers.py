@@ -32,12 +32,12 @@ from lms.djangoapps.discussion.rest_api.permissions import (
     can_delete,
     get_editable_fields,
 )
-from lms.djangoapps.discussion.rest_api.utils import get_user_learner_status
 from lms.djangoapps.discussion.rest_api.render import render_body
 from lms.djangoapps.discussion.rest_api.utils import (
     get_course_staff_users_list,
     get_moderator_users_list,
     get_course_ta_users_list,
+    get_user_learner_status,
 )
 from openedx.core.djangoapps.discussions.models import DiscussionTopicLink
 from openedx.core.djangoapps.discussions.utils import get_group_names_by_id
@@ -280,7 +280,7 @@ class _ContentSerializer(serializers.Serializer):
     def get_learner_status(self, obj):
         """
         Get the learner status for the discussion post author.
-        Returns one of: "anonymous", "unenrolled", "staff", "new", "regular"
+        Returns one of: "anonymous", "staff", "new", "regular"
         """
         # Skip for anonymous content
         if self._is_anonymous(obj) or obj.get("user_id") is None:

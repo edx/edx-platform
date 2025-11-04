@@ -16,7 +16,6 @@ from pytz import UTC
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
 from common.djangoapps.student.models import CourseAccessRole, CourseEnrollment
 from completion.models import BlockCompletion
-from lms.djangoapps.courseware.courses import get_course_blocks_completion_summary
 from openedx.core.djangoapps.django_comment_common.comment_client.thread import Thread
 
 from lms.djangoapps.discussion.config.settings import ENABLE_CAPTCHA_IN_DISCUSSION
@@ -552,14 +551,13 @@ def _check_user_engagement(user, course_id):
     except Exception:
         return False
 
-        
+
 def get_user_learner_status(user, course_id):
     """
     Determine a user's learner status in the given course.
 
     Possible return values:
         - "anonymous"  → User not logged in
-        - "unenrolled" → User not enrolled in the course
         - "staff"      → Staff/moderator/TA
         - "new"        → Enrolled but no engagement
         - "regular"    → Enrolled and has engaged with course content
@@ -569,19 +567,11 @@ def get_user_learner_status(user, course_id):
         course_id (CourseKey): Course key to check engagement in
 
     Returns:
-        str: One of ["anonymous", "unenrolled", "staff", "new", "regular"]
+        str: One of ["anonymous", "staff", "new", "regular"]
     """
     # Anonymous user
     if not user or not user.is_authenticated:
         return "anonymous"
-
-    # Enrollment check
-    if not CourseEnrollment.objects.filter(
-        user=user,
-        course_id=course_id,
-        is_active=True
-    ).exists():
-        return "unenrolled"
 
     # Privileged user (staff/moderator/TA)
     if _is_privileged_user(user, course_id):
