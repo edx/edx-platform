@@ -545,10 +545,10 @@ def _check_user_engagement(user, course_id):
             user=user, context_key=course_id, completion=1.0
         )
         return (
-            completed.count() >= 2
+            completed[:2].count() >= 2
             or completed.filter(block_type__in=["video", "problem"]).exists()
         )
-    except (BlockCompletion.DoesNotExist, AttributeError, TypeError, ValueError):
+    except (AttributeError, TypeError, ValueError):
         return False
 
 
