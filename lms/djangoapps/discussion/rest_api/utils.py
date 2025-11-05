@@ -14,7 +14,7 @@ from django.db.models.functions import Length
 from pytz import UTC
 
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
-from common.djangoapps.student.models import CourseAccessRole, CourseEnrollment
+from common.djangoapps.student.models import CourseAccessRole
 from completion.models import BlockCompletion
 from openedx.core.djangoapps.django_comment_common.comment_client.thread import Thread
 
@@ -548,9 +548,9 @@ def _check_user_engagement(user, course_id):
             completed.count() >= 2
             or completed.filter(block_type__in=["video", "problem"]).exists()
         )
-    except Exception:
+    except Exception as e:
         return False
-
+    
 
 def get_user_learner_status(user, course_id):
     """
