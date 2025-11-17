@@ -135,6 +135,24 @@ class User(models.Model):
                 metric_tags=self._metric_tags,
                 paged_results=True,
             )
+            
+            # Filter out deleted threads from the response
+            threads = response.get('collection', [])
+            
+            # Debug: Log what fields are actually in the threads
+            import logging
+            log = logging.getLogger(__name__)
+            if threads:
+                sample_thread = threads[0]
+                log.info("DEBUG: Sample thread fields: %s", list(sample_thread.keys()))
+                log.info("DEBUG: is_deleted field value: %s", sample_thread.get('is_deleted', 'FIELD_NOT_PRESENT'))
+            
+            filtered_threads = utils.filter_deleted_content(threads)
+            log.info("DEBUG: Original count: %d, Filtered count: %d", len(threads), len(filtered_threads))
+            
+            # Update the response with filtered results
+            response['collection'] = filtered_threads
+
         return response.get('collection', []), response.get('page', 1), response.get('num_pages', 1)
 
     def subscribed_threads(self, query_params=None):

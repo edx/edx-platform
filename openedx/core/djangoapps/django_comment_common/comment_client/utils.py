@@ -201,3 +201,22 @@ def get_course_key(course_id: CourseKey | str | None) -> CourseKey | None:
     if course_id and isinstance(course_id, str):
         course_id = CourseKey.from_string(course_id)
     return course_id
+
+
+def filter_deleted_content(content_list):
+    """
+    Filter out soft-deleted content from a list of threads/comments.
+    
+    This is used for client-side filtering when using Forum v1 (cs_comments_service)
+    which doesn't know about soft delete fields.
+    
+    Args:
+        content_list (list): List of threads or comments from API response
+        
+    Returns:
+        list: Filtered list with deleted content removed
+    """
+    if not content_list:
+        return content_list
+        
+    return [content for content in content_list if not content.get('is_deleted', False)]

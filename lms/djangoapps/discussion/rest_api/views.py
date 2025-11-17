@@ -660,6 +660,7 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["order_direction"],
             form.cleaned_data["requested_fields"],
             form.cleaned_data["count_flagged"],
+            form.cleaned_data["show_deleted"],
         )
 
     def retrieve(self, request, thread_id=None):
@@ -774,6 +775,7 @@ class LearnerThreadView(APIView):
         }
         order_by = order_by_mapping.get(order_by, 'activity')
         post_status = request.GET.get('status', None)
+        show_deleted = request.GET.get('show_deleted', 'false').lower() == 'true'
         discussion_id = None
         username = request.GET.get('username', None)
         user = get_object_or_404(User, username=username)
@@ -792,6 +794,7 @@ class LearnerThreadView(APIView):
             "count_flagged": count_flagged,
             "thread_type": thread_type,
             "sort_key": order_by,
+            "show_deleted": show_deleted,
         }
         if post_status:
             if post_status not in ['flagged', 'unanswered', 'unread', 'unresponded']:
@@ -1010,7 +1013,8 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["page_size"],
             form.cleaned_data["flagged"],
             form.cleaned_data["requested_fields"],
-            form.cleaned_data["merge_question_type_responses"]
+            form.cleaned_data["merge_question_type_responses"],
+            form.cleaned_data["show_deleted"]
         )
 
     def list_by_user(self, request):

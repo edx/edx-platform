@@ -23,7 +23,7 @@ class Comment(models.Model):
         'closed', 'created_at', 'updated_at', 'depth', 'at_position_list',
         'type', 'commentable_id', 'abuse_flaggers', 'endorsement',
         'child_count', 'edit_history',
-        'is_spam', 'ai_moderation_reason', 'abuse_flagged',
+        'is_spam', 'ai_moderation_reason', 'abuse_flagged', 'is_deleted'
     ]
 
     updatable_fields = [
@@ -137,7 +137,8 @@ class Comment(models.Model):
             comment_id = comment.get("_id")
             course_id = comment.get("course_id")
             if comment_id:
-                forum_api.delete_comment(comment_id, course_id=course_id)
+                # forum_api.delete_comment(comment_id, course_id=course_id)
+                forum_api.soft_delete_comment(comment_id, course_id=course_id)
                 comments_deleted += 1
             log.info(f"<<Bulk Delete>> Deleted comment {comment_id} in {time.time() - start_time} seconds."
                      f" Comment Found: {comment_id is not None}")

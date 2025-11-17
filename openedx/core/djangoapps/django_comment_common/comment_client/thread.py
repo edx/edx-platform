@@ -33,7 +33,7 @@ class Thread(models.Model):
         'abuse_flaggers', 'resp_skip', 'resp_limit', 'resp_total', 'thread_type',
         'endorsed_responses', 'non_endorsed_responses', 'non_endorsed_resp_total',
         'context', 'last_activity_at', 'closed_by', 'close_reason_code', 'edit_history',
-        'is_spam', 'ai_moderation_reason', 'abuse_flagged',
+        'is_spam', 'ai_moderation_reason', 'abuse_flagged', 'is_deleted'
     ]
 
     # updateable_fields are sent in PUT requests
@@ -120,11 +120,18 @@ class Thread(models.Model):
                     total_results=total_results
                 )
             )
+        # Filter out soft deleted threads
+        collection = response.get('collection', [])
+        
+        # For now, just filter based on is_deleted field if present
+        # (Forum v2 will have this field, old service won't)
+        filtered_collection = [thread for thread in collection if not thread.get('is_deleted', False)]
+        
         return utils.CommentClientPaginatedResult(
-            collection=response.get('collection', []),
+            collection=filtered_collection,
             page=response.get('page', 1),
             num_pages=response.get('num_pages', 1),
-            thread_count=response.get('thread_count', 0),
+            thread_count=len(filtered_collection),
             corrected_text=response.get('corrected_text', None)
         )
 
@@ -269,11 +276,13 @@ class Thread(models.Model):
             raise ForumV2RequestError("Failed to prepare thread API response") from error
 
         start_time = time.perf_counter()
-        backend.delete_subscriptions_of_a_thread(thread_id)
+        # backend.delete_subscriptions_of_a_thread(thread_id)
+        backend.soft_delete_subscriptions_of_a_thread(thread_id)
         log.info(f"{prefix} Delete subscriptions {time.perf_counter() - start_time} sec")
 
         start_time = time.perf_counter()
-        result = backend.delete_thread(thread_id)
+        # result = backend.delete_thread(thread_id)
+        result = backend.soft_delete_thread(thread_id)
         log.info(f"{prefix} Delete thread {time.perf_counter() - start_time} sec")
         if result and not (thread["anonymous"] or thread["anonymous_to_peers"]):
             start_time = time.perf_counter()

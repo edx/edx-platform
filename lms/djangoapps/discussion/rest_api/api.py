@@ -916,6 +916,7 @@ def get_thread_list(
     order_direction: Literal["desc"] = "desc",
     requested_fields: Optional[List[Literal["profile_image"]]] = None,
     count_flagged: bool = None,
+    show_deleted: bool = False,
 ):
     """
     Return the list of all discussion threads pertaining to the given course
@@ -991,6 +992,8 @@ def get_thread_list(
 
     if count_flagged and not context["has_moderation_privilege"]:
         raise PermissionDenied("`count_flagged` can only be set by users with moderator access or higher.")
+    if show_deleted and not context["has_moderation_privilege"]:
+        raise PermissionDenied("`show_deleted` can only be set by users with moderator access or higher.")
 
     group_id = None
     allowed_roles = [
@@ -1046,15 +1049,64 @@ def get_thread_list(
     if paginated_results.page != page:
         raise PageNotFoundError("Page not found (No results on this page).")
 
+    # Handle deleted thread filtering based on show_deleted parameter
+    if show_deleted:
+        # Show only deleted threads for privileged users
+        from forum import api as forum_api
+        import logging
+        log = logging.getLogger(__name__)
+        
+        # First get threads that already have is_deleted field and are deleted
+        filtered_collection = [thread for thread in paginated_results.collection if thread.get('is_deleted', False)]
+        
+        # For threads missing is_deleted field, check via Forum API and include only deleted ones
+        threads_to_check = [thread for thread in paginated_results.collection if 'is_deleted' not in thread]
+        
+        for thread in threads_to_check:
+            try:
+                forum_thread = forum_api.get_thread(thread.get('id'), course_id=str(course_key))
+                thread['is_deleted'] = forum_thread.get('is_deleted', False)
+                if thread['is_deleted']:
+                    thread['deleted_at'] = forum_thread.get('deleted_at')
+                    thread['deleted_by'] = forum_thread.get('deleted_by')
+                    filtered_collection.append(thread)  # Only add if deleted
+            except Exception as e:
+                log.warning("Failed to get deletion status for thread %s: %s", thread.get('id'), e)
+                # Don't include threads we can't verify as deleted
+    else:
+        # Standard filtering - exclude deleted threads for regular users
+        filtered_collection = []
+        from forum import api as forum_api
+        import logging
+        log = logging.getLogger(__name__)
+        
+        for thread in paginated_results.collection:
+            if 'is_deleted' in thread:
+                # Thread already has is_deleted field
+                if not thread.get('is_deleted', False):
+                    filtered_collection.append(thread)
+            else:
+                # Thread missing is_deleted field, check via Forum API
+                try:
+                    forum_thread = forum_api.get_thread(thread.get('id'), course_id=str(course_key))
+                    if not forum_thread.get('is_deleted', False):
+                        filtered_collection.append(thread)
+                    else:
+                        log.info("Filtered out deleted thread %s via Forum API check", thread.get('id'))
+                except Exception as e:
+                    # If Forum API check fails, include the thread (fail safe)
+                    log.warning("Failed to check thread %s deletion status: %s", thread.get('id'), e)
+                    filtered_collection.append(thread)
+    
     results = _serialize_discussion_entities(
-        request, context, paginated_results.collection, requested_fields, DiscussionEntity.thread
+        request, context, filtered_collection, requested_fields, DiscussionEntity.thread
     )
 
     paginator = DiscussionAPIPagination(
         request,
         paginated_results.page,
         paginated_results.num_pages,
-        paginated_results.thread_count
+        len(filtered_collection)
     )
     return paginator.get_paginated_response({
         "results": results,
@@ -1157,6 +1209,10 @@ def get_learner_active_thread_list(request, course_key, query_params):
     group_id = query_params.get('group_id', None)
     user_id = query_params.get('user_id', None)
     count_flagged = query_params.get('count_flagged', None)
+    show_deleted = query_params.get('show_deleted', False)
+    if isinstance(show_deleted, str):
+        show_deleted = show_deleted.lower() == 'true'
+    
     if user_id is None:
         return Response({'detail': 'Invalid user id'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1164,6 +1220,8 @@ def get_learner_active_thread_list(request, course_key, query_params):
         raise PermissionDenied("count_flagged can only be set by users with moderation roles.")
     if "flagged" in query_params.keys() and not context["has_moderation_privilege"]:
         raise PermissionDenied("Flagged filter is only available for moderators")
+    if show_deleted and not context["has_moderation_privilege"]:
+        raise PermissionDenied("show_deleted can only be set by users with moderation roles.")
 
     if group_id is None:
         comment_client_user = comment_client.User(id=user_id, course_id=course_key)
@@ -1173,14 +1231,75 @@ def get_learner_active_thread_list(request, course_key, query_params):
     try:
         threads, page, num_pages = comment_client_user.active_threads(query_params)
         threads = set_attribute(threads, "pinned", False)
+        
+        # Enhanced filtering for deleted threads
+        if show_deleted:
+            # If show_deleted is True and user has privilege, show only deleted threads
+            from forum import api as forum_api
+            import logging
+            log = logging.getLogger(__name__)
+            
+            # First get threads that already have is_deleted field and are deleted
+            filtered_threads = [thread for thread in threads if thread.get('is_deleted', False)]
+            
+            # For threads missing is_deleted field, check via Forum API and include only deleted ones
+            threads_to_check = [thread for thread in threads if 'is_deleted' not in thread]
+            
+            for thread in threads_to_check:
+                try:
+                    forum_thread = forum_api.get_thread(thread.get('id'), course_id=str(course_key))
+                    thread['is_deleted'] = forum_thread.get('is_deleted', False)
+                    if thread['is_deleted']:
+                        thread['deleted_at'] = forum_thread.get('deleted_at')
+                        thread['deleted_by'] = forum_thread.get('deleted_by')
+                        filtered_threads.append(thread)  # Only add if deleted
+                except Exception as e:
+                    log.warning("Failed to get deletion status for thread %s: %s", thread.get('id'), e)
+                    # Don't include threads we can't verify as deleted
+        else:
+            # Normal filtering - exclude deleted threads
+            # First filter threads that already have is_deleted field
+            filtered_threads = [thread for thread in threads if not thread.get('is_deleted', False)]
+            
+            # For threads missing is_deleted field (from cs_comments_service), check via Forum API
+            threads_to_double_check = [thread for thread in filtered_threads if 'is_deleted' not in thread]
+            
+            if threads_to_double_check:
+                from forum import api as forum_api
+                import logging
+                log = logging.getLogger(__name__)
+                
+                final_threads = []
+                for thread in filtered_threads:
+                    if 'is_deleted' in thread:
+                        # Thread already has is_deleted field, trust it
+                        final_threads.append(thread)
+                    else:
+                        # Thread missing is_deleted field, check via Forum API
+                        try:
+                            forum_thread = forum_api.get_thread(thread.get('id'), course_id=str(course_key))
+                            if not forum_thread.get('is_deleted', False):
+                                final_threads.append(thread)
+                            else:
+                                log.info("Filtered out deleted thread %s via Forum API check", thread.get('id'))
+                        except Exception as e:
+                            # If Forum API check fails, include the thread (fail safe)
+                            log.warning("Failed to check thread %s deletion status: %s", thread.get('id'), e)
+                            final_threads.append(thread)
+                
+                filtered_threads = final_threads
+            # else: filtered_threads is already set correctly above
+        
         results = _serialize_discussion_entities(
-            request, context, threads, {'profile_image'}, DiscussionEntity.thread
+            request, context, filtered_threads, {'profile_image'}, DiscussionEntity.thread
         )
+        # Update pagination count since we may have filtered out deleted threads
+        filtered_count = len(filtered_threads)
         paginator = DiscussionAPIPagination(
             request,
             page,
             num_pages,
-            len(threads)
+            filtered_count
         )
         return paginator.get_paginated_response({
             "results": results,
@@ -1196,7 +1315,7 @@ def get_learner_active_thread_list(request, course_key, query_params):
 
 
 def get_comment_list(request, thread_id, endorsed, page, page_size, flagged=False, requested_fields=None,
-                     merge_question_type_responses=False):
+                     merge_question_type_responses=False, show_deleted=False):
     """
     Return the list of comments in the given thread.
 
@@ -1228,6 +1347,14 @@ def get_comment_list(request, thread_id, endorsed, page, page_size, flagged=Fals
     response_skip = page_size * (page - 1)
     reverse_order = request.GET.get('reverse_order', False)
     from_mfe_sidebar = request.GET.get("enable_in_context_sidebar", False)
+    
+    # Check permissions for show_deleted parameter
+    if show_deleted:
+        # Get context to check permissions
+        temp_thread, temp_context = _get_thread_and_context(request, thread_id)
+        if not temp_context["has_moderation_privilege"]:
+            raise PermissionDenied("`show_deleted` can only be set by users with moderation roles.")
+    
     cc_thread, context = _get_thread_and_context(
         request,
         thread_id,
@@ -1272,9 +1399,55 @@ def get_comment_list(request, thread_id, endorsed, page, page_size, flagged=Fals
         raise PageNotFoundError("Page not found (No results on this page).")
     num_pages = (resp_total + page_size - 1) // page_size if resp_total else 1
 
-    results = _serialize_discussion_entities(request, context, responses, requested_fields, DiscussionEntity.comment)
+    # Handle deleted comment filtering based on show_deleted parameter
+    if show_deleted:
+        # Include all comments (both deleted and non-deleted) for privileged users
+        # Ensure deletion status is populated for all comments
+        from forum import api as forum_api
+        import logging
+        log = logging.getLogger(__name__)
+        
+        for response in responses:
+            if 'is_deleted' not in response:
+                try:
+                    forum_comment = forum_api.get_comment(response.get('id'))
+                    response['is_deleted'] = forum_comment.get('is_deleted', False)
+                    if response['is_deleted']:
+                        response['deleted_at'] = forum_comment.get('deleted_at')
+                        response['deleted_by'] = forum_comment.get('deleted_by')
+                except Exception as e:
+                    log.warning("Failed to get deletion status for comment %s: %s", response.get('id'), e)
+                    response['is_deleted'] = False
+        
+        filtered_responses = responses
+    else:
+        # Standard filtering - exclude deleted comments for regular users
+        filtered_responses = []
+        from forum import api as forum_api
+        import logging
+        log = logging.getLogger(__name__)
+        
+        for response in responses:
+            if 'is_deleted' in response:
+                # Comment already has is_deleted field
+                if not response.get('is_deleted', False):
+                    filtered_responses.append(response)
+            else:
+                # Comment missing is_deleted field, check via Forum API
+                try:
+                    forum_comment = forum_api.get_comment(response.get('id'))
+                    if not forum_comment.get('is_deleted', False):
+                        filtered_responses.append(response)
+                    else:
+                        log.info("Filtered out deleted comment %s via Forum API check", response.get('id'))
+                except Exception as e:
+                    # If Forum API check fails, include the comment (fail safe)
+                    log.warning("Failed to check comment %s deletion status: %s", response.get('id'), e)
+                    filtered_responses.append(response)
+    
+    results = _serialize_discussion_entities(request, context, filtered_responses, requested_fields, DiscussionEntity.comment)
 
-    paginator = DiscussionAPIPagination(request, page, num_pages, resp_total)
+    paginator = DiscussionAPIPagination(request, page, num_pages, len(filtered_responses))
     track_thread_viewed_event(request, context["course"], cc_thread, from_mfe_sidebar)
     return paginator.get_paginated_response(results)
 
