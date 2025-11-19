@@ -12,6 +12,7 @@ from django.db import transaction
 from django.db.models.query import QuerySet
 from edx_django_utils.cache import TieredCache
 from edx_django_utils.monitoring import function_trace, set_custom_attribute
+from lms.djangoapps.course_home_api.toggles import learner_can_preview_verifeied_content
 from opaque_keys import OpaqueKey
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import LibraryLocator
@@ -318,6 +319,7 @@ def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnes
 
     full_course_outline = get_course_outline(course_key)
     user_can_see_all_content = can_see_all_content(user, course_key)
+    user_can_preview_verified_content = learner_can_preview_verifeied_content(course_key, user)
 
     # These are processors that alter which sequences are visible to students.
     # For instance, certain sequences that are intentionally hidden or not yet
@@ -340,6 +342,8 @@ def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnes
     processors = {}
     usage_keys_to_remove = set()
     inaccessible_sequences = set()
+    preview_usage_keys = set()
+
     for name, processor_cls in processor_classes:
         # Future optimization: This should be parallelizable (don't rely on a
         # particular ordering).
@@ -349,6 +353,14 @@ def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnes
         if not user_can_see_all_content:
             # function_trace lets us see how expensive each processor is being.
             with function_trace(f'learning_sequences.api.outline_processors.{name}'):
+
+                # An exception is made for audit preview of verified content.
+                # We don't want to remove content here, instead we 
+                # ... this will get marked later when assembling outline
+                if name == 'enrollment_track_partitions' and user_can_preview_verified_content:
+                    preview_usage_keys |= processor.usage_keys_to_remove(full_course_outline)
+                    continue
+
                 processor_usage_keys_removed = processor.usage_keys_to_remove(full_course_outline)
                 processor_inaccessible_sequences = processor.inaccessible_sequences(full_course_outline)
                 usage_keys_to_remove |= processor_usage_keys_removed
@@ -357,12 +369,14 @@ def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnes
     # Open question: Does it make sense to remove a Section if it has no Sequences in it?
     trimmed_course_outline = full_course_outline.remove(usage_keys_to_remove)
     accessible_sequences = frozenset(set(trimmed_course_outline.sequences) - inaccessible_sequences)
+    previewable_sequences = frozenset(preview_usage_keys)
 
     user_course_outline = UserCourseOutlineData(
         base_outline=full_course_outline,
         user=user,
         at_time=at_time,
         accessible_sequences=accessible_sequences,
+        previewable_sequences=previewable_sequences,
         **{
             name: getattr(trimmed_course_outline, name)
             for name in [
