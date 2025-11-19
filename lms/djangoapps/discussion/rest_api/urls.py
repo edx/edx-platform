@@ -9,6 +9,7 @@ from rest_framework.routers import SimpleRouter
 
 from lms.djangoapps.discussion.rest_api.views import (
     BulkDeleteUserPosts,
+    BulkRestoreUserPosts,
     CommentViewSet,
     CourseActivityStatsView,
     CourseDiscussionRolesAPIView,
@@ -20,9 +21,11 @@ from lms.djangoapps.discussion.rest_api.views import (
     CourseViewV2,
     LearnerThreadView,
     ReplaceUsernamesView,
+    RestoreContent,
     RetireUserView,
     ThreadViewSet,
     UploadFileView,
+    DeletedContentView,
 )
 
 ROUTER = SimpleRouter()
@@ -92,6 +95,21 @@ urlpatterns = [
         fr"^v1/bulk_delete_user_posts/{settings.COURSE_ID_PATTERN}",
         BulkDeleteUserPosts.as_view(),
         name="bulk_delete_user_posts"
+    ),
+    re_path(
+        fr"^v1/bulk_restore_user_posts/{settings.COURSE_ID_PATTERN}",
+        BulkRestoreUserPosts.as_view(),
+        name="bulk_restore_user_posts"
+    ),
+    path(
+        "v1/restore_content",
+        RestoreContent.as_view(),
+        name="restore_content"
+    ),
+    re_path(
+        fr"^v1/deleted_content/{settings.COURSE_ID_PATTERN}",
+        DeletedContentView.as_view(),
+        name="deleted_content"
     ),
     path('v1/', include(ROUTER.urls)),
 ]

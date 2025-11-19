@@ -160,13 +160,13 @@ class Model:
         self._update_from_response(response)
         self.after_save(self)
 
-    def delete(self, course_id=None):
+    def delete(self, course_id=None, deleted_by=None):
         course_key = get_course_key(self.attributes.get("course_id") or course_id)
         response = None
         if self.type == "comment":
-            response = forum_api.delete_comment(comment_id=self.attributes["id"], course_id=str(course_key))
+            response = forum_api.delete_comment(comment_id=self.attributes["id"], course_id=str(course_key), deleted_by=deleted_by)
         elif self.type == "thread":
-            response = forum_api.delete_thread(thread_id=self.attributes["id"], course_id=str(course_key))
+            response = forum_api.delete_thread(thread_id=self.attributes["id"], course_id=str(course_key), deleted_by=deleted_by)
         if response is None:
             raise CommentClientRequestError("Forum v2 API call is missing")
         self.retrieved = True

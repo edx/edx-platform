@@ -132,7 +132,9 @@ from .utils import (
     is_posting_allowed,
     can_user_notify_all_learners, is_captcha_enabled, get_captcha_site_key_by_platform
 )
-
+from forum import api as forum_api
+import logging
+log = logging.getLogger(__name__)
 User = get_user_model()
 
 ThreadType = Literal["discussion", "question"]
@@ -916,6 +918,7 @@ def get_thread_list(
     order_direction: Literal["desc"] = "desc",
     requested_fields: Optional[List[Literal["profile_image"]]] = None,
     count_flagged: bool = None,
+    show_deleted: bool = False,
 ):
     """
     Return the list of all discussion threads pertaining to the given course
@@ -991,6 +994,8 @@ def get_thread_list(
 
     if count_flagged and not context["has_moderation_privilege"]:
         raise PermissionDenied("`count_flagged` can only be set by users with moderator access or higher.")
+    if show_deleted and not context["has_moderation_privilege"]:
+        raise PermissionDenied("`show_deleted` can only be set by users with moderator access or higher.")
 
     group_id = None
     allowed_roles = [
@@ -1023,6 +1028,7 @@ def get_thread_list(
         "flagged": flagged,
         "thread_type": thread_type,
         "count_flagged": count_flagged,
+        "show_deleted": show_deleted,
     }
 
     if view:
@@ -1157,6 +1163,10 @@ def get_learner_active_thread_list(request, course_key, query_params):
     group_id = query_params.get('group_id', None)
     user_id = query_params.get('user_id', None)
     count_flagged = query_params.get('count_flagged', None)
+    show_deleted = query_params.get('show_deleted', False)
+    if isinstance(show_deleted, str):
+        show_deleted = show_deleted.lower() == 'true'
+    
     if user_id is None:
         return Response({'detail': 'Invalid user id'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1164,6 +1174,8 @@ def get_learner_active_thread_list(request, course_key, query_params):
         raise PermissionDenied("count_flagged can only be set by users with moderation roles.")
     if "flagged" in query_params.keys() and not context["has_moderation_privilege"]:
         raise PermissionDenied("Flagged filter is only available for moderators")
+    if show_deleted and not context["has_moderation_privilege"]:
+        raise PermissionDenied("show_deleted can only be set by users with moderation roles.")
 
     if group_id is None:
         comment_client_user = comment_client.User(id=user_id, course_id=course_key)
@@ -1173,14 +1185,34 @@ def get_learner_active_thread_list(request, course_key, query_params):
     try:
         threads, page, num_pages = comment_client_user.active_threads(query_params)
         threads = set_attribute(threads, "pinned", False)
+
+        # This portion below is temporary until we migrate to forum v2
+        filtered_threads = []
+        for thread in threads:
+            try:
+                forum_thread = forum_api.get_thread(thread.get('id'), course_id=str(course_key))
+                is_deleted = forum_thread.get('is_deleted', False)
+                
+                if show_deleted and is_deleted:
+                    thread['is_deleted'] = True
+                    thread['deleted_at'] = forum_thread.get('deleted_at')
+                    thread['deleted_by'] = forum_thread.get('deleted_by')
+                    filtered_threads.append(thread)
+                elif not show_deleted and not is_deleted:
+                    filtered_threads.append(thread)
+            except Exception as e:
+                log.warning("Failed to check thread %s deletion status: %s", thread.get('id'), e)
+                if not show_deleted:  # Fail safe: include thread for regular users
+                    filtered_threads.append(thread)
+        
         results = _serialize_discussion_entities(
-            request, context, threads, {'profile_image'}, DiscussionEntity.thread
+            request, context, filtered_threads, {'profile_image'}, DiscussionEntity.thread
         )
         paginator = DiscussionAPIPagination(
             request,
             page,
             num_pages,
-            len(threads)
+            len(filtered_threads)
         )
         return paginator.get_paginated_response({
             "results": results,
@@ -1196,7 +1228,7 @@ def get_learner_active_thread_list(request, course_key, query_params):
 
 
 def get_comment_list(request, thread_id, endorsed, page, page_size, flagged=False, requested_fields=None,
-                     merge_question_type_responses=False):
+                     merge_question_type_responses=False, show_deleted=False):
     """
     Return the list of comments in the given thread.
 
@@ -1272,9 +1304,15 @@ def get_comment_list(request, thread_id, endorsed, page, page_size, flagged=Fals
         raise PageNotFoundError("Page not found (No results on this page).")
     num_pages = (resp_total + page_size - 1) // page_size if resp_total else 1
 
+    if not show_deleted:
+        responses = [response for response in responses if not response.get('is_deleted', False)]
+    else:
+        if not context["has_moderation_privilege"]:
+            raise PermissionDenied("`show_deleted` can only be set by users with moderation roles.")
+
     results = _serialize_discussion_entities(request, context, responses, requested_fields, DiscussionEntity.comment)
 
-    paginator = DiscussionAPIPagination(request, page, num_pages, resp_total)
+    paginator = DiscussionAPIPagination(request, page, num_pages, len(responses))
     track_thread_viewed_event(request, context["course"], cc_thread, from_mfe_sidebar)
     return paginator.get_paginated_response(results)
 
@@ -1700,6 +1738,7 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
     try:
         cc_comment = Comment(id=comment_id).retrieve()
         reverse_order = request.GET.get('reverse_order', False)
+        show_deleted = request.GET.get('show_deleted', False)
         cc_thread, context = _get_thread_and_context(
             request,
             cc_comment["thread_id"],
@@ -1724,6 +1763,11 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
         if not paged_response_comments and page != 1:
             raise PageNotFoundError("Page not found (No results on this page).")
 
+        if not show_deleted:
+            paged_response_comments = [response for response in paged_response_comments if not response.get('is_deleted', False)]
+        else:
+            if not context["has_moderation_privilege"]:
+                raise PermissionDenied("`show_deleted` can only be set by users with moderation roles.")
         results = _serialize_discussion_entities(
             request, context, paged_response_comments, requested_fields, DiscussionEntity.comment
         )
@@ -1822,7 +1866,7 @@ def delete_thread(request, thread_id):
     """
     cc_thread, context = _get_thread_and_context(request, thread_id)
     if can_delete(cc_thread, context):
-        cc_thread.delete()
+        cc_thread.delete(deleted_by=str(request.user.id))
         thread_deleted.send(sender=None, user=request.user, post=cc_thread)
         track_thread_deleted_event(request, context["course"], cc_thread)
     else:
@@ -1847,7 +1891,7 @@ def delete_comment(request, comment_id):
     """
     cc_comment, context = _get_comment_and_context(request, comment_id)
     if can_delete(cc_comment, context):
-        cc_comment.delete()
+        cc_comment.delete(deleted_by=str(request.user.id))
         comment_deleted.send(sender=None, user=request.user, post=cc_comment)
         track_comment_deleted_event(request, context["course"], cc_comment)
     else:
@@ -1999,3 +2043,134 @@ def add_stats_for_users_with_null_values(course_stats, users_in_course):
         })
     updated_course_stats = sorted(updated_course_stats, key=lambda d: len(d['username']))
     return updated_course_stats
+
+
+def get_deleted_content_for_course(course_id, content_type=None, page=1, per_page=20, author_id=None):
+    """
+    Retrieve all deleted content (threads, comments) for a course.
+    
+    Args:
+        course_id (str): Course identifier
+        content_type (str, optional): Filter by 'thread' or 'comment'. If None, returns all types.
+        page (int): Page number for pagination (1-based)
+        per_page (int): Number of items per page
+        author_id (str, optional): Filter by author ID
+    
+    Returns:
+        dict: Paginated results with deleted content
+    """
+
+    import math
+    
+    try:
+        # Build query parameters for forum API
+        query_params = {
+            'course_id': course_id,
+            'is_deleted': True,  # Only get deleted content
+            'page': page,
+            'per_page': per_page,
+        }
+        
+        if author_id:
+            query_params['author_id'] = author_id
+            
+        deleted_content = []
+        total_count = 0
+        
+        # Get deleted threads
+        if content_type is None or content_type == 'thread':
+            try:
+                deleted_threads = forum_api.get_deleted_threads_for_course(
+                    course_id=course_id,
+                    page=page if content_type == 'thread' else 1,
+                    per_page=per_page if content_type == 'thread' else 1000,
+                    author_id=author_id
+                )
+                for thread_data in deleted_threads.get('threads', []):
+                    deleted_content.append({
+                        'id': str(thread_data.get('_id', thread_data.get('id'))),
+                        'type': 'thread',
+                        'title': thread_data.get('title', ''),
+                        'body': thread_data.get('body', ''),
+                        'course_id': course_id,
+                        'author_id': thread_data.get('author_id', ''),
+                        'author_username': thread_data.get('author_username', ''),
+                        'commentable_id': thread_data.get('commentable_id', ''),
+                        'created_at': thread_data.get('created_at'),
+                        'updated_at': thread_data.get('updated_at'),
+                        'deleted_at': thread_data.get('deleted_at'),
+                        'deleted_by': thread_data.get('deleted_by'),
+                        'thread_type': thread_data.get('thread_type', 'discussion'),
+                        'anonymous': thread_data.get('anonymous', False),
+                        'anonymous_to_peers': thread_data.get('anonymous_to_peers', False),
+                    })
+                
+                if content_type == 'thread':
+                    total_count = deleted_threads.get('total_count', len(deleted_content))
+            except Exception as e:
+                log.warning("Failed to get deleted threads for course %s: %s", course_id, e)
+        
+        # Get deleted comments
+        if content_type is None or content_type == 'comment':
+            try:
+                deleted_comments = forum_api.get_deleted_comments_for_course(
+                    course_id=course_id,
+                    page=page if content_type == 'comment' else 1,
+                    per_page=per_page if content_type == 'comment' else 1000,
+                    author_id=author_id
+                )
+                
+                for comment_data in deleted_comments.get('comments', []):
+                    deleted_content.append({
+                        'id': str(comment_data.get('_id', comment_data.get('id'))),
+                        'type': 'comment',
+                        'body': comment_data.get('body', ''),
+                        'course_id': course_id,
+                        'author_id': comment_data.get('author_id', ''),
+                        'author_username': comment_data.get('author_username', ''),
+                        'comment_thread_id': str(comment_data.get('comment_thread_id', '')),
+                        'parent_id': str(comment_data.get('parent_id', '')) if comment_data.get('parent_id') else None,
+                        'created_at': comment_data.get('created_at'),
+                        'updated_at': comment_data.get('updated_at'),
+                        'deleted_at': comment_data.get('deleted_at'),
+                        'deleted_by': comment_data.get('deleted_by'),
+                        'depth': comment_data.get('depth', 0),
+                        'anonymous': comment_data.get('anonymous', False),
+                        'anonymous_to_peers': comment_data.get('anonymous_to_peers', False),
+                        'endorsed': comment_data.get('endorsed', False),
+                    })
+                
+                if content_type == 'comment':
+                    total_count = deleted_comments.get('total_count', len(deleted_content))
+            except Exception as e:
+                log.warning("Failed to get deleted comments for course %s: %s", course_id, e)
+        
+        # If getting all content types, handle pagination differently
+        if content_type is None:
+            total_count = len(deleted_content)
+            # Sort by deletion date (most recent first)
+            deleted_content.sort(key=lambda x: x.get('deleted_at', ''), reverse=True)
+            
+            # Apply pagination to combined results
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            deleted_content = deleted_content[start_idx:end_idx]
+        
+        # Calculate pagination info
+        num_pages = math.ceil(total_count / per_page) if total_count > 0 else 1
+        
+        return {
+            'results': deleted_content,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total_count': total_count,
+                'num_pages': num_pages,
+                'has_next': page < num_pages,
+                'has_previous': page > 1,
+            }
+        }
+        
+    except Exception as e:
+        log.exception("Error getting deleted content for course %s: %s", course_id, e)
+        raise

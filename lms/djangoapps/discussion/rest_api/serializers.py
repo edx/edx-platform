@@ -198,6 +198,9 @@ class _ContentSerializer(serializers.Serializer):
     last_edit = serializers.SerializerMethodField(required=False)
     edit_reason_code = serializers.CharField(required=False, validators=[validate_edit_reason_code])
     edit_by_label = serializers.SerializerMethodField(required=False)
+    is_deleted = serializers.SerializerMethodField(read_only=True)
+    deleted_at = serializers.SerializerMethodField(read_only=True)
+    deleted_by = serializers.SerializerMethodField(read_only=True)
 
     non_updatable_fields = set()
 
@@ -371,6 +374,37 @@ class _ContentSerializer(serializers.Serializer):
         if (is_user_author or is_user_privileged) and edit_history:
             last_edit = edit_history[-1]
             return self._get_user_label_from_username(last_edit.get('editor_username'))
+
+    def get_is_deleted(self, obj):
+        """
+        Returns the is_deleted status for privileged users only.
+        """
+        if not _validate_privileged_access(self.context):
+            return None
+        return obj.get('is_deleted', False)
+
+    def get_deleted_at(self, obj):
+        """
+        Returns the deletion timestamp for privileged users only.
+        """
+        if not _validate_privileged_access(self.context):
+            return None
+        return obj.get('deleted_at')
+
+    def get_deleted_by(self, obj):
+        """
+        Returns the username of the user who deleted this content for privileged users only.
+        """
+        if not _validate_privileged_access(self.context):
+            return None
+        deleted_by_id = obj.get('deleted_by')
+        if deleted_by_id:
+            try:
+                user = User.objects.get(id=int(deleted_by_id))
+                return user.username
+            except (User.DoesNotExist, ValueError):
+                return None
+        return None
 
 
 class ThreadSerializer(_ContentSerializer):

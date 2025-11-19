@@ -23,7 +23,7 @@ class Comment(models.Model):
         'closed', 'created_at', 'updated_at', 'depth', 'at_position_list',
         'type', 'commentable_id', 'abuse_flaggers', 'endorsement',
         'child_count', 'edit_history',
-        'is_spam', 'ai_moderation_reason', 'abuse_flagged',
+        'is_spam', 'ai_moderation_reason', 'abuse_flagged', 'is_deleted', 'deleted_at', 'deleted_by'
     ]
 
     updatable_fields = [
@@ -119,7 +119,7 @@ class Comment(models.Model):
         return ForumComment()._collection.count_documents(query_params)  # pylint: disable=protected-access
 
     @classmethod
-    def delete_user_comments(cls, user_id, course_ids):
+    def delete_user_comments(cls, user_id, course_ids, deleted_by=None):
         """
         Deletes comments and responses of user in the given course_ids.
         TODO: Add support for MySQL backend as well
@@ -137,11 +137,93 @@ class Comment(models.Model):
             comment_id = comment.get("_id")
             course_id = comment.get("course_id")
             if comment_id:
-                forum_api.delete_comment(comment_id, course_id=course_id)
+                # Use forum_api.delete_comment which supports deleted_by parameter
+                forum_api.delete_comment(comment_id, course_id=course_id, deleted_by=deleted_by)
                 comments_deleted += 1
             log.info(f"<<Bulk Delete>> Deleted comment {comment_id} in {time.time() - start_time} seconds."
                      f" Comment Found: {comment_id is not None}")
         return comments_deleted
+
+    @classmethod
+    def get_user_deleted_comment_count(cls, user_id, course_ids):
+        """
+        Returns count of deleted comments for user in the given course_ids.
+        """
+        query_params = {
+            "course_id": {"$in": course_ids},
+            "author_id": str(user_id),
+            "_type": "Comment",
+            "is_deleted": True
+        }
+        return ForumComment()._collection.count_documents(query_params)  # pylint: disable=protected-access
+
+    @classmethod
+    def restore_user_deleted_comments(cls, user_id, course_ids, restored_by=None):
+        """
+        Restores (undeletes) comments of user in the given course_ids by setting is_deleted=False.
+        """
+        from datetime import datetime
+        from pytz import UTC
+        
+        start_time = time.time()
+        query_params = {
+            "course_id": {"$in": course_ids},
+            "author_id": str(user_id),
+            "is_deleted": True
+        }
+        comments_restored = 0
+        comments = ForumComment().get_list(**query_params)
+        log.info(f"<<Bulk Restore>> Fetched deleted comments for user {user_id} in {time.time() - start_time} seconds")
+        for comment in comments:
+            start_time = time.time()
+            comment_id = comment.get("_id")
+            course_id = comment.get("course_id")
+            if comment_id:
+                cls._restore_comment(comment_id, course_id=course_id, restored_by=restored_by)
+                comments_restored += 1
+            log.info(f"<<Bulk Restore>> Restored comment {comment_id} in {time.time() - start_time} seconds."
+                     f" Comment Found: {comment_id is not None}")
+        return comments_restored
+
+    @classmethod
+    def restore_comment(cls, comment_id, course_id=None, restored_by=None):
+        """
+        Restores an individual soft-deleted comment by setting is_deleted=False
+        Public method for individual comment restoration
+        """
+        return cls._restore_comment(comment_id, course_id, restored_by)
+
+    @classmethod
+    def _restore_comment(cls, comment_id, course_id=None, restored_by=None):
+        """
+        Restores a soft-deleted comment by setting is_deleted=False and clearing deletion metadata
+        Uses direct MongoDB update to ensure data persistence
+        """
+        from datetime import datetime
+        from pytz import UTC
+        
+        # Use direct MongoDB update for reliable data persistence
+        update_data = {
+            'is_deleted': False,
+            'deleted_at': None,
+            'deleted_by': None
+        }
+        if restored_by:
+            update_data['restored_by'] = restored_by
+            update_data['restored_at'] = datetime.now(UTC).isoformat()
+        
+        # Update directly in MongoDB collection
+        result = ForumComment()._collection.update_one(
+            {'_id': comment_id},
+            {'$set': update_data}
+        )
+        
+        if result.matched_count == 0:
+            log.warning("Comment %s not found for restoration", comment_id)
+            return False
+        else:
+            log.info("Comment %s restored successfully, updated %s document(s)", comment_id, result.modified_count)
+            return True
 
 
 def _url_for_thread_comments(thread_id):

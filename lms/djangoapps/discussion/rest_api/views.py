@@ -29,7 +29,7 @@ from lms.djangoapps.course_api.blocks.api import get_blocks
 from lms.djangoapps.course_goals.models import UserActivity
 from lms.djangoapps.discussion.rate_limit import is_content_creation_rate_limited
 from lms.djangoapps.discussion.rest_api.permissions import IsAllowedToBulkDelete
-from lms.djangoapps.discussion.rest_api.tasks import delete_course_post_for_user
+from lms.djangoapps.discussion.rest_api.tasks import delete_course_post_for_user, restore_course_post_for_user
 from lms.djangoapps.discussion.toggles import ONLY_VERIFIED_USERS_CAN_POST
 from lms.djangoapps.discussion.django_comment_client import settings as cc_settings
 from lms.djangoapps.discussion.django_comment_client.utils import get_group_id_for_comments_service
@@ -660,6 +660,7 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["order_direction"],
             form.cleaned_data["requested_fields"],
             form.cleaned_data["count_flagged"],
+            form.cleaned_data["show_deleted"],
         )
 
     def retrieve(self, request, thread_id=None):
@@ -774,6 +775,7 @@ class LearnerThreadView(APIView):
         }
         order_by = order_by_mapping.get(order_by, 'activity')
         post_status = request.GET.get('status', None)
+        show_deleted = request.GET.get('show_deleted', 'false').lower() == 'true'
         discussion_id = None
         username = request.GET.get('username', None)
         user = get_object_or_404(User, username=username)
@@ -792,6 +794,7 @@ class LearnerThreadView(APIView):
             "count_flagged": count_flagged,
             "thread_type": thread_type,
             "sort_key": order_by,
+            "show_deleted": show_deleted,
         }
         if post_status:
             if post_status not in ['flagged', 'unanswered', 'unread', 'unresponded']:
@@ -1010,7 +1013,8 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["page_size"],
             form.cleaned_data["flagged"],
             form.cleaned_data["requested_fields"],
-            form.cleaned_data["merge_question_type_responses"]
+            form.cleaned_data["merge_question_type_responses"],
+            form.cleaned_data["show_deleted"]
         )
 
     def list_by_user(self, request):
@@ -1604,6 +1608,7 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
         if execute_task:
             event_data = {
                 "triggered_by": request.user.username,
+                "triggered_by_user_id": str(request.user.id),
                 "username": username,
                 "course_or_org": course_or_org,
                 "course_key": course_id,
@@ -1615,3 +1620,219 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
             {"comment_count": comment_count, "thread_count": thread_count},
             status=status.HTTP_202_ACCEPTED
         )
+
+
+class RestoreContent(DeveloperErrorViewMixin, APIView):
+    """
+    **Use Cases**
+        A privileged user that can restore individual soft-deleted threads, comments, or responses.
+
+    **Example Requests**:
+        POST /api/discussion/v1/restore_content
+        Request Body:
+            {
+                "content_type": "thread",  // "thread", "comment", or "response"
+                "content_id": "thread_id_or_comment_id",
+                "course_id": "course-v1:edX+DemoX+Demo_Course"
+            }
+
+    **Example Response**:
+        {"success": true, "message": "Content restored successfully"}
+    """
+
+    authentication_classes = (
+        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+    )
+    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+
+    def post(self, request):
+        """
+        Implements the restore individual content endpoint.
+        """
+        content_type = request.data.get("content_type")
+        content_id = request.data.get("content_id")
+        course_id = request.data.get("course_id")
+        
+        if not all([content_type, content_id, course_id]):
+            raise BadRequest("content_type, content_id, and course_id are required.")
+        
+        if content_type not in ["thread", "comment", "response"]:
+            raise BadRequest("content_type must be 'thread', 'comment', or 'response'.")
+        
+        restored_by_user_id = str(request.user.id)
+        
+        try:
+            if content_type == "thread":
+                success = Thread.restore_thread(content_id, course_id=course_id, restored_by=restored_by_user_id)
+            else:  # comment or response (both are comments in the backend)
+                success = Comment.restore_comment(content_id, course_id=course_id, restored_by=restored_by_user_id)
+            
+            if success:
+                return Response(
+                    {"success": True, "message": f"{content_type.capitalize()} restored successfully"},
+                    status=status.HTTP_200_OK
+                )
+            else:
+                return Response(
+                    {"success": False, "message": f"{content_type.capitalize()} not found or already restored"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        except Exception as e:
+            log.error("Error restoring %s %s: %s", content_type, content_id, str(e))
+            return Response(
+                {"success": False, "message": f"Error restoring {content_type}: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
+    """
+    **Use Cases**
+        A privileged user that can restore all soft-deleted posts and comments made by a user.
+        It returns expected number of comments and threads that will be restored
+
+    **Example Requests**:
+        POST /api/discussion/v1/bulk_restore_user_posts/{course_id}
+        Query Parameters:
+            username: The username of the user whose posts are to be restored
+            course_id: Course id for which posts are to be restored
+            execute: If True, runs restoration task
+            course_or_org: If 'course', restores posts in the course, if 'org', restores posts in all courses of the org
+
+    **Example Response**:
+        {"comment_count": 5, "thread_count": 3}
+    """
+
+    authentication_classes = (
+        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+    )
+    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+
+    def post(self, request, course_id):
+        """
+        Implements the restore user posts endpoint.
+        """
+        username = request.GET.get("username", None)
+        execute_task = request.GET.get("execute", "false").lower() == "true"
+        if (not username) or (not course_id):
+            raise BadRequest("username and course_id are required.")
+        course_or_org = request.GET.get("course_or_org", "course")
+        if course_or_org not in ["course", "org"]:
+            raise BadRequest("course_or_org must be either 'course' or 'org'.")
+
+        user = get_object_or_404(User, username=username)
+        course_ids = [course_id]
+        if course_or_org == "org":
+            org_id = CourseKey.from_string(course_id).org
+            enrollments = CourseEnrollment.objects.filter(user=request.user).values_list('course_id', flat=True)
+            course_ids.extend([
+                str(c_id)
+                for c_id in enrollments
+                if c_id.org == org_id
+            ])
+            course_ids = list(set(course_ids))
+            log.info("<<Bulk Restore>> %s enrolled in %s", username, enrollments)
+        log.info("<<Bulk Restore>> Posts for %s in %s - for %s %s", username, course_ids, course_or_org, course_id)
+
+        comment_count = Comment.get_user_deleted_comment_count(user.id, course_ids)
+        thread_count = Thread.get_user_deleted_threads_count(user.id, course_ids)
+        log.info("<<Bulk Restore>> %s in %s - Count thread %s, comment %s", username, course_ids, thread_count, comment_count)
+
+        if execute_task:
+            event_data = {
+                "triggered_by": request.user.username,
+                "triggered_by_user_id": str(request.user.id),
+                "username": username,
+                "course_or_org": course_or_org,
+                "course_key": course_id,
+            }
+            restore_course_post_for_user.apply_async(
+                args=(user.id, username, course_ids, event_data),
+            )
+        return Response(
+            {"comment_count": comment_count, "thread_count": thread_count},
+            status=status.HTTP_202_ACCEPTED
+        )
+
+
+class DeletedContentView(DeveloperErrorViewMixin, APIView):
+    """
+    **Use Cases**
+        Retrieve all deleted content (threads, comments, responses) for a course.
+        This endpoint allows privileged users to fetch deleted discussion content.
+
+    **Example Requests**:
+        GET /api/discussion/v1/deleted_content/course-v1:edX+DemoX+Demo_Course
+        GET /api/discussion/v1/deleted_content/course-v1:edX+DemoX+Demo_Course?content_type=thread
+        GET /api/discussion/v1/deleted_content/course-v1:edX+DemoX+Demo_Course?page=1&per_page=20
+
+    **Example Response**:
+        {
+            "results": [
+                {
+                    "id": "thread_id",
+                    "type": "thread",
+                    "title": "Deleted Thread Title",
+                    "body": "Thread content...",
+                    "course_id": "course-v1:edX+DemoX+Demo_Course",
+                    "author_id": "user_123",
+                    "deleted_at": "2023-11-19T10:30:00Z",
+                    "deleted_by": "moderator_456"
+                }
+            ],
+            "pagination": {
+                "page": 1,
+                "per_page": 20,
+                "total_count": 50,
+                "num_pages": 3
+            }
+        }
+    """
+
+    authentication_classes = (
+        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+    )
+    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+
+    def get(self, request, course_id):
+        """
+        Retrieve all deleted content for a course.
+        """
+        try:
+            course_key = CourseKey.from_string(course_id)
+        except Exception:
+            raise BadRequest("Invalid course_id")
+
+        # Get query parameters
+        content_type = request.GET.get('content_type', None)  # 'thread', 'comment', or None for all
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 20))
+        author_id = request.GET.get('author_id', None)
+
+        # Validate parameters
+        if content_type and content_type not in ['thread', 'comment']:
+            raise BadRequest("content_type must be 'thread' or 'comment'")
+        
+        if per_page > 100:
+            per_page = 100  # Limit to prevent excessive load
+
+        try:
+            # Import here to avoid circular imports
+            from lms.djangoapps.discussion.rest_api.api import get_deleted_content_for_course
+            
+            results = get_deleted_content_for_course(
+                course_id=str(course_key),
+                content_type=content_type,
+                page=page,
+                per_page=per_page,
+                author_id=author_id
+            )
+            
+            return Response(results, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logging.exception("Error retrieving deleted content for course %s: %s", course_id, e)
+            return Response(
+                {"error": "Failed to retrieve deleted content"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

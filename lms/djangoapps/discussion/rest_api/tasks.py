@@ -100,8 +100,10 @@ def delete_course_post_for_user(user_id, username, course_ids, event_data=None):
     """
     event_data = event_data or {}
     log.info(f"<<Bulk Delete>> Deleting all posts for {username} in course {course_ids}")
-    threads_deleted = Thread.delete_user_threads(user_id, course_ids)
-    comments_deleted = Comment.delete_user_comments(user_id, course_ids)
+    # Get triggered_by user_id from event_data for audit trail
+    deleted_by_user_id = event_data.get('triggered_by_user_id') if event_data else None
+    threads_deleted = Thread.delete_user_threads(user_id, course_ids, deleted_by=deleted_by_user_id)
+    comments_deleted = Comment.delete_user_comments(user_id, course_ids, deleted_by=deleted_by_user_id)
     log.info(f"<<Bulk Delete>> Deleted {threads_deleted} posts and {comments_deleted} comments for {username} "
              f"in course {course_ids}")
     event_data.update({
@@ -109,5 +111,28 @@ def delete_course_post_for_user(user_id, username, course_ids, event_data=None):
         "number_of_comments_deleted": comments_deleted,
     })
     event_name = 'edx.discussion.bulk_delete_user_posts'
+    tracker.emit(event_name, event_data)
+    segment.track('None', event_name, event_data)
+
+
+@shared_task
+@set_code_owner_attribute
+def restore_course_post_for_user(user_id, username, course_ids, event_data=None):
+    """
+    Restores all soft-deleted posts for user in a course by setting is_deleted=False.
+    """
+    event_data = event_data or {}
+    log.info("<<Bulk Restore>> Restoring all posts for %s in course %s", username, course_ids)
+    # Get triggered_by user_id from event_data for audit trail
+    restored_by_user_id = event_data.get('triggered_by_user_id') if event_data else None
+    threads_restored = Thread.restore_user_deleted_threads(user_id, course_ids, restored_by=restored_by_user_id)
+    comments_restored = Comment.restore_user_deleted_comments(user_id, course_ids, restored_by=restored_by_user_id)
+    log.info("<<Bulk Restore>> Restored %s posts and %s comments for %s in course %s", 
+             threads_restored, comments_restored, username, course_ids)
+    event_data.update({
+        "number_of_posts_restored": threads_restored,
+        "number_of_comments_restored": comments_restored,
+    })
+    event_name = 'edx.discussion.bulk_restore_user_posts'
     tracker.emit(event_name, event_data)
     segment.track('None', event_name, event_data)

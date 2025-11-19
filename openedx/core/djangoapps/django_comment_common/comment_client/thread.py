@@ -33,7 +33,7 @@ class Thread(models.Model):
         'abuse_flaggers', 'resp_skip', 'resp_limit', 'resp_total', 'thread_type',
         'endorsed_responses', 'non_endorsed_responses', 'non_endorsed_resp_total',
         'context', 'last_activity_at', 'closed_by', 'close_reason_code', 'edit_history',
-        'is_spam', 'ai_moderation_reason', 'abuse_flagged',
+        'is_spam', 'ai_moderation_reason', 'abuse_flagged', 'is_deleted', 'deleted_at', 'deleted_by'
     ]
 
     # updateable_fields are sent in PUT requests
@@ -77,7 +77,8 @@ class Thread(models.Model):
         elif commentable_id := params.get('commentable_id'):
             params['commentable_ids'] = [commentable_id]
             params.pop('commentable_id', None)
-
+        if query_params.get('show_deleted', False):
+            params['is_deleted'] = True
         params = utils.clean_forum_params(params)
         if query_params.get('text'):                    # Handle group_ids/group_id conversion
             if group_ids := params.get('group_ids'):
@@ -240,7 +241,7 @@ class Thread(models.Model):
         return CommentThread()._collection.count_documents(query_params)  # pylint: disable=protected-access
 
     @classmethod
-    def _delete_thread(cls, thread_id, course_id=None):
+    def _delete_thread(cls, thread_id, course_id=None, deleted_by=None):
         """
         Deletes a thread
         """
@@ -257,7 +258,8 @@ class Thread(models.Model):
             ) from exc
 
         start_time = time.perf_counter()
-        backend.delete_comments_of_a_thread(thread_id)
+        # backend.delete_comments_of_a_thread(thread_id)
+        # backend.soft_delete_comments_of_a_thread(thread_id, deleted_by)
         log.info(f"{prefix} Delete comments of thread {time.perf_counter() - start_time} sec")
 
         try:
@@ -269,11 +271,13 @@ class Thread(models.Model):
             raise ForumV2RequestError("Failed to prepare thread API response") from error
 
         start_time = time.perf_counter()
-        backend.delete_subscriptions_of_a_thread(thread_id)
+        # backend.delete_subscriptions_of_a_thread(thread_id)
+        backend.soft_delete_subscriptions_of_a_thread(thread_id)
         log.info(f"{prefix} Delete subscriptions {time.perf_counter() - start_time} sec")
 
         start_time = time.perf_counter()
-        result = backend.delete_thread(thread_id)
+        # result = backend.delete_thread(thread_id)
+        result = backend.soft_delete_thread(thread_id, deleted_by)
         log.info(f"{prefix} Delete thread {time.perf_counter() - start_time} sec")
         if result and not (thread["anonymous"] or thread["anonymous_to_peers"]):
             start_time = time.perf_counter()
@@ -284,7 +288,7 @@ class Thread(models.Model):
         return serialized_data
 
     @classmethod
-    def delete_user_threads(cls, user_id, course_ids):
+    def delete_user_threads(cls, user_id, course_ids, deleted_by=None):
         """
         Deletes threads of user in the given course_ids.
         TODO: Add support for MySQL backend as well
@@ -302,11 +306,83 @@ class Thread(models.Model):
             thread_id = thread.get("_id")
             course_id = thread.get("course_id")
             if thread_id:
-                cls._delete_thread(thread_id, course_id=course_id)
+                cls._delete_thread(thread_id, course_id=course_id, deleted_by=deleted_by)
                 threads_deleted += 1
             log.info(f"<<Bulk Delete>> Deleted thread {thread_id} in {time.time() - start_time} seconds."
                      f" Thread Found: {thread_id is not None}")
         return threads_deleted
+
+    @classmethod
+    def get_user_deleted_threads_count(cls, user_id, course_ids):
+        """
+        Returns count of deleted threads for user in the given course_ids.
+        """
+        query_params = {
+            "course_id": {"$in": course_ids},
+            "author_id": str(user_id),
+            "_type": "CommentThread",
+            "is_deleted": True
+        }
+        return CommentThread()._collection.count_documents(query_params)  # pylint: disable=protected-access
+
+    @classmethod
+    def restore_user_deleted_threads(cls, user_id, course_ids, restored_by=None):
+        """
+        Restores (undeletes) threads of user in the given course_ids by setting is_deleted=False.
+        """
+        query_params = {
+            "course_id": {"$in": course_ids},
+            "author_id": str(user_id),
+            "is_deleted": True
+        }
+        threads_restored = 0
+        threads = CommentThread().get_list(**query_params)
+        for thread in threads:
+            thread_id = thread.get("_id")
+            course_id = thread.get("course_id")
+            if thread_id:
+                cls._restore_thread(thread_id, course_id=course_id, restored_by=restored_by)
+                threads_restored += 1
+        return threads_restored
+
+    @classmethod
+    def restore_thread(cls, thread_id, course_id=None, restored_by=None):
+        """
+        Restores an individual soft-deleted thread by setting is_deleted=False
+        Public method for individual thread restoration
+        """
+        return cls._restore_thread(thread_id, course_id, restored_by)
+
+    @classmethod
+    def _restore_thread(cls, thread_id, course_id=None, restored_by=None):
+        """
+        Restores a soft-deleted thread by setting is_deleted=False and clearing deletion metadata
+        Uses direct MongoDB update to ensure data persistence
+        """
+        # Use direct MongoDB update for reliable data persistence
+        update_data = {
+            'is_deleted': False,
+            'deleted_at': None,
+            'deleted_by': None
+        }
+        if restored_by:
+            from datetime import datetime
+            from pytz import UTC
+            update_data['restored_by'] = restored_by
+            update_data['restored_at'] = datetime.now(UTC).isoformat()
+        
+        # Update directly in MongoDB collection
+        result = CommentThread()._collection.update_one(
+            {'_id': thread_id},
+            {'$set': update_data}
+        )
+        
+        if result.matched_count == 0:
+            log.warning("Thread %s not found for restoration", thread_id)
+            return False
+        else:
+            log.info("Thread %s restored successfully", thread_id)
+            return True
 
 
 def _url_for_flag_abuse_thread(thread_id):
