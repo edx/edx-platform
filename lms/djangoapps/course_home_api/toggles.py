@@ -3,6 +3,8 @@ Toggles for course home experience.
 """
 
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
+from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.student.models import CourseEnrollment
 
 WAFFLE_FLAG_NAMESPACE = 'course_home'
 
@@ -95,3 +97,28 @@ def audit_learner_verified_preview_is_enabled(course_key):
     Returns True if the audit learner verified preview feature is enabled for a given course.
     """
     return COURSE_HOME_AUDIT_LEARNER_VERIFIED_PREVIEW.is_enabled(course_key)
+
+def learner_can_preview_verifeied_content(course_key, user):
+    """
+    Determine if an audit learner can preview verified content in a course.
+
+    Args:
+        course_key: The course identifier.
+        user: The user object
+    Returns:
+        True if the learner can preview verified content, False otherwise.
+    """
+
+    # Check if the feature is enabled for the course
+    feature_enabled = audit_learner_verified_preview_is_enabled(course_key)
+
+    # Check if the course has a verified mode
+    course_has_verified_mode = CourseMode.has_verified_mode(course_key)
+
+    # Get user enrollment information
+    enrollment = CourseEnrollment.get_enrollment(user, course_key)
+    user_enrolled_as_audit = enrollment is not None and enrollment.mode == CourseMode.AUDIT
+
+    return (
+        feature_enabled and user_enrolled_as_audit and course_has_verified_mode
+    )
