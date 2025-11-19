@@ -36,7 +36,7 @@ from lms.djangoapps.course_home_api.outline.serializers import (
 )
 from lms.djangoapps.course_home_api.utils import get_course_or_403
 from lms.djangoapps.course_home_api.tasks import collect_progress_for_user_in_course
-from lms.djangoapps.course_home_api.toggles import send_course_progress_analytics_for_student_is_enabled
+from lms.djangoapps.course_home_api.toggles import learner_can_preview_verifeied_content, send_course_progress_analytics_for_student_is_enabled
 from lms.djangoapps.courseware.access import has_access
 from lms.djangoapps.courseware.context_processor import user_timezone_locale_prefs
 from lms.djangoapps.courseware.courses import get_course_date_blocks, get_course_info_section
@@ -209,6 +209,7 @@ class OutlineTabView(RetrieveAPIView):
         allow_anonymous = COURSE_ENABLE_UNENROLLED_ACCESS_FLAG.is_enabled(course_key)
         allow_public = allow_anonymous and course.course_visibility == COURSE_VISIBILITY_PUBLIC
         allow_public_outline = allow_anonymous and course.course_visibility == COURSE_VISIBILITY_PUBLIC_OUTLINE
+        allow_preview_of_verified_content = learner_can_preview_verifeied_content(course_key, request.user)
 
         # User locale settings
         user_timezone_locale = user_timezone_locale_prefs(request)
@@ -338,6 +339,19 @@ class OutlineTabView(RetrieveAPIView):
                         seq_data['type'] != 'sequential'
                     )
                 ] if 'children' in chapter_data else []
+
+        # For audit preview of verified content, we don't remove verified content.
+        # Instead, we mark it as preview so the frontend can handle it appropriately.
+        if allow_preview_of_verified_content:
+            previewable_sequences = {str(usage_key) for usage_key in user_course_outline.previewable_sequences}
+
+            # Iterate through course_blocks to mark previewable sequences and chapters
+            for chapter_data in course_blocks['children']:
+                if chapter_data['id'] in previewable_sequences:
+                    chapter_data['is_preview'] = True
+                for seq_data in chapter_data.get('children', []):
+                    if seq_data['id'] in previewable_sequences:
+                        seq_data['is_preview'] = True
 
         user_has_passing_grade = False
         if not request.user.is_anonymous:
