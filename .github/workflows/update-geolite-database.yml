@@ -85,7 +85,7 @@ jobs:
           echo "PR Created: ${PR_URL}"
           echo "pull-request-url=$PR_URL" >> $GITHUB_OUTPUT
         env:
-          GH_TOKEN: ${{ github.GH_PAT_FOR_TEAM_REVIEW }}
+          GH_TOKEN: ${{ secrets.GH_PAT_FOR_TEAM_REVIEW }}
 
       - name: Job summary
         run: |
