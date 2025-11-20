@@ -351,7 +351,8 @@ class Thread(models.Model):
         Restores an individual soft-deleted thread by setting is_deleted=False
         Public method for individual thread restoration
         """
-        return cls._restore_thread(thread_id, course_id, restored_by)
+        thread = CommentThread().get(thread_id)
+        return cls._restore_thread(thread["_id"], course_id, restored_by)
 
     @classmethod
     def _restore_thread(cls, thread_id, course_id=None, restored_by=None):
@@ -376,7 +377,6 @@ class Thread(models.Model):
             {'_id': thread_id},
             {'$set': update_data}
         )
-        
         if result.matched_count == 0:
             log.warning("Thread %s not found for restoration", thread_id)
             return False

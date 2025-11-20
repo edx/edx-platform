@@ -191,7 +191,8 @@ class Comment(models.Model):
         Restores an individual soft-deleted comment by setting is_deleted=False
         Public method for individual comment restoration
         """
-        return cls._restore_comment(comment_id, course_id, restored_by)
+        comment = ForumComment().get(comment_id)
+        return cls._restore_comment(comment["_id"], course_id, restored_by)
 
     @classmethod
     def _restore_comment(cls, comment_id, course_id=None, restored_by=None):
