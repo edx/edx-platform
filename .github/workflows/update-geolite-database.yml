@@ -70,7 +70,7 @@ jobs:
         id: create-pr
         run: |
           BRANCH="${{ github.actor }}/geoip2-bot-update-country-database-${{ github.run_id }}"
-          git checkout -b "$BRANCH"
+          git checkout -b $BRANCH
           git add .
           git status
           git commit -m "chore: geoip2: update maxmind geolite country database"
