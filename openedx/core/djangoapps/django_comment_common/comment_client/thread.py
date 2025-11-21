@@ -271,8 +271,7 @@ class Thread(models.Model):
             raise ForumV2RequestError("Failed to prepare thread API response") from error
 
         start_time = time.perf_counter()
-        # backend.delete_subscriptions_of_a_thread(thread_id)
-        backend.soft_delete_subscriptions_of_a_thread(thread_id)
+        backend.delete_subscriptions_of_a_thread(thread_id)
         log.info(f"{prefix} Delete subscriptions {time.perf_counter() - start_time} sec")
 
         start_time = time.perf_counter()
