@@ -108,17 +108,20 @@ def learner_can_preview_verified_content(course_key, user):
     Returns:
         True if the learner can preview verified content, False otherwise.
     """
-
-    # Check if the feature is enabled for the course
+    # To preview verified content, the feature must be enabled for the course...
     feature_enabled = audit_learner_verified_preview_is_enabled(course_key)
+    if not feature_enabled:
+        return False
 
-    # Check if the course has a verified mode
+    # ... the the course must have a verified mode
     course_has_verified_mode = CourseMode.has_verified_mode(course_key)
+    if not course_has_verified_mode:
+        return False
 
-    # Get user enrollment information
+    # ... and the user must be enrolled as audit
     enrollment = CourseEnrollment.get_enrollment(user, course_key)
     user_enrolled_as_audit = enrollment is not None and enrollment.mode == CourseMode.AUDIT
+    if not user_enrolled_as_audit:
+        return False
 
-    return (
-        feature_enabled and user_enrolled_as_audit and course_has_verified_mode
-    )
+    return True
