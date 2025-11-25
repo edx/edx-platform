@@ -111,7 +111,7 @@ class TestLearnerCanPreviewVerifiedContent(TestCase):
         self.mock_verified_mode_for_course.return_value = None
 
         # ... even if all other conditions are met
-        self.mock_feature_enabled.return_value = self.course_modes_dict["professional"]
+        self.mock_feature_enabled.return_value = True
         self._enroll_user(CourseMode.AUDIT)
 
         # When I check if the learner can preview verified content
@@ -127,7 +127,9 @@ class TestLearnerCanPreviewVerifiedContent(TestCase):
 
         # ... even if all other conditions are met
         self.mock_feature_enabled.return_value = True
-        self.mock_verified_mode_for_course.return_value = True
+        self.mock_verified_mode_for_course.return_value = self.course_modes_dict[
+            "professional"
+        ]
 
         # When I check if the learner can preview verified content
         result = learner_can_preview_verified_content(self.course_key, self.user)
@@ -142,7 +144,9 @@ class TestLearnerCanPreviewVerifiedContent(TestCase):
 
         # ... even if all other conditions are met
         self.mock_feature_enabled.return_value = True
-        self.mock_verified_mode_for_course.return_value = True
+        self.mock_verified_mode_for_course.return_value = self.course_modes_dict[
+            "professional"
+        ]
 
         # When I check if the learner can preview verified content
         result = learner_can_preview_verified_content(self.course_key, self.user)
