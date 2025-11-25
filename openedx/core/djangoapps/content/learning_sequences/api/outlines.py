@@ -360,9 +360,9 @@ def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnes
             with function_trace(f'learning_sequences.api.outline_processors.{name}'):
 
                 # An exception is made for audit preview of verified content.
-                # We don't want to remove content here, instead we
-                # ... this will get marked later when assembling outline
-                if preview_verified_content:
+                # Where enabled, we selectively disable the enrollment track partition processor
+                # so audit learners can preview (see presence of, but not access) of other track content.
+                if name == 'enrollment_track_partitions' and preview_verified_content:
                     preview_usage_keys |= processor.usage_keys_to_remove(full_course_outline)
                     continue
 
