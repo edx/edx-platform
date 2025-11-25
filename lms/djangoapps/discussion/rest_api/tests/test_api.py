@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urlunparse
 import ddt
 import httpretty
 import pytest
+from django.core.exceptions import ValidationError
 from django.test import override_settings
 from django.contrib.auth import get_user_model
 from django.test.client import RequestFactory
@@ -30,6 +31,8 @@ from common.djangoapps.student.tests.factories import (
 from common.djangoapps.util.testing import UrlResetMixin
 from lms.djangoapps.discussion.django_comment_client.tests.utils import ForumsEnableMixin
 from lms.djangoapps.discussion.rest_api.api import (
+    create_comment,
+    create_thread,
     get_course,
     get_course_topics,
     get_user_comments,
@@ -37,6 +40,7 @@ from lms.djangoapps.discussion.rest_api.api import (
 from lms.djangoapps.discussion.rest_api.exceptions import (
     DiscussionDisabledError,
 )
+from rest_framework.exceptions import PermissionDenied
 from lms.djangoapps.discussion.rest_api.tests.utils import (
     CommentsServiceMockMixin,
     make_minimal_cs_comment,
@@ -49,6 +53,10 @@ from openedx.core.djangoapps.django_comment_common.models import (
     FORUM_ROLE_MODERATOR,
     FORUM_ROLE_STUDENT,
     Role
+)
+from openedx.core.djangoapps.django_comment_common.comment_client.utils import (
+    CommentClient500Error,
+    CommentClientRequestError,
 )
 from openedx.core.lib.exceptions import CourseNotFoundError, PageNotFoundError
 
@@ -132,6 +140,7 @@ class GetCourseTest(ForumsEnableMixin, UrlResetMixin, SharedModuleStoreTestCase)
         assert get_course(self.request, self.course.id) == {
             'id': str(self.course.id),
             'is_posting_enabled': True,
+            'is_user_banned': False,
             'blackouts': [],
             'thread_list_url': 'http://testserver/api/discussion/v1/threads/?course_id=course-v1%3Ax%2By%2Bz',
             'following_thread_list_url':
@@ -159,7 +168,8 @@ class GetCourseTest(ForumsEnableMixin, UrlResetMixin, SharedModuleStoreTestCase)
             },
             "is_email_verified": True,
             "only_verified_users_can_post": False,
-            "content_creation_rate_limited": False
+            "content_creation_rate_limited": False,
+            "enable_discussion_ban": False,
         }
 
     @ddt.data(
@@ -752,3 +762,117 @@ class GetUserCommentsTest(ForumsEnableMixin, CommentsServiceMockMixin, SharedMod
                 course_key=CourseKey.from_string("course-v1:x+y+z"),
                 page=2,
             )
+
+
+def test_create_thread_denies_banned_user():
+    request = RequestFactory().post('/dummy')
+    request.user = mock.Mock()
+
+    with mock.patch(
+        "lms.djangoapps.discussion.rest_api.api._get_course",
+        return_value=mock.Mock(),
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.get_context",
+        return_value={},
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.discussion_open_for_user",
+        return_value=True,
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api._check_initializable_thread_fields",
+        side_effect=ValidationError("downstream validation"),
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.ENABLE_DISCUSSION_BAN.is_enabled",
+        return_value=True,
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.forum_api.is_user_banned",
+        return_value=True,
+        create=True,
+    ):
+        with pytest.raises(PermissionDenied, match="You are banned from posting"):
+            create_thread(request, {"course_id": "course-v1:x+y+z"})
+
+
+def test_create_comment_denies_banned_user():
+    request = RequestFactory().post('/dummy')
+    request.user = mock.Mock()
+    course = mock.Mock()
+    course.id = CourseKey.from_string("course-v1:x+y+z")
+
+    with mock.patch(
+        "lms.djangoapps.discussion.rest_api.api._get_thread_and_context",
+        return_value=({"closed": False}, {"course": course}),
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.discussion_open_for_user",
+        return_value=True,
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api._check_initializable_comment_fields",
+        side_effect=ValidationError("downstream validation"),
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.ENABLE_DISCUSSION_BAN.is_enabled",
+        return_value=True,
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.forum_api.is_user_banned",
+        return_value=True,
+        create=True,
+    ):
+        with pytest.raises(PermissionDenied, match="You are banned from posting"):
+            create_comment(request, {"thread_id": "test_thread"})
+
+
+def test_create_thread_ban_check_backend_error_fails_open():
+    request = RequestFactory().post('/dummy')
+    request.user = mock.Mock(id=123)
+
+    with mock.patch(
+        "lms.djangoapps.discussion.rest_api.api._get_course",
+        return_value=mock.Mock(),
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.get_context",
+        return_value={},
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.discussion_open_for_user",
+        return_value=True,
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api._check_initializable_thread_fields",
+        side_effect=ValidationError("downstream validation"),
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.ENABLE_DISCUSSION_BAN.is_enabled",
+        return_value=True,
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.forum_api.is_user_banned",
+        side_effect=CommentClientRequestError("temporary backend failure"),
+        create=True,
+    ), mock.patch("lms.djangoapps.discussion.rest_api.api.log.warning") as warning_log:
+        with pytest.raises(ValidationError):
+            create_thread(request, {"course_id": "course-v1:x+y+z"})
+
+    warning_log.assert_called_once()
+
+
+def test_create_comment_ban_check_backend_error_fails_open():
+    request = RequestFactory().post('/dummy')
+    request.user = mock.Mock(id=123)
+    course = mock.Mock()
+    course.id = CourseKey.from_string("course-v1:x+y+z")
+
+    with mock.patch(
+        "lms.djangoapps.discussion.rest_api.api._get_thread_and_context",
+        return_value=({"closed": False}, {"course": course}),
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.discussion_open_for_user",
+        return_value=True,
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api._check_initializable_comment_fields",
+        side_effect=ValidationError("downstream validation"),
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.ENABLE_DISCUSSION_BAN.is_enabled",
+        return_value=True,
+    ), mock.patch(
+        "lms.djangoapps.discussion.rest_api.api.forum_api.is_user_banned",
+        side_effect=CommentClient500Error("temporary backend failure"),
+        create=True,
+    ), mock.patch("lms.djangoapps.discussion.rest_api.api.log.warning") as warning_log:
+        with pytest.raises(ValidationError):
+            create_comment(request, {"thread_id": "test_thread"})
+
+    warning_log.assert_called_once()

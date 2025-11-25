@@ -519,6 +519,8 @@ class CommentSerializerTest(SerializerTestMixin, SharedModuleStoreTestCase):
             "parent_id": None,
             "author": self.author.username,
             "author_label": None,
+            "is_author_banned": False,
+            "author_ban_scope": None,
             "created_at": "2015-04-28T00:00:00Z",
             "updated_at": "2015-04-28T11:11:11Z",
             "raw_body": "Test body",
@@ -647,6 +649,43 @@ class CommentSerializerTest(SerializerTestMixin, SharedModuleStoreTestCase):
         assert serialized["children"][1]["parent_id"] == "test_root"
         assert serialized["children"][1]["children"][0]["id"] == "test_grandchild"
         assert serialized["children"][1]["children"][0]["parent_id"] == "test_child_2"
+
+    @mock.patch.dict(
+        "django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True}
+    )
+    def test_ban_lookup_is_memoized_for_duplicate_authors(self):
+        comment_1 = self.make_cs_content({"id": "test_comment_1"})
+        comment_2 = self.make_cs_content({"id": "test_comment_2"})
+        context = get_context(
+            self.course,
+            self.request,
+            make_minimal_cs_thread({"id": "test_thread"}),
+        )
+
+        with mock.patch(
+            "lms.djangoapps.discussion.toggles.ENABLE_DISCUSSION_BAN.is_enabled",
+            return_value=True,
+        ), mock.patch(
+            "forum.api.is_user_banned",
+            return_value=True,
+            create=True,
+        ) as is_user_banned_mock, mock.patch(
+            "forum.api.get_user_bans",
+            return_value=[{"is_active": True, "scope": "course"}],
+            create=True,
+        ) as get_user_bans_mock:
+            serialized = CommentSerializer(
+                [comment_1, comment_2],
+                context=context,
+                many=True,
+            ).data
+
+        assert serialized[0]["is_author_banned"] is True
+        assert serialized[0]["author_ban_scope"] == "course"
+        assert serialized[1]["is_author_banned"] is True
+        assert serialized[1]["author_ban_scope"] == "course"
+        assert is_user_banned_mock.call_count == 1
+        assert get_user_bans_mock.call_count == 1
 
 
 @ddt.ddt
