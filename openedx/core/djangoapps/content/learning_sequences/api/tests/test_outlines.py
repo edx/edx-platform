@@ -203,7 +203,9 @@ class UserCourseOutlineTestCase(CacheIsolationTestCase):
         # Enroll beta tester in the course
         cls.beta_tester.courseenrollment_set.create(course_id=cls.course_key, is_active=True, mode="audit")
         # Enroll verified student in the course as verified
-        cls.verified_student.courseenrollment_set.create(course_id=cls.course_key, is_active=True, mode=CourseMode.VERIFIED)
+        cls.verified_student.courseenrollment_set.create(
+            course_id=cls.course_key, is_active=True, mode=CourseMode.VERIFIED
+        )
 
     def test_simple_outline(self):
         """This outline is the same for everyone."""
