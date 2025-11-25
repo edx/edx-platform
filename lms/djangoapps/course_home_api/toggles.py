@@ -98,6 +98,7 @@ def audit_learner_verified_preview_is_enabled(course_key):
     """
     return COURSE_HOME_AUDIT_LEARNER_VERIFIED_PREVIEW.is_enabled(course_key)
 
+
 def learner_can_preview_verified_content(course_key, user):
     """
     Determine if an audit learner can preview verified content in a course.

@@ -497,7 +497,7 @@ class OutlineTabTestViews(BaseCourseHomeTests):
         with self.store.bulk_operations(self.course.id):
             chapter = BlockFactory.create(category='chapter', parent_location=self.course.location)
             sequential = BlockFactory.create(
-                category='sequential', 
+                category='sequential',
                 parent_location=chapter.location,
                 display_name='Verified Sequential',
                 group_access={ENROLLMENT_TRACK_PARTITION_ID: [2]}  # restrict to verified only
@@ -532,12 +532,12 @@ class OutlineTabTestViews(BaseCourseHomeTests):
         with self.store.bulk_operations(self.course.id):
             chapter = BlockFactory.create(category='chapter', parent_location=self.course.location)
             verified_sequential = BlockFactory.create(
-                category='sequential', 
+                category='sequential',
                 parent_location=chapter.location,
                 display_name='Verified Sequential',
             )
             regular_sequential = BlockFactory.create(
-                category='sequential', 
+                category='sequential',
                 parent_location=chapter.location,
                 display_name='Regular Sequential'
             )
@@ -560,7 +560,7 @@ class OutlineTabTestViews(BaseCourseHomeTests):
 
         # ... with course_blocks populated
         course_blocks = response.data['course_blocks']["blocks"]
-  
+
         for block in course_blocks:
             # ... and the verified only content is marked as preview only
             if UsageKey.from_string(block) in mock_course_outline.previewable_sequences:
@@ -568,6 +568,7 @@ class OutlineTabTestViews(BaseCourseHomeTests):
             # ... and the regular content is not marked as preview
             else:
                 assert course_blocks[block].get('is_preview') is False
+
 
 @ddt.ddt
 class SidebarBlocksTestViews(BaseCourseHomeTests):

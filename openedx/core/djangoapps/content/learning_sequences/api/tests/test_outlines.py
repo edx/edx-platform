@@ -242,7 +242,7 @@ class UserCourseOutlineTestCase(CacheIsolationTestCase):
         audit_outline = self.simple_outline
         verified_sequence = attr.evolve(
             audit_outline.sections[0].sequences[0],
-            user_partition_groups = {
+            user_partition_groups={
                 ENROLLMENT_TRACK_PARTITION_ID: [2]  # restrict to verified only
             }
         )
@@ -278,7 +278,6 @@ class UserCourseOutlineTestCase(CacheIsolationTestCase):
         assert verified_student_outline.previewable_sequences == set()
         assert global_staff_outline.previewable_sequences == set()
 
-
     @patch('openedx.core.djangoapps.content.learning_sequences.api.outlines.learner_can_preview_verified_content')
     def test_audit_preview_of_verified_content_disabled(self, mock_learner_can_preview_verified_content):
         """
@@ -289,7 +288,7 @@ class UserCourseOutlineTestCase(CacheIsolationTestCase):
         audit_outline = self.simple_outline
         verified_sequence = attr.evolve(
             audit_outline.sections[0].sequences[0],
-            user_partition_groups = {
+            user_partition_groups={
                 ENROLLMENT_TRACK_PARTITION_ID: [2]  # restrict to verified only
             }
         )
