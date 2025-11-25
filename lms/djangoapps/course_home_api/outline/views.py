@@ -344,18 +344,18 @@ class OutlineTabView(RetrieveAPIView):
                     )
                 ] if 'children' in chapter_data else []
 
-        # For audit preview of verified content, we don't remove verified content.
-        # Instead, we mark it as preview so the frontend can handle it appropriately.
-        if allow_preview_of_verified_content:
-            previewable_sequences = {str(usage_key) for usage_key in user_course_outline.previewable_sequences}
+            # For audit preview of verified content, we don't remove verified content.
+            # Instead, we mark it as preview so the frontend can handle it appropriately.
+            if allow_preview_of_verified_content:
+                previewable_sequences = {str(usage_key) for usage_key in user_course_outline.previewable_sequences}
 
-            # Iterate through course_blocks to mark previewable sequences and chapters
-            for chapter_data in course_blocks['children']:
-                if chapter_data['id'] in previewable_sequences:
-                    chapter_data['is_preview'] = True
-                for seq_data in chapter_data.get('children', []):
-                    if seq_data['id'] in previewable_sequences:
-                        seq_data['is_preview'] = True
+                # Iterate through course_blocks to mark previewable sequences and chapters
+                for chapter_data in course_blocks['children']:
+                    if chapter_data['id'] in previewable_sequences:
+                        chapter_data['is_preview'] = True
+                    for seq_data in chapter_data.get('children', []):
+                        if seq_data['id'] in previewable_sequences:
+                            seq_data['is_preview'] = True
 
         user_has_passing_grade = False
         if not request.user.is_anonymous:
