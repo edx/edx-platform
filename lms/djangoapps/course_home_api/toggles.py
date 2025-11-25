@@ -114,7 +114,7 @@ def learner_can_preview_verified_content(course_key, user):
     if not feature_enabled:
         return False
 
-    # ... the the course must have a verified mode
+    # ... the course must have a verified mode
     course_has_verified_mode = CourseMode.verified_mode_for_course(course_key)
     if not course_has_verified_mode:
         return False
