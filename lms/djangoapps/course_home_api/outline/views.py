@@ -313,7 +313,8 @@ class OutlineTabView(RetrieveAPIView):
         # so this is a tiny first step in that migration.
         if course_blocks:
             user_course_outline = get_user_course_outline(
-                course_key, request.user, datetime.now(tz=timezone.utc)
+                course_key, request.user, datetime.now(tz=timezone.utc),
+                preview_verified_content=allow_preview_of_verified_content
             )
             available_seq_ids = {str(usage_key) for usage_key in user_course_outline.sequences}
 

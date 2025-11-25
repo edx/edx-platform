@@ -238,8 +238,7 @@ class UserCourseOutlineTestCase(CacheIsolationTestCase):
         )
         assert global_staff_outline_details.outline == global_staff_outline
 
-    @patch('openedx.core.djangoapps.content.learning_sequences.api.outlines.learner_can_preview_verified_content')
-    def test_audit_preview_of_verified_content_enabled(self, mock_learner_can_preview_verified_content):
+    def test_audit_preview_of_verified_content_enabled(self):
         # Given an outline where some content is restricted to verified only
         audit_outline = self.simple_outline
         verified_sequence = attr.evolve(
@@ -253,18 +252,15 @@ class UserCourseOutlineTestCase(CacheIsolationTestCase):
         at_time = datetime(2020, 5, 21, tzinfo=timezone.utc)
 
         # ... and where the audit learner verified preview feature is enabled
-        mock_learner_can_preview_verified_content.return_value = True
-
         # When I access them as an audit user
         audit_student_outline = get_user_course_outline(
-            self.course_key, self.student, at_time
+            self.course_key, self.student, at_time, preview_verified_content=True
         )
 
         # Then verified-only content is marked as previewable for the audit user
         assert verified_sequence.usage_key in audit_student_outline.previewable_sequences
 
         # When I access them as a verified user, which would disable this preview check
-        mock_learner_can_preview_verified_content.return_value = False
         verified_student_outline = get_user_course_outline(
             self.course_key, self.verified_student, at_time
         )
@@ -280,8 +276,7 @@ class UserCourseOutlineTestCase(CacheIsolationTestCase):
         assert verified_student_outline.previewable_sequences == set()
         assert global_staff_outline.previewable_sequences == set()
 
-    @patch('openedx.core.djangoapps.content.learning_sequences.api.outlines.learner_can_preview_verified_content')
-    def test_audit_preview_of_verified_content_disabled(self, mock_learner_can_preview_verified_content):
+    def test_audit_preview_of_verified_content_disabled(self):
         """
         This outline has verified content that an audit user can preview
         only when the feature is enabled.
@@ -299,11 +294,10 @@ class UserCourseOutlineTestCase(CacheIsolationTestCase):
         at_time = datetime(2020, 5, 21, tzinfo=timezone.utc)
 
         # ... and where the audit learner verified preview feature is disabled
-        mock_learner_can_preview_verified_content.return_value = False
-
         # When I access them as an audit user
         audit_student_outline = get_user_course_outline(
-            self.course_key, self.student, at_time
+            self.course_key, self.student, at_time,
+            preview_verified_content=False
         )
 
         # Then verified-only content is removed from the outline for the audit user

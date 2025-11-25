@@ -12,7 +12,6 @@ from django.db import transaction
 from django.db.models.query import QuerySet
 from edx_django_utils.cache import TieredCache
 from edx_django_utils.monitoring import function_trace, set_custom_attribute
-from lms.djangoapps.course_home_api.toggles import learner_can_preview_verified_content
 from opaque_keys import OpaqueKey
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import LibraryLocator
@@ -259,17 +258,23 @@ def get_content_errors(course_key: CourseKey) -> List[ContentErrorData]:
 @function_trace('learning_sequences.api.get_user_course_outline')
 def get_user_course_outline(course_key: CourseKey,
                             user: types.User,
-                            at_time: datetime) -> UserCourseOutlineData:
+                            at_time: datetime,
+                            preview_verified_content: bool = False) -> UserCourseOutlineData:
     """
     Get an outline customized for a particular user at a particular time.
 
     `user` is a Django User object (including the AnonymousUser)
     `at_time` should be a UTC datetime.datetime object.
 
+    If `preview_verified_content` is True, an audit user will be able to see the
+    presence of verified content even if they are not enrolled in verified mode.
+
     See the definition of UserCourseOutlineData for details about the data
     returned.
     """
-    user_course_outline, _ = _get_user_course_outline_and_processors(course_key, user, at_time)
+    user_course_outline, _ = _get_user_course_outline_and_processors(
+        course_key, user, at_time, preview_verified_content=preview_verified_content
+    )
     return user_course_outline
 
 
@@ -303,7 +308,8 @@ def get_user_course_outline_details(course_key: CourseKey,
 
 def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnesty, pylint: disable=missing-function-docstring
                                             user: types.User,
-                                            at_time: datetime):
+                                            at_time: datetime,
+                                            preview_verified_content: bool = False):
     """
     Helper function that runs the outline processors.
 
@@ -319,7 +325,6 @@ def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnes
 
     full_course_outline = get_course_outline(course_key)
     user_can_see_all_content = can_see_all_content(user, course_key)
-    user_can_preview_verified_content = learner_can_preview_verified_content(course_key, user)
 
     # These are processors that alter which sequences are visible to students.
     # For instance, certain sequences that are intentionally hidden or not yet
@@ -357,7 +362,7 @@ def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnes
                 # An exception is made for audit preview of verified content.
                 # We don't want to remove content here, instead we
                 # ... this will get marked later when assembling outline
-                if name == 'enrollment_track_partitions' and user_can_preview_verified_content:
+                if preview_verified_content:
                     preview_usage_keys |= processor.usage_keys_to_remove(full_course_outline)
                     continue
 
