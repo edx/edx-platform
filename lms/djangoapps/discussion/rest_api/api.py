@@ -1739,6 +1739,10 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
         cc_comment = Comment(id=comment_id).retrieve()
         reverse_order = request.GET.get('reverse_order', False)
         show_deleted = request.GET.get('show_deleted', False)
+        if show_deleted in ['true', 'True', True]:
+            show_deleted = True
+        else:
+            show_deleted = False
         cc_thread, context = _get_thread_and_context(
             request,
             cc_comment["thread_id"],
@@ -1746,6 +1750,7 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
                 "with_responses": True,
                 "recursive": True,
                 "reverse_order": reverse_order,
+                "show_deleted": show_deleted,
             }
         )
         if cc_thread["thread_type"] == "question":
@@ -1772,7 +1777,7 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
             request, context, paged_response_comments, requested_fields, DiscussionEntity.comment
         )
 
-        comments_count = len(response_comments)
+        comments_count = len(paged_response_comments)
         num_pages = (comments_count + page_size - 1) // page_size if comments_count else 1
         paginator = DiscussionAPIPagination(request, page, num_pages, comments_count)
         return paginator.get_paginated_response(results)
@@ -1950,6 +1955,7 @@ def get_course_discussion_user_stats(
         }
         course = _get_course(course_key, request.user)
         track_forum_search_event(request, course, search_event_data)
+
         if not comma_separated_usernames:
             return DiscussionAPIPagination(request, 0, 1).get_paginated_response({
                 "results": [],
