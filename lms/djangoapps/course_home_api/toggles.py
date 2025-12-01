@@ -3,6 +3,7 @@ Toggles for course home experience.
 """
 
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
+from openedx.core.lib.cache_utils import request_cached
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment
 
@@ -99,6 +100,7 @@ def audit_learner_verified_preview_is_enabled(course_key):
     return COURSE_HOME_AUDIT_LEARNER_VERIFIED_PREVIEW.is_enabled(course_key)
 
 
+@request_cached()
 def learner_can_preview_verified_content(course_key, user):
     """
     Determine if an audit learner can preview verified content in a course.
