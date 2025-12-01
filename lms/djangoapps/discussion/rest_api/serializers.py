@@ -201,6 +201,7 @@ class _ContentSerializer(serializers.Serializer):
     is_deleted = serializers.SerializerMethodField(read_only=True)
     deleted_at = serializers.SerializerMethodField(read_only=True)
     deleted_by = serializers.SerializerMethodField(read_only=True)
+    deleted_by_label = serializers.SerializerMethodField(read_only=True)
 
     non_updatable_fields = set()
 
@@ -403,6 +404,20 @@ class _ContentSerializer(serializers.Serializer):
                 user = User.objects.get(id=int(deleted_by_id))
                 return user.username
             except (User.DoesNotExist, ValueError):
+                return None
+        return None
+
+    def get_deleted_by_label(self, obj):
+        """
+        Returns the role label for the user who deleted this content for privileged users only.
+        """
+        if not _validate_privileged_access(self.context):
+            return None
+        deleted_by_id = obj.get('deleted_by')
+        if deleted_by_id:
+            try:
+                return self._get_user_label(int(deleted_by_id))
+            except (ValueError, TypeError):
                 return None
         return None
 

@@ -1821,6 +1821,7 @@ class DeletedContentView(DeveloperErrorViewMixin, APIView):
             from lms.djangoapps.discussion.rest_api.api import get_deleted_content_for_course
             
             results = get_deleted_content_for_course(
+                request=request,
                 course_id=str(course_key),
                 content_type=content_type,
                 page=page,
