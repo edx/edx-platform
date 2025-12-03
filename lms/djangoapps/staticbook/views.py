@@ -92,7 +92,7 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
     if 'url' in textbook:
         textbook['url'] = remap_static_url(textbook['url'], course)
         current_url = textbook['url']
-        if not current_url.startswith('https://'):
+        if not current_url.startswith(('http://', 'https://')):
             viewer_params = '&file='
             viewer_params += current_url
 
@@ -107,7 +107,7 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
             current_chapter = textbook['chapters'][0]
 
         current_url = current_chapter['url']
-        if not current_url.startswith('https://'):
+        if not current_url.startswith(('http://', 'https://')):
             viewer_params = '&file='
             viewer_params += current_url
 
