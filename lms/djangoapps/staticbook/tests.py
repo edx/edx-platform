@@ -157,7 +157,7 @@ class StaticPdfBookTest(StaticBookTest):
         response = self.client.get(url)
         self.assertContains(response, "Chapter 2 for PDF")
         self.assertNotContains(response, "file={}".format(PDF_BOOK['chapters'][1]['url']))
-        self.assertContains(response, "page=17")
+        self.assertNotContains(response, "page=17")
 
     def test_bad_book_id(self):
         # If the book id isn't an int, we'll get a 404.
