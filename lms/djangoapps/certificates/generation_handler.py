@@ -233,6 +233,11 @@ def _can_generate_certificate_common(user, course_key, enrollment_mode):
                  f'{user.id}.')
         return False
 
+    proctoring_check = _has_blocking_proctoring_status(user, course_key)
+    if not proctoring_check[0]:
+        log.info(f'Proctoring check failed for {user.id} : {course_key}. {proctoring_check[1]}')
+        return False
+
     return True
 
 
@@ -456,3 +461,133 @@ def _id_verification_enforced_and_missing(user):
     """
     return settings.FEATURES.get(
         'ENABLE_CERTIFICATES_IDV_REQUIREMENT') and not IDVerificationService.user_is_verified(user)
+
+
+def _has_blocking_proctoring_status(user, course_key):
+    """
+    Check if user has any blocking proctoring statuses that prevent certificate generation.
+
+    Args:
+        user: User object
+        course_key: CourseKey object
+
+    Returns:
+        tuple: (is_satisfied: bool, message: str, status: str)
+            - is_satisfied: True if no blocking statuses exist
+            - message: Human-readable explanation if blocked
+            - status: Specific certificate status to set if blocked
+    """
+
+    # 1. API Selection Logic
+    try:
+        # Try edx-exams first (newer system)
+        from edx_exams.apps.core.api import get_course_exams, get_current_exam_attempt
+        from edx_exams.apps.core.statuses import ExamAttemptStatus
+        api_source = 'edx-exams'
+        log.info(f'Using edx-exams API for proctoring check for user {user.id} in course {course_key}')
+    except ImportError:
+        try:
+            # Fall back to legacy edx-proctoring
+            from edx_proctoring.api import get_all_exams_for_course, get_exam_attempt_by_id
+            from edx_proctoring.statuses import ProctoredExamStudentAttemptStatus as ExamAttemptStatus
+            api_source = 'edx-proctoring'
+            log.info(f'Using legacy edx-proctoring API for proctoring check for user {user.id} in course {course_key}')
+        except ImportError:
+            # No proctoring system available - allow certificate
+            log.info(f'No proctoring system available for user {user.id} in course {course_key}. Allowing certificate.')
+            return True, "", ""
+
+    # 2. Get Proctored Exams for Course
+    try:
+        if api_source == 'edx-exams':
+            exams = get_course_exams(str(course_key))
+            proctored_exams = [exam for exam in exams if _is_proctored_exam(exam)]
+        else:
+            exams = get_all_exams_for_course(str(course_key))
+            proctored_exams = [exam for exam in exams if exam['is_proctored'] and not exam.get('is_practice_exam', False)]
+    except Exception as e:
+        log.warning(f'Error getting exams for course {course_key}: {e}. Allowing certificate.')
+        return True, "", ""
+
+    # 3. Early Return - No Proctored Exams
+    if not proctored_exams:
+        log.info(f'No proctored exams found for course {course_key}. Allowing certificate for user {user.id}.')
+        return True, "", ""
+
+    # 4. Check Each Exam for Blocking Statuses
+    for exam in proctored_exams:
+        try:
+            attempt = _get_user_exam_attempt(user, exam, api_source)
+            blocking_result = _check_exam_attempt_blocking(attempt, exam)
+
+            if not blocking_result['is_satisfied']:
+                log.info(f'Certificate blocked for user {user.id} in course {course_key}: {blocking_result["message"]}')
+                return False, blocking_result['message'], blocking_result['status']
+        except Exception as e:
+            log.warning(f'Error checking exam attempt for user {user.id}, exam {exam}: {e}. Continuing check.')
+            continue
+
+    log.info(f'All proctored exams satisfied for user {user.id} in course {course_key}. Allowing certificate.')
+    return True, "", ""
+
+
+def _is_proctored_exam(exam):
+    """Helper to identify actual proctored exams (not practice/onboarding)"""
+    return hasattr(exam, 'is_proctored') and exam.is_proctored and not getattr(exam, 'is_practice', False)
+
+
+def _get_user_exam_attempt(user, exam, api_source):
+    """Get user's latest attempt for the exam using appropriate API"""
+    try:
+        if api_source == 'edx-exams':
+            from edx_exams.apps.core.api import get_current_exam_attempt
+            return get_current_exam_attempt(user.id, exam.id)
+        else:
+            from edx_proctoring.api import get_exam_attempt_by_id
+            return get_exam_attempt_by_id(user.id, exam['id'])
+    except Exception as e:
+        log.warning(f'Error getting exam attempt for user {user.id}, exam {exam}: {e}')
+        return None
+
+
+def _check_exam_attempt_blocking(attempt, exam):
+    """Check if exam attempt has blocking status and return appropriate response"""
+    exam_name = getattr(exam, 'exam_name', exam.get('exam_name', 'proctored exam'))
+
+    # No attempt taken
+    if attempt is None:
+        return {
+            'is_satisfied': False,
+            'message': f"Proctored exam '{exam_name}' must be completed before certificate issuance.",
+            'status': CertificateStatuses.proctoring_review_pending
+        }
+
+    # Check specific blocking statuses
+    status_checks = {
+        'submitted': {
+            'message': f"Certificate issuance is pending review of your proctored exam '{exam_name}'.",
+            'status': CertificateStatuses.proctoring_review_pending
+        },
+        'second_review_required': {
+            'message': f"Certificate issuance is pending additional review of your proctored exam '{exam_name}'.",
+            'status': CertificateStatuses.proctoring_review_pending
+        },
+        'rejected': {
+            'message': f"Certificate cannot be issued due to proctored exam '{exam_name}' not meeting requirements.",
+            'status': CertificateStatuses.proctoring_failed
+        },
+        'error': {
+            'message': f"Certificate issuance is delayed due to a technical issue with proctored exam '{exam_name}'. Please contact support.",
+            'status': CertificateStatuses.proctoring_error
+        }
+    }
+
+    attempt_status = getattr(attempt, 'status', attempt.get('status'))
+    if attempt_status in status_checks:
+        return {
+            'is_satisfied': False,
+            **status_checks[attempt_status]
+        }
+
+    # Status is acceptable (verified, timed_out, expired, etc.)
+    return {'is_satisfied': True}

@@ -49,6 +49,11 @@ class CertificateStatuses:
     invalidated = 'invalidated'
     requesting = 'requesting'
 
+    # Proctoring-related statuses
+    proctoring_review_pending = 'proctoring_review_pending'
+    proctoring_failed = 'proctoring_failed'
+    proctoring_error = 'proctoring_error'
+
     readable_statuses = {
         downloadable: "already received",
         notpassing: "didn't receive",
@@ -81,3 +86,37 @@ class CertificateStatuses:
             bool: True if the status is refundable.
         """
         return status not in cls.NON_REFUNDABLE_STATUSES
+
+    @classmethod
+    def is_not_passing_status(cls, status):
+        """Return True if status means student has not passed."""
+        not_passing_statuses = [
+            cls.notpassing,
+            cls.proctoring_review_pending,
+            cls.proctoring_failed,
+            cls.proctoring_error,
+        ]
+        return status in not_passing_statuses
+
+    @classmethod
+    def is_proctoring_blocked_status(cls, status):
+        """Return True if status indicates certificate is blocked by proctoring."""
+        return status in [
+            cls.proctoring_review_pending,
+            cls.proctoring_failed,
+            cls.proctoring_error,
+        ]
+
+
+# User-friendly message mapping for certificate statuses
+CERTIFICATE_STATUS_MESSAGES = {
+    CertificateStatuses.proctoring_review_pending: (
+        "Certificate issuance is pending review of your proctored exam."
+    ),
+    CertificateStatuses.proctoring_failed: (
+        "Certificate cannot be issued due to proctored exam requirements not being met."
+    ),
+    CertificateStatuses.proctoring_error: (
+        "Certificate issuance is delayed due to a technical issue. Please contact support."
+    ),
+}

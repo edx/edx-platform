@@ -24,9 +24,10 @@ from common.djangoapps.student.api import is_user_enrolled_in_course
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.branding import api as branding_api
 from lms.djangoapps.certificates.config import AUTO_CERTIFICATE_GENERATION as _AUTO_CERTIFICATE_GENERATION
-from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.certificates.data import CertificateStatuses, CERTIFICATE_STATUS_MESSAGES
 from lms.djangoapps.certificates.generation_handler import generate_certificate_task as _generate_certificate_task
 from lms.djangoapps.certificates.generation_handler import is_on_certificate_allowlist as _is_on_certificate_allowlist
+from lms.djangoapps.certificates.generation_handler import _has_blocking_proctoring_status
 from lms.djangoapps.certificates.models import (
     CertificateAllowlist,
     CertificateDateOverride,
@@ -322,6 +323,24 @@ def certificate_downloadable_status(student, course_key):
         )
         response_data["is_pdf_certificate"] = bool(current_status["download_url"])
         response_data["uuid"] = current_status["uuid"]
+
+    # Check proctoring status and enhance response with proctoring information
+    proctoring_satisfied, proctoring_message, proctoring_status = _has_blocking_proctoring_status(student, course_key)
+
+    # If proctoring blocks the certificate, override response
+    if not proctoring_satisfied:
+        response_data["is_downloadable"] = False
+        response_data["download_url"] = None
+        response_data["status"] = proctoring_status
+        response_data["message"] = proctoring_message
+
+    # Add proctoring-specific information to response
+    response_data["proctoring_status"] = {
+        "is_blocked_by_proctoring": not proctoring_satisfied,
+        "proctoring_message": proctoring_message,
+        "has_proctored_exams": _course_has_proctored_exams(course_key),
+        "pending_exams": _get_pending_proctored_exams(student, course_key) if not proctoring_satisfied else []
+    }
 
     return response_data
 
@@ -958,3 +977,81 @@ def clear_pii_from_certificate_records_for_user(user):
         None
     """
     GeneratedCertificate.objects.filter(user=user).update(name="")
+
+
+def _course_has_proctored_exams(course_key):
+    """Check if course has any proctored exams"""
+    try:
+        # Try edx-exams first (newer system)
+        from edx_exams.apps.core.api import get_course_exams
+        exams = get_course_exams(str(course_key))
+        return any(hasattr(exam, 'is_proctored') and exam.is_proctored and not getattr(exam, 'is_practice', False) for exam in exams)
+    except ImportError:
+        try:
+            # Fall back to legacy edx-proctoring
+            from edx_proctoring.api import get_all_exams_for_course
+            exams = get_all_exams_for_course(str(course_key))
+            return any(exam['is_proctored'] and not exam.get('is_practice_exam', False) for exam in exams)
+        except ImportError:
+            return False
+    except Exception:
+        return False
+
+
+def _get_pending_proctored_exams(student, course_key):
+    """Get list of proctored exams that are blocking certificate"""
+    pending_exams = []
+    try:
+        # Try edx-exams first (newer system)
+        from edx_exams.apps.core.api import get_course_exams, get_current_exam_attempt
+        api_source = 'edx-exams'
+        exams = get_course_exams(str(course_key))
+        proctored_exams = [exam for exam in exams if hasattr(exam, 'is_proctored') and exam.is_proctored and not getattr(exam, 'is_practice', False)]
+    except ImportError:
+        try:
+            # Fall back to legacy edx-proctoring
+            from edx_proctoring.api import get_all_exams_for_course, get_exam_attempt_by_id
+            api_source = 'edx-proctoring'
+            exams = get_all_exams_for_course(str(course_key))
+            proctored_exams = [exam for exam in exams if exam['is_proctored'] and not exam.get('is_practice_exam', False)]
+        except ImportError:
+            return pending_exams
+    except Exception:
+        return pending_exams
+
+    # Check each exam for blocking statuses
+    for exam in proctored_exams:
+        try:
+            if api_source == 'edx-exams':
+                attempt = get_current_exam_attempt(student.id, exam.id)
+            else:
+                attempt = get_exam_attempt_by_id(student.id, exam['id'])
+
+            exam_name = getattr(exam, 'exam_name', exam.get('exam_name', 'proctored exam'))
+
+            # No attempt taken or blocking status
+            if attempt is None:
+                pending_exams.append({
+                    'exam_name': exam_name,
+                    'status': 'not_attempted',
+                    'message': f"Proctored exam '{exam_name}' must be completed before certificate issuance."
+                })
+            else:
+                attempt_status = getattr(attempt, 'status', attempt.get('status'))
+                if attempt_status in ['submitted', 'second_review_required', 'rejected', 'error']:
+                    pending_exams.append({
+                        'exam_name': exam_name,
+                        'status': attempt_status,
+                        'message': f"Proctored exam '{exam_name}' is in '{attempt_status}' status."
+                    })
+        except Exception:
+            continue
+
+    return pending_exams
+
+
+def _get_certificate_status_message(certificate):
+    """Get user-friendly message for certificate status"""
+    if not certificate:
+        return "Certificate not available"
+    return CERTIFICATE_STATUS_MESSAGES.get(certificate.status, "")
