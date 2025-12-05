@@ -236,6 +236,7 @@ class Thread(models.Model):
         query_params = {
             "course_id": {"$in": course_ids},
             "author_id": str(user_id),
+            "is_deleted": {"$ne": True},
             "_type": "CommentThread"
         }
         return CommentThread()._collection.count_documents(query_params)  # pylint: disable=protected-access
@@ -259,7 +260,7 @@ class Thread(models.Model):
 
         start_time = time.perf_counter()
         # backend.delete_comments_of_a_thread(thread_id)
-        # backend.soft_delete_comments_of_a_thread(thread_id, deleted_by)
+        backend.soft_delete_comments_of_a_thread(thread_id, deleted_by)
         log.info(f"{prefix} Delete comments of thread {time.perf_counter() - start_time} sec")
 
         try:
@@ -329,20 +330,12 @@ class Thread(models.Model):
         """
         Restores (undeletes) threads of user in the given course_ids by setting is_deleted=False.
         """
-        query_params = {
-            "course_id": {"$in": course_ids},
-            "author_id": str(user_id),
-            "is_deleted": True
-        }
-        threads_restored = 0
-        threads = CommentThread().get_list(**query_params)
-        for thread in threads:
-            thread_id = thread.get("_id")
-            course_id = thread.get("course_id")
-            if thread_id:
-                cls._restore_thread(thread_id, course_id=course_id, restored_by=restored_by)
-                threads_restored += 1
-        return threads_restored
+        return forum_api.restore_user_deleted_threads(
+            user_id=str(user_id),
+            course_ids=course_ids,
+            course_id=course_ids[0] if course_ids else None,
+            restored_by=restored_by
+        )
 
     @classmethod
     def restore_thread(cls, thread_id, course_id=None, restored_by=None):
@@ -350,38 +343,23 @@ class Thread(models.Model):
         Restores an individual soft-deleted thread by setting is_deleted=False
         Public method for individual thread restoration
         """
-        thread = CommentThread().get(thread_id)
-        return cls._restore_thread(thread["_id"], course_id, restored_by)
+        return forum_api.restore_thread(
+            thread_id=thread_id,
+            course_id=course_id,
+            restored_by=restored_by
+        )
 
     @classmethod
     def _restore_thread(cls, thread_id, course_id=None, restored_by=None):
         """
         Restores a soft-deleted thread by setting is_deleted=False and clearing deletion metadata
-        Uses direct MongoDB update to ensure data persistence
+        Internal method that delegates to forum API
         """
-        # Use direct MongoDB update for reliable data persistence
-        update_data = {
-            'is_deleted': False,
-            'deleted_at': None,
-            'deleted_by': None
-        }
-        if restored_by:
-            from datetime import datetime
-            from pytz import UTC
-            update_data['restored_by'] = restored_by
-            update_data['restored_at'] = datetime.now(UTC).isoformat()
-        
-        # Update directly in MongoDB collection
-        result = CommentThread()._collection.update_one(
-            {'_id': thread_id},
-            {'$set': update_data}
+        return forum_api.restore_thread(
+            thread_id=thread_id,
+            course_id=course_id,
+            restored_by=restored_by
         )
-        if result.matched_count == 0:
-            log.warning("Thread %s not found for restoration", thread_id)
-            return False
-        else:
-            log.info("Thread %s restored successfully", thread_id)
-            return True
 
 
 def _url_for_flag_abuse_thread(thread_id):

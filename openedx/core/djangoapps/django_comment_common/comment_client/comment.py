@@ -114,6 +114,7 @@ class Comment(models.Model):
         query_params = {
             "course_id": {"$in": course_ids},
             "author_id": str(user_id),
+            "is_deleted": {"$ne": True},
             "_type": "Comment"
         }
         return ForumComment()._collection.count_documents(query_params)  # pylint: disable=protected-access
@@ -162,28 +163,12 @@ class Comment(models.Model):
         """
         Restores (undeletes) comments of user in the given course_ids by setting is_deleted=False.
         """
-        from datetime import datetime
-        from pytz import UTC
-        
-        start_time = time.time()
-        query_params = {
-            "course_id": {"$in": course_ids},
-            "author_id": str(user_id),
-            "is_deleted": True
-        }
-        comments_restored = 0
-        comments = ForumComment().get_list(**query_params)
-        log.info(f"<<Bulk Restore>> Fetched deleted comments for user {user_id} in {time.time() - start_time} seconds")
-        for comment in comments:
-            start_time = time.time()
-            comment_id = comment.get("_id")
-            course_id = comment.get("course_id")
-            if comment_id:
-                cls._restore_comment(comment_id, course_id=course_id, restored_by=restored_by)
-                comments_restored += 1
-            log.info(f"<<Bulk Restore>> Restored comment {comment_id} in {time.time() - start_time} seconds."
-                     f" Comment Found: {comment_id is not None}")
-        return comments_restored
+        return forum_api.restore_user_deleted_comments(
+            user_id=str(user_id),
+            course_ids=course_ids,
+            course_id=course_ids[0] if course_ids else None,
+            restored_by=restored_by
+        )
 
     @classmethod
     def restore_comment(cls, comment_id, course_id=None, restored_by=None):
@@ -191,40 +176,23 @@ class Comment(models.Model):
         Restores an individual soft-deleted comment by setting is_deleted=False
         Public method for individual comment restoration
         """
-        comment = ForumComment().get(comment_id)
-        return cls._restore_comment(comment["_id"], course_id, restored_by)
+        return forum_api.restore_comment(
+            comment_id=comment_id,
+            course_id=course_id,
+            restored_by=restored_by
+        )
 
     @classmethod
     def _restore_comment(cls, comment_id, course_id=None, restored_by=None):
         """
         Restores a soft-deleted comment by setting is_deleted=False and clearing deletion metadata
-        Uses direct MongoDB update to ensure data persistence
+        Internal method that delegates to forum API
         """
-        from datetime import datetime
-        from pytz import UTC
-        
-        # Use direct MongoDB update for reliable data persistence
-        update_data = {
-            'is_deleted': False,
-            'deleted_at': None,
-            'deleted_by': None
-        }
-        if restored_by:
-            update_data['restored_by'] = restored_by
-            update_data['restored_at'] = datetime.now(UTC).isoformat()
-        
-        # Update directly in MongoDB collection
-        result = ForumComment()._collection.update_one(
-            {'_id': comment_id},
-            {'$set': update_data}
+        return forum_api.restore_comment(
+            comment_id=comment_id,
+            course_id=course_id,
+            restored_by=restored_by
         )
-        
-        if result.matched_count == 0:
-            log.warning("Comment %s not found for restoration", comment_id)
-            return False
-        else:
-            log.info("Comment %s restored successfully, updated %s document(s)", comment_id, result.modified_count)
-            return True
 
 
 def _url_for_thread_comments(thread_id):
