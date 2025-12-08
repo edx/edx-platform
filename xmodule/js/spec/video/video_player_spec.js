@@ -1,15 +1,11 @@
 /* global YT */
 
-import VideoPlayer from "../../../assets/video/public/js/03_video_player.js";
-import Hls from 'hls.js';
-import _ from 'underscore';
-
 (function() {
     'use strict';
 
     require(
         ['video/03_video_player.js', 'hls', 'underscore'],
-        function(VideoPlayer, HLS, _) {
+        function(VideoPlayer, Hls, _) {
             describe('VideoPlayer', function() {
                 var STATUS = window.STATUS,
                     state,
