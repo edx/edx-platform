@@ -25,6 +25,7 @@ class UserOrdering(TextChoices):
     BY_ACTIVITY = 'activity'
     BY_FLAGS = 'flagged'
     BY_RECENT_ACTIVITY = 'recency'
+    BY_DELETED = 'deleted'
 
 
 class _PaginationForm(Form):
