@@ -1,5 +1,6 @@
 /* global YT */
 
+// eslint-disable-next-line no-shadow-restricted-names
 (function() {
     'use strict';
 
