@@ -1,7 +1,10 @@
 /* global YT */
 
-// eslint-disable-next-line no-shadow-restricted-names
-(function(require, define, undefined) {
+import VideoPlayer from "../../../assets/video/public/js/03_video_player.js";
+import Hls from 'hls';
+import _ from 'underscore';
+
+(function() {
     'use strict';
 
     require(
@@ -982,7 +985,7 @@
 
                     describe('on safari', function() {
                         beforeEach(function() {
-                            spyOn(HLS, 'isSupported').and.returnValue(false);
+                            spyOn(Hls, 'isSupported').and.returnValue(false);
                             state = jasmine.initializeHLSPlayer();
                             state.canPlayHLS = true;
                             state.browserIsSafari = true;
@@ -996,7 +999,7 @@
 
                 describe('HLS Video Errors', function() {
                     beforeEach(function() {
-                        spyOn(HLS, 'isSupported').and.returnValue(false);
+                        spyOn(Hls, 'isSupported').and.returnValue(false);
                         state = jasmine.initializeHLSPlayer({sources: ['/base/fixtures/hls/hls.m3u8']});
                     });
 
