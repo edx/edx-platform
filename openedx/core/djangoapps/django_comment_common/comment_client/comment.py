@@ -129,6 +129,7 @@ class Comment(models.Model):
         query_params = {
             "course_id": {"$in": course_ids},
             "author_id": str(user_id),
+            "is_deleted": {"$ne": True},
         }
         comments_deleted = 0
         comments = ForumComment().get_list(**query_params)

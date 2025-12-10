@@ -260,7 +260,7 @@ class Thread(models.Model):
 
         start_time = time.perf_counter()
         # backend.delete_comments_of_a_thread(thread_id)
-        backend.soft_delete_comments_of_a_thread(thread_id, deleted_by)
+        count_of_response_deleted, count_of_replies_deleted = backend.soft_delete_comments_of_a_thread(thread_id, deleted_by)
         log.info(f"{prefix} Delete comments of thread {time.perf_counter() - start_time} sec")
 
         try:
@@ -282,7 +282,12 @@ class Thread(models.Model):
         if result and not (thread["anonymous"] or thread["anonymous_to_peers"]):
             start_time = time.perf_counter()
             backend.update_stats_for_course(
-                thread["author_id"], thread["course_id"], threads=-1
+                thread["author_id"], thread["course_id"], threads=-1,
+                responses=-count_of_response_deleted,
+                replies=-count_of_replies_deleted,
+                deleted_threads=1,
+                deleted_responses=count_of_response_deleted,
+                deleted_replies=count_of_replies_deleted
             )
             log.info(f"{prefix} Update stats {time.perf_counter() - start_time} sec")
         return serialized_data
@@ -297,6 +302,7 @@ class Thread(models.Model):
         query_params = {
             "course_id": {"$in": course_ids},
             "author_id": str(user_id),
+            "is_deleted": {"$ne": True}
         }
         threads_deleted = 0
         threads = CommentThread().get_list(**query_params)
