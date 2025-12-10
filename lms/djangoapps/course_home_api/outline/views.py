@@ -467,6 +467,8 @@ class CourseNavigationBlocksView(RetrieveAPIView):
         allow_anonymous = COURSE_ENABLE_UNENROLLED_ACCESS_FLAG.is_enabled(course_key)
         allow_public = allow_anonymous and course.course_visibility == COURSE_VISIBILITY_PUBLIC
         allow_public_outline = allow_anonymous and course.course_visibility == COURSE_VISIBILITY_PUBLIC_OUTLINE
+        allow_audit_preview = learner_can_preview_verified_content(course_key, request.user)
+
         enrollment = CourseEnrollment.get_enrollment(request.user, course_key)
 
         try:
@@ -484,21 +486,25 @@ class CourseNavigationBlocksView(RetrieveAPIView):
             allow_public_outline=allow_public_outline,
             is_masquerading=user_is_masquerading,
         )
-        if navigation_sidebar_caching_is_disabled := courseware_disable_navigation_sidebar_blocks_caching():
+        if navigation_sidebar_caching_is_disabled := courseware_disable_navigation_sidebar_blocks_caching(course_key=course_key):
             course_blocks = None
         else:
             course_blocks = cache.get(cache_key)
 
         if not course_blocks:
-            if getattr(enrollment, 'is_active', False) or bool(staff_access):
+            if (getattr(enrollment, 'is_active', False) and not allow_audit_preview) or bool(staff_access):
                 course_blocks = get_course_outline_block_tree(request, course_key_string, request.user)
-            elif allow_public_outline or allow_public or user_is_masquerading:
+            elif allow_audit_preview or allow_public_outline or allow_public or user_is_masquerading:
                 course_blocks = get_course_outline_block_tree(request, course_key_string, None)
 
             if not navigation_sidebar_caching_is_disabled:
                 cache.set(cache_key, course_blocks, self.COURSE_BLOCKS_CACHE_TIMEOUT)
 
-        course_blocks = self.filter_inaccessible_blocks(course_blocks, course_key)
+        course_blocks = self.filter_inaccessible_blocks(
+            course_blocks,
+            course_key,
+            preview_verified_content=allow_audit_preview
+        )
         course_blocks = self.mark_complete_recursive(course_blocks)
 
         context = self.get_serializer_context()
@@ -512,12 +518,16 @@ class CourseNavigationBlocksView(RetrieveAPIView):
 
         return Response(serializer.data)
 
-    def filter_inaccessible_blocks(self, course_blocks, course_key):
+    def filter_inaccessible_blocks(self, course_blocks, course_key, preview_verified_content=False):
         """
         Filter out sections and subsections that are not accessible to the current user.
         """
         if course_blocks:
-            user_course_outline = get_user_course_outline(course_key, self.request.user, datetime.now(tz=timezone.utc))
+            user_course_outline = get_user_course_outline(
+                course_key,
+                self.request.user, datetime.now(tz=timezone.utc),
+                preview_verified_content=preview_verified_content
+            )
             course_sections = course_blocks.get('children', [])
             course_blocks['children'] = self.get_accessible_sections(user_course_outline, course_sections)
 
@@ -529,6 +539,19 @@ class CourseNavigationBlocksView(RetrieveAPIView):
                 accessible_sequence_ids = {str(usage_key) for usage_key in user_course_outline.accessible_sequences}
                 for sequence_data in section_data['children']:
                     sequence_data['accessible'] = sequence_data['id'] in accessible_sequence_ids
+
+            # For audit preview of verified content, we don't remove verified content.
+            # Instead, we mark it as preview so the frontend can handle it appropriately.
+            if preview_verified_content:
+                previewable_sequences = {str(usage_key) for usage_key in user_course_outline.previewable_sequences}
+
+                # Iterate through course_blocks to mark previewable sequences and chapters
+                for chapter_data in course_blocks['children']:
+                    if chapter_data['id'] in previewable_sequences:
+                        chapter_data['is_preview'] = True
+                    for seq_data in chapter_data.get('children', []):
+                        if seq_data['id'] in previewable_sequences:
+                            seq_data['is_preview'] = True
 
         return course_blocks
 
