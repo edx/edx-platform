@@ -638,6 +638,7 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         form = ThreadListGetForm(request.GET)
         if not form.is_valid():
             raise ValidationError(form.errors)
+            
 
         # Record user activity for tracking progress towards a user's course goals (for mobile app)
         UserActivity.record_user_activity(
