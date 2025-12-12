@@ -2146,7 +2146,7 @@ def get_deleted_content_for_course(request, course_id, content_type=None, page=1
                     
                     thread_id = thread_data.get('_id', thread_data.get('id'))
                     content_item = {
-                        'id': str(thread_id),
+                        'id': str(thread_id)+"-thread",
                         'type': 'thread',
                         'title': thread_data.get('title', ''),
                         'body': body_text,
@@ -2221,7 +2221,7 @@ def get_deleted_content_for_course(request, course_id, content_type=None, page=1
                     
                     comment_id = comment_data.get('_id', comment_data.get('id'))
                     content_item = {
-                        'id': str(comment_id),
+                        'id': str(comment_id)+"-comment",
                         'type': comment_type,
                         'body': body_text,
                         'preview_body': preview_text,
