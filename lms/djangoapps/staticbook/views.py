@@ -81,6 +81,16 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
     course = get_course_with_access(request.user, 'load', course_key)
     staff_access = bool(has_access(request.user, 'staff', course))
 
+    # Security: Check if file parameter contains external URL or dangerous schemes and reject it
+    file_param = request.GET.get('file', '')
+    if file_param:
+        # Block external URLs
+        if file_param.startswith(('http://', 'https://')):
+            raise Http404("External URLs are not allowed in file parameter")
+        # Block dangerous URL schemes (XSS vectors)
+        if file_param.lower().startswith(('javascript:', 'data:', 'vbscript:', 'file:')):
+            raise Http404("Dangerous URL scheme detected in file parameter")
+
     book_index = int(book_index)
     if book_index < 0 or book_index >= len(course.pdf_textbooks):
         raise Http404(f"Invalid book index value: {book_index}")
@@ -101,6 +111,9 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
     if 'chapters' in textbook:
         for entry in textbook['chapters']:
             entry['url'] = remap_static_url(entry['url'], course)
+            # Security: Validate chapter URL doesn't contain dangerous schemes
+            if entry['url'].lower().startswith(('javascript:', 'data:', 'vbscript:', 'file:')):
+                entry['url'] = ''  # Sanitize dangerous URLs
         if chapter is not None and int(chapter) <= (len(textbook['chapters'])):
             current_chapter = textbook['chapters'][int(chapter) - 1]
         else:

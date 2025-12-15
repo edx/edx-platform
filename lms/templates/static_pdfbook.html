@@ -19,15 +19,78 @@ from openedx.core.djangolib.js_utils import (
 <%include file="/courseware/course_navigation.html" args="active_page='pdftextbook/{0}'.format(book_index)" />
 <script>
 $(function(){
+  function sanitizeUrl(url) {
+    var temp = $('<div>').text(url).html();
+    if (/^(javascript|data|vbscript|file):/i.test(temp)) {
+      return '';
+    }
+    // Check for external URLs
+    if (temp.startsWith('http://') || temp.startsWith('https://')) {
+      return '';
+    }
+    return temp;
+  }
+
+  function isDangerousSrc(src) {
+    if (!src) return false;
+    // Check for dangerous protocols
+    if (/^(javascript|data|vbscript|file):/i.test(src)) {
+      return true;
+    }
+    // Check if file parameter contains dangerous content
+    try {
+      var url = new URL(src, window.location.origin);
+      var fileParam = url.searchParams.get('file');
+      if (fileParam) {
+        if (/^(javascript|data|vbscript|file|http:\/\/|https:\/\/)/i.test(fileParam)) {
+          return true;
+        }
+      }
+    } catch (e) {
+      return true;
+    }
+    return false;
+  }
+
+  // Security: Monitor iframe src changes to prevent XSS via inspect element
+  var iframe = $('#viewer-frame')[0];
+  if (iframe) {
+    var observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'src') {
+          var currentSrc = iframe.getAttribute('src');
+          if (isDangerousSrc(currentSrc)) {
+            iframe.setAttribute('src', '');
+          }
+        }
+      });
+    });
+
+    observer.observe(iframe, {
+      attributes: true,
+      attributeFilter: ['src']
+    });
+
+    // Also validate initial src
+    var initialSrc = iframe.getAttribute('src');
+    if (isDangerousSrc(initialSrc)) {
+      iframe.setAttribute('src', '');
+    }
+  }
+
   $('.chapter').click(function(e){
     e.preventDefault();
-    var url = $(this).attr('rel');
+    var url = sanitizeUrl($(this).attr('rel'));
+    if (!url) {
+      return;
+    }
+    var title = $('<div>').text($(this).text()).html();
     $('#viewer-frame').attr({
-        'src': '${request.path | n, js_escaped_string}?viewer=true&file=' + url + '#zoom=page-fit&disableRange=true',
-        'title': $(this).text()
+        'src': '${request.path | n, js_escaped_string}?viewer=true&file=' + encodeURIComponent(url) + '#zoom=page-fit&disableRange=true',
+        'title': title
         });
     $('#viewer-frame').focus();
-    Logger.log("textbook.pdf.chapter.navigated", {"name": "textbook.pdf.chapter.navigated", "chapter": url, "chapter_title": $(this).text()});
+    Logger.log("textbook.pdf.chapter.navigated", {"name": "textbook.pdf.chapter.navigated", "chapter": url, "chapter_title": title});
     });
 });
 </script>
@@ -39,7 +102,7 @@ $(function(){
         <ul id="booknav">
           % for (index, entry) in enumerate(textbook['chapters']):
           <li>
-            <a class="chapter" rel="${entry['url']}" href="#viewer-frame">${entry.get('title')}</a>
+            <a class="chapter" rel="${entry['url'] | h}" href="#viewer-frame">${entry.get('title') | h}</a>
           </li>
           % endfor
         </ul>
@@ -49,13 +112,13 @@ $(function(){
     <div class="book">
     % if 'file' in viewer_params:
       <iframe
-        title="${current_chapter['title']}"
+        title="${current_chapter.get('title', '') | h}"
         id="viewer-frame"
         src="${request.path}?viewer=true${viewer_params}"
         width="856" height="1108" frameborder="0" tabindex="-1" seamless></iframe>
     % else:
       <iframe
-        title="${current_chapter['title']}"
+        title="${current_chapter.get('title', '') | h}"
         id="viewer-frame"
         src=""
         width="856" height="1108" frameborder="0" tabindex="-1" seamless></iframe>
