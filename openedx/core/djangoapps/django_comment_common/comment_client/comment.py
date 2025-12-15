@@ -4,13 +4,15 @@ import time
 
 from bs4 import BeautifulSoup
 
-from openedx.core.djangoapps.django_comment_common.comment_client import models, settings
+from forum import api as forum_api
+from forum.backends.mongodb.comments import Comment as ForumComment  # pylint: disable=import-error
+from openedx.core.djangoapps.django_comment_common.comment_client import (
+    models,
+    settings,
+)
 
 from .thread import Thread
 from .utils import CommentClientRequestError, get_course_key
-from forum import api as forum_api
-from forum.backends.mongodb.comments import Comment as ForumComment
-
 
 log = logging.getLogger(__name__)
 
@@ -18,26 +20,56 @@ log = logging.getLogger(__name__)
 class Comment(models.Model):
 
     accessible_fields = [
-        'id', 'body', 'anonymous', 'anonymous_to_peers', 'course_id',
-        'endorsed', 'parent_id', 'thread_id', 'username', 'votes', 'user_id',
-        'closed', 'created_at', 'updated_at', 'depth', 'at_position_list',
-        'type', 'commentable_id', 'abuse_flaggers', 'endorsement',
-        'child_count', 'edit_history',
-        'is_spam', 'ai_moderation_reason', 'abuse_flagged', 'is_deleted', 'deleted_at', 'deleted_by'
+        "id",
+        "body",
+        "anonymous",
+        "anonymous_to_peers",
+        "course_id",
+        "endorsed",
+        "parent_id",
+        "thread_id",
+        "username",
+        "votes",
+        "user_id",
+        "closed",
+        "created_at",
+        "updated_at",
+        "depth",
+        "at_position_list",
+        "type",
+        "commentable_id",
+        "abuse_flaggers",
+        "endorsement",
+        "child_count",
+        "edit_history",
+        "is_spam",
+        "ai_moderation_reason",
+        "abuse_flagged",
+        "is_deleted",
+        "deleted_at",
+        "deleted_by",
     ]
 
     updatable_fields = [
-        'body', 'anonymous', 'anonymous_to_peers', 'course_id', 'closed',
-        'user_id', 'endorsed', 'endorsement_user_id', 'edit_reason_code',
-        'closing_user_id', 'editing_user_id',
+        "body",
+        "anonymous",
+        "anonymous_to_peers",
+        "course_id",
+        "closed",
+        "user_id",
+        "endorsed",
+        "endorsement_user_id",
+        "edit_reason_code",
+        "closing_user_id",
+        "editing_user_id",
     ]
 
     initializable_fields = updatable_fields
 
-    metrics_tag_fields = ['course_id', 'endorsed', 'closed']
+    metrics_tag_fields = ["course_id", "endorsed", "closed"]
 
     base_url = f"{settings.PREFIX}/comments"
-    type = 'comment'
+    type = "comment"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -46,7 +78,7 @@ class Comment(models.Model):
     @property
     def thread(self):
         if not self._cached_thread:
-            self._cached_thread = Thread(id=self.thread_id, type='thread')
+            self._cached_thread = Thread(id=self.thread_id, type="thread")
         return self._cached_thread
 
     @property
@@ -56,22 +88,22 @@ class Comment(models.Model):
 
     @classmethod
     def url_for_comments(cls, params=None):
-        if params and params.get('parent_id'):
-            return _url_for_comment(params['parent_id'])
+        if params and params.get("parent_id"):
+            return _url_for_comment(params["parent_id"])
         else:
-            return _url_for_thread_comments(params['thread_id'])
+            return _url_for_thread_comments(params["thread_id"])
 
     @classmethod
     def url(cls, action, params=None):
         if params is None:
             params = {}
-        if action in ['post']:
+        if action in ["post"]:
             return cls.url_for_comments(params)
         else:
             return super().url(action, params)
 
     def flagAbuse(self, user, voteable, course_id=None):
-        if voteable.type != 'comment':
+        if voteable.type != "comment":
             raise CommentClientRequestError("Can only flag comments")
 
         course_key = get_course_key(self.attributes.get("course_id") or course_id)
@@ -84,7 +116,7 @@ class Comment(models.Model):
         voteable._update_from_response(response)
 
     def unFlagAbuse(self, user, voteable, removeAll, course_id=None):
-        if voteable.type != 'comment':
+        if voteable.type != "comment":
             raise CommentClientRequestError("Can only unflag comments")
 
         course_key = get_course_key(self.attributes.get("course_id") or course_id)
@@ -102,7 +134,7 @@ class Comment(models.Model):
         """
         Return the text content of the comment html body.
         """
-        soup = BeautifulSoup(self.body, 'html.parser')
+        soup = BeautifulSoup(self.body, "html.parser")
         return soup.get_text()
 
     @classmethod
@@ -115,9 +147,11 @@ class Comment(models.Model):
             "course_id": {"$in": course_ids},
             "author_id": str(user_id),
             "is_deleted": {"$ne": True},
-            "_type": "Comment"
+            "_type": "Comment",
         }
-        return ForumComment()._collection.count_documents(query_params)  # pylint: disable=protected-access
+        return ForumComment()._collection.count_documents(
+            query_params
+        )  # pylint: disable=protected-access
 
     @classmethod
     def delete_user_comments(cls, user_id, course_ids, deleted_by=None):
@@ -133,17 +167,23 @@ class Comment(models.Model):
         }
         comments_deleted = 0
         comments = ForumComment().get_list(**query_params)
-        log.info(f"<<Bulk Delete>> Fetched comments for user {user_id} in {time.time() - start_time} seconds")
+        log.info(
+            f"<<Bulk Delete>> Fetched comments for user {user_id} in {time.time() - start_time} seconds"
+        )
         for comment in comments:
             start_time = time.time()
             comment_id = comment.get("_id")
             course_id = comment.get("course_id")
             if comment_id:
                 # Use forum_api.delete_comment which supports deleted_by parameter
-                forum_api.delete_comment(comment_id, course_id=course_id, deleted_by=deleted_by)
+                forum_api.delete_comment(
+                    comment_id, course_id=course_id, deleted_by=deleted_by
+                )
                 comments_deleted += 1
-            log.info(f"<<Bulk Delete>> Deleted comment {comment_id} in {time.time() - start_time} seconds."
-                     f" Comment Found: {comment_id is not None}")
+            log.info(
+                f"<<Bulk Delete>> Deleted comment {comment_id} in {time.time() - start_time} seconds."
+                f" Comment Found: {comment_id is not None}"
+            )
         return comments_deleted
 
     @classmethod
@@ -155,9 +195,11 @@ class Comment(models.Model):
             "course_id": {"$in": course_ids},
             "author_id": str(user_id),
             "_type": "Comment",
-            "is_deleted": True
+            "is_deleted": True,
         }
-        return ForumComment()._collection.count_documents(query_params)  # pylint: disable=protected-access
+        return ForumComment()._collection.count_documents(
+            query_params
+        )  # pylint: disable=protected-access
 
     @classmethod
     def restore_user_deleted_comments(cls, user_id, course_ids, restored_by=None):
@@ -168,7 +210,7 @@ class Comment(models.Model):
             user_id=str(user_id),
             course_ids=course_ids,
             course_id=course_ids[0] if course_ids else None,
-            restored_by=restored_by
+            restored_by=restored_by,
         )
 
     @classmethod
@@ -178,9 +220,7 @@ class Comment(models.Model):
         Public method for individual comment restoration
         """
         return forum_api.restore_comment(
-            comment_id=comment_id,
-            course_id=course_id,
-            restored_by=restored_by
+            comment_id=comment_id, course_id=course_id, restored_by=restored_by
         )
 
     @classmethod
@@ -190,9 +230,7 @@ class Comment(models.Model):
         Internal method that delegates to forum API
         """
         return forum_api.restore_comment(
-            comment_id=comment_id,
-            course_id=course_id,
-            restored_by=restored_by
+            comment_id=comment_id, course_id=course_id, restored_by=restored_by
         )
 
 

@@ -1,17 +1,19 @@
 """
 Discussion API views
 """
+
 import logging
 import uuid
 
 import edx_api_doc_tools as apidocs
-
 from django.contrib.auth import get_user_model
 from django.core.exceptions import BadRequest, ValidationError
 from django.shortcuts import get_object_or_404
 from drf_yasg import openapi
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
-from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
+from edx_rest_framework_extensions.auth.session.authentication import (
+    SessionAuthenticationAllowInactiveUser,
+)
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import permissions, status
 from rest_framework.authentication import SessionAuthentication
@@ -21,31 +23,49 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
-from xmodule.modulestore.django import modulestore
-
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.util.file import store_uploaded_file
 from lms.djangoapps.course_api.blocks.api import get_blocks
 from lms.djangoapps.course_goals.models import UserActivity
+from lms.djangoapps.discussion.django_comment_client import settings as cc_settings
+from lms.djangoapps.discussion.django_comment_client.utils import (
+    get_group_id_for_comments_service,
+)
 from lms.djangoapps.discussion.rate_limit import is_content_creation_rate_limited
 from lms.djangoapps.discussion.rest_api.permissions import IsAllowedToBulkDelete
-from lms.djangoapps.discussion.rest_api.tasks import delete_course_post_for_user, restore_course_post_for_user
+from lms.djangoapps.discussion.rest_api.tasks import (
+    delete_course_post_for_user,
+    restore_course_post_for_user,
+)
 from lms.djangoapps.discussion.toggles import ONLY_VERIFIED_USERS_CAN_POST
-from lms.djangoapps.discussion.django_comment_client import settings as cc_settings
-from lms.djangoapps.discussion.django_comment_client.utils import get_group_id_for_comments_service
 from lms.djangoapps.instructor.access import update_forum_role
-from openedx.core.djangoapps.discussions.config.waffle import ENABLE_NEW_STRUCTURE_DISCUSSIONS
-from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration, Provider
+from openedx.core.djangoapps.discussions.config.waffle import (
+    ENABLE_NEW_STRUCTURE_DISCUSSIONS,
+)
+from openedx.core.djangoapps.discussions.models import (
+    DiscussionsConfiguration,
+    Provider,
+)
 from openedx.core.djangoapps.discussions.serializers import DiscussionSettingsSerializer
 from openedx.core.djangoapps.django_comment_common import comment_client
-from openedx.core.djangoapps.django_comment_common.models import CourseDiscussionSettings, Role
 from openedx.core.djangoapps.django_comment_common.comment_client.comment import Comment
 from openedx.core.djangoapps.django_comment_common.comment_client.thread import Thread
-from openedx.core.djangoapps.user_api.accounts.permissions import CanReplaceUsername, CanRetireUser
+from openedx.core.djangoapps.django_comment_common.models import (
+    CourseDiscussionSettings,
+    Role,
+)
+from openedx.core.djangoapps.user_api.accounts.permissions import (
+    CanReplaceUsername,
+    CanRetireUser,
+)
 from openedx.core.djangoapps.user_api.models import UserRetirementStatus
-from openedx.core.lib.api.authentication import BearerAuthentication, BearerAuthenticationAllowInactiveUser
+from openedx.core.lib.api.authentication import (
+    BearerAuthentication,
+    BearerAuthenticationAllowInactiveUser,
+)
 from openedx.core.lib.api.parsers import MergePatchParser
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin, view_auth_classes
+from xmodule.modulestore.django import modulestore
 
 from ..rest_api.api import (
     create_comment,
@@ -57,10 +77,10 @@ from ..rest_api.api import (
     get_course_discussion_user_stats,
     get_course_topics,
     get_course_topics_v2,
+    get_learner_active_thread_list,
     get_response_comments,
     get_thread,
     get_thread_list,
-    get_learner_active_thread_list,
     get_user_comments,
     get_v2_course_topics_as_v1,
     update_comment,
@@ -88,10 +108,10 @@ from ..rest_api.serializers import (
 from .utils import (
     create_blocks_params,
     create_topics_v3_structure,
-    is_captcha_enabled,
-    verify_recaptcha_token,
     get_course_id_from_thread_id,
+    is_captcha_enabled,
     is_only_student,
+    verify_recaptcha_token,
 )
 
 log = logging.getLogger(__name__)
@@ -107,14 +127,16 @@ class CourseView(DeveloperErrorViewMixin, APIView):
 
     @apidocs.schema(
         parameters=[
-            apidocs.string_parameter("course_id", apidocs.ParameterLocation.PATH, description="Course ID")
+            apidocs.string_parameter(
+                "course_id", apidocs.ParameterLocation.PATH, description="Course ID"
+            )
         ],
         responses={
             200: CourseMetadataSerailizer(read_only=True, required=False),
             401: "The requester is not authenticated.",
             403: "The requester cannot access the specified course.",
             404: "The requested course does not exist.",
-        }
+        },
     )
     def get(self, request, course_id):
         """
@@ -126,7 +148,9 @@ class CourseView(DeveloperErrorViewMixin, APIView):
         """
         course_key = CourseKey.from_string(course_id)  # TODO: which class is right?
         # Record user activity for tracking progress towards a user's course goals (for mobile app)
-        UserActivity.record_user_activity(request.user, course_key, request=request, only_if_mobile_app=True)
+        UserActivity.record_user_activity(
+            request.user, course_key, request=request, only_if_mobile_app=True
+        )
         return Response(get_course(request, course_key))
 
 
@@ -138,14 +162,16 @@ class CourseViewV2(DeveloperErrorViewMixin, APIView):
 
     @apidocs.schema(
         parameters=[
-            apidocs.string_parameter("course_id", apidocs.ParameterLocation.PATH, description="Course ID")
+            apidocs.string_parameter(
+                "course_id", apidocs.ParameterLocation.PATH, description="Course ID"
+            )
         ],
         responses={
             200: CourseMetadataSerailizer(read_only=True, required=False),
             401: "The requester is not authenticated.",
             403: "The requester cannot access the specified course.",
             404: "The requested course does not exist.",
-        }
+        },
     )
     def get(self, request, course_id):
         """
@@ -156,7 +182,9 @@ class CourseViewV2(DeveloperErrorViewMixin, APIView):
         """
         course_key = CourseKey.from_string(course_id)
         # Record user activity for tracking progress towards a user's course goals (for mobile app)
-        UserActivity.record_user_activity(request.user, course_key, request=request, only_if_mobile_app=True)
+        UserActivity.record_user_activity(
+            request.user, course_key, request=request, only_if_mobile_app=True
+        )
         return Response(get_course(request, course_key, False))
 
 
@@ -221,14 +249,14 @@ class CourseActivityStatsView(DeveloperErrorViewMixin, APIView):
         form_query_string = CourseActivityStatsForm(request.query_params)
         if not form_query_string.is_valid():
             raise ValidationError(form_query_string.errors)
-        order_by = form_query_string.cleaned_data.get('order_by', None)
+        order_by = form_query_string.cleaned_data.get("order_by", None)
         order_by = UserOrdering(order_by) if order_by else None
-        username_search_string = form_query_string.cleaned_data.get('username', None)
+        username_search_string = form_query_string.cleaned_data.get("username", None)
         data = get_course_discussion_user_stats(
             request,
             course_key_string,
-            form_query_string.cleaned_data['page'],
-            form_query_string.cleaned_data['page_size'],
+            form_query_string.cleaned_data["page"],
+            form_query_string.cleaned_data["page_size"],
             order_by,
             username_search_string,
         )
@@ -268,19 +296,17 @@ class CourseTopicsView(DeveloperErrorViewMixin, APIView):
         Implements the GET method as described in the class docstring.
         """
         course_key = CourseKey.from_string(course_id)
-        topic_ids = self.request.GET.get('topic_id')
-        topic_ids = set(topic_ids.strip(',').split(',')) if topic_ids else None
+        topic_ids = self.request.GET.get("topic_id")
+        topic_ids = set(topic_ids.strip(",").split(",")) if topic_ids else None
         with modulestore().bulk_operations(course_key):
             configuration = DiscussionsConfiguration.get(context_key=course_key)
             provider = configuration.provider_type
             # This will be removed when mobile app will support new topic structure
-            new_structure_enabled = ENABLE_NEW_STRUCTURE_DISCUSSIONS.is_enabled(course_key)
+            new_structure_enabled = ENABLE_NEW_STRUCTURE_DISCUSSIONS.is_enabled(
+                course_key
+            )
             if provider == Provider.OPEN_EDX and new_structure_enabled:
-                response = get_v2_course_topics_as_v1(
-                    request,
-                    course_key,
-                    topic_ids
-                )
+                response = get_v2_course_topics_as_v1(request, course_key, topic_ids)
             else:
                 response = get_course_topics(
                     request,
@@ -288,7 +314,9 @@ class CourseTopicsView(DeveloperErrorViewMixin, APIView):
                     topic_ids,
                 )
             # Record user activity for tracking progress towards a user's course goals (for mobile app)
-            UserActivity.record_user_activity(request.user, course_key, request=request, only_if_mobile_app=True)
+            UserActivity.record_user_activity(
+                request.user, course_key, request=request, only_if_mobile_app=True
+            )
         return Response(response)
 
 
@@ -304,17 +332,17 @@ class CourseTopicsViewV2(DeveloperErrorViewMixin, APIView):
     @apidocs.schema(
         parameters=[
             apidocs.string_parameter(
-                'course_id',
+                "course_id",
                 apidocs.ParameterLocation.PATH,
                 description="Course ID",
             ),
             apidocs.string_parameter(
-                'topic_id',
+                "topic_id",
                 apidocs.ParameterLocation.QUERY,
                 description="Comma-separated list of topic ids to filter",
             ),
             openapi.Parameter(
-                'order_by',
+                "order_by",
                 apidocs.ParameterLocation.QUERY,
                 required=False,
                 type=openapi.TYPE_STRING,
@@ -327,7 +355,7 @@ class CourseTopicsViewV2(DeveloperErrorViewMixin, APIView):
             401: "The requester is not authenticated.",
             403: "The requester cannot access the specified course.",
             404: "The requested course does not exist.",
-        }
+        },
     )
     def get(self, request, course_id):
         """
@@ -348,7 +376,7 @@ class CourseTopicsViewV2(DeveloperErrorViewMixin, APIView):
             course_key,
             request.user,
             form_query_params.cleaned_data["topic_id"],
-            form_query_params.cleaned_data["order_by"]
+            form_query_params.cleaned_data["order_by"],
         )
         return Response(response)
 
@@ -416,17 +444,17 @@ class CourseTopicsViewV3(DeveloperErrorViewMixin, APIView):
         blocks_params = create_blocks_params(course_usage_key, request.user)
         blocks = get_blocks(
             request,
-            blocks_params['usage_key'],
-            blocks_params['user'],
-            blocks_params['depth'],
-            blocks_params['nav_depth'],
-            blocks_params['requested_fields'],
-            blocks_params['block_counts'],
-            blocks_params['student_view_data'],
-            blocks_params['return_type'],
-            blocks_params['block_types_filter'],
+            blocks_params["usage_key"],
+            blocks_params["user"],
+            blocks_params["depth"],
+            blocks_params["nav_depth"],
+            blocks_params["requested_fields"],
+            blocks_params["block_counts"],
+            blocks_params["student_view_data"],
+            blocks_params["return_type"],
+            blocks_params["block_types_filter"],
             hide_access_denials=False,
-        )['blocks']
+        )["blocks"]
 
         topics = create_topics_v3_structure(blocks, topics)
         return Response(topics)
@@ -627,8 +655,12 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         No content is returned for a DELETE request
 
     """
+
     lookup_field = "thread_id"
-    parser_classes = (JSONParser, MergePatchParser,)
+    parser_classes = (
+        JSONParser,
+        MergePatchParser,
+    )
 
     def list(self, request):
         """
@@ -638,11 +670,13 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         form = ThreadListGetForm(request.GET)
         if not form.is_valid():
             raise ValidationError(form.errors)
-            
 
         # Record user activity for tracking progress towards a user's course goals (for mobile app)
         UserActivity.record_user_activity(
-            request.user, form.cleaned_data["course_id"], request=request, only_if_mobile_app=True
+            request.user,
+            form.cleaned_data["course_id"],
+            request=request,
+            only_if_mobile_app=True,
         )
 
         return get_thread_list(
@@ -668,8 +702,8 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         """
         Implements the GET method for thread ID
         """
-        requested_fields = request.GET.get('requested_fields')
-        course_id = request.GET.get('course_id')
+        requested_fields = request.GET.get("requested_fields")
+        course_id = request.GET.get("course_id")
         return Response(get_thread(request, thread_id, requested_fields, course_id))
 
     def create(self, request):
@@ -683,21 +717,28 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         course_key = CourseKey.from_string(course_key_str)
 
         if is_content_creation_rate_limited(request, course_key=course_key):
-            return Response("Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS)
+            return Response(
+                "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
 
         if is_captcha_enabled(course_key) and is_only_student(course_key, request.user):
-            captcha_token = request.data.get('captcha_token')
+            captcha_token = request.data.get("captcha_token")
             if not captcha_token:
-                raise ValidationError({'captcha_token': 'This field is required.'})
+                raise ValidationError({"captcha_token": "This field is required."})
 
             if not verify_recaptcha_token(captcha_token):
-                return Response({'error': 'CAPTCHA verification failed.'}, status=400)
+                return Response({"error": "CAPTCHA verification failed."}, status=400)
 
-        if ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key) and not request.user.is_active:
-            raise ValidationError({"detail": "Only verified users can post in discussions."})
+        if (
+            ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
+            and not request.user.is_active
+        ):
+            raise ValidationError(
+                {"detail": "Only verified users can post in discussions."}
+            )
 
         data = request.data.copy()
-        data.pop('captcha_token', None)
+        data.pop("captcha_token", None)
         return Response(create_thread(request, data))
 
     def partial_update(self, request, thread_id):
@@ -764,25 +805,27 @@ class LearnerThreadView(APIView):
         Implements the GET method as described in the class docstring.
         """
         course_key = CourseKey.from_string(course_id)
-        page_num = request.GET.get('page', 1)
-        threads_per_page = request.GET.get('page_size', 10)
-        count_flagged = request.GET.get('count_flagged', False)
-        thread_type = request.GET.get('thread_type')
-        order_by = request.GET.get('order_by')
+        page_num = request.GET.get("page", 1)
+        threads_per_page = request.GET.get("page_size", 10)
+        count_flagged = request.GET.get("count_flagged", False)
+        thread_type = request.GET.get("thread_type")
+        order_by = request.GET.get("order_by")
         order_by_mapping = {
             "last_activity_at": "activity",
             "comment_count": "comments",
-            "vote_count": "votes"
+            "vote_count": "votes",
         }
-        order_by = order_by_mapping.get(order_by, 'activity')
-        post_status = request.GET.get('status', None)
-        show_deleted = request.GET.get('show_deleted', 'false').lower() == 'true'
+        order_by = order_by_mapping.get(order_by, "activity")
+        post_status = request.GET.get("status", None)
+        show_deleted = request.GET.get("show_deleted", "false").lower() == "true"
         discussion_id = None
-        username = request.GET.get('username', None)
+        username = request.GET.get("username", None)
         user = get_object_or_404(User, username=username)
         group_id = None
         try:
-            group_id = get_group_id_for_comments_service(request, course_key, discussion_id)
+            group_id = get_group_id_for_comments_service(
+                request, course_key, discussion_id
+            )
         except ValueError:
             pass
 
@@ -798,12 +841,14 @@ class LearnerThreadView(APIView):
             "show_deleted": show_deleted,
         }
         if post_status:
-            if post_status not in ['flagged', 'unanswered', 'unread', 'unresponded']:
-                raise ValidationError({
-                    "status": [
-                        f"Invalid value. '{post_status}' must be 'flagged', 'unanswered', 'unread' or 'unresponded"
-                    ]
-                })
+            if post_status not in ["flagged", "unanswered", "unread", "unresponded"]:
+                raise ValidationError(
+                    {
+                        "status": [
+                            f"Invalid value. '{post_status}' must be 'flagged', 'unanswered', 'unread' or 'unresponded"
+                        ]
+                    }
+                )
             query_params[post_status] = True
         return get_learner_active_thread_list(request, course_key, query_params)
 
@@ -972,8 +1017,12 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
         No content is returned for a DELETE request
 
     """
+
     lookup_field = "comment_id"
-    parser_classes = (JSONParser, MergePatchParser,)
+    parser_classes = (
+        JSONParser,
+        MergePatchParser,
+    )
 
     def list(self, request):
         """
@@ -1015,7 +1064,7 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["flagged"],
             form.cleaned_data["requested_fields"],
             form.cleaned_data["merge_question_type_responses"],
-            form.cleaned_data["show_deleted"]
+            form.cleaned_data["show_deleted"],
         )
 
     def list_by_user(self, request):
@@ -1062,21 +1111,28 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
         course_key = CourseKey.from_string(course_key_str)
 
         if is_content_creation_rate_limited(request, course_key=course_key):
-            return Response("Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS)
+            return Response(
+                "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
 
         if is_captcha_enabled(course_key) and is_only_student(course_key, request.user):
-            captcha_token = request.data.get('captcha_token')
+            captcha_token = request.data.get("captcha_token")
             if not captcha_token:
-                raise ValidationError({'captcha_token': 'This field is required.'})
+                raise ValidationError({"captcha_token": "This field is required."})
 
             if not verify_recaptcha_token(captcha_token):
-                return Response({'error': 'CAPTCHA verification failed.'}, status=400)
+                return Response({"error": "CAPTCHA verification failed."}, status=400)
 
-        if ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key) and not request.user.is_active:
-            raise ValidationError({"detail": "Only verified users can post in discussions."})
+        if (
+            ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
+            and not request.user.is_active
+        ):
+            raise ValidationError(
+                {"detail": "Only verified users can post in discussions."}
+            )
 
         data = request.data.copy()
-        data.pop('captcha_token', None)
+        data.pop("captcha_token", None)
         return Response(create_comment(request, data))
 
     def destroy(self, request, comment_id):
@@ -1152,8 +1208,11 @@ class UploadFileView(DeveloperErrorViewMixin, APIView):
         unique_file_name = f"{course_id}/{thread_key}/{uuid.uuid4()}"
         try:
             file_storage, stored_file_name = store_uploaded_file(
-                request, "uploaded_file", cc_settings.ALLOWED_UPLOAD_FILE_TYPES,
-                unique_file_name, max_file_size=cc_settings.MAX_UPLOAD_FILE_SIZE,
+                request,
+                "uploaded_file",
+                cc_settings.ALLOWED_UPLOAD_FILE_TYPES,
+                unique_file_name,
+                max_file_size=cc_settings.MAX_UPLOAD_FILE_SIZE,
             )
         except ValueError as err:
             raise BadRequest("no `uploaded_file` was provided") from err
@@ -1194,10 +1253,12 @@ class RetireUserView(APIView):
         """
         Implements the retirement endpoint.
         """
-        username = request.data['username']
+        username = request.data["username"]
 
         try:
-            retirement = UserRetirementStatus.get_retirement_for_retirement_action(username)
+            retirement = UserRetirementStatus.get_retirement_for_retirement_action(
+                username
+            )
             cc_user = comment_client.User.from_django_user(retirement.user)
 
             # Send the retired username to the forums service, as the service cannot generate
@@ -1252,7 +1313,9 @@ class ReplaceUsernamesView(APIView):
         for username_pair in username_mappings:
             current_username = list(username_pair.keys())[0]
             new_username = list(username_pair.values())[0]
-            successfully_replaced = self._replace_username(current_username, new_username)
+            successfully_replaced = self._replace_username(
+                current_username, new_username
+            )
             if successfully_replaced:
                 successful_replacements.append({current_username: new_username})
             else:
@@ -1262,8 +1325,8 @@ class ReplaceUsernamesView(APIView):
             status=status.HTTP_200_OK,
             data={
                 "successful_replacements": successful_replacements,
-                "failed_replacements": failed_replacements
-            }
+                "failed_replacements": failed_replacements,
+            },
         )
 
     def _replace_username(self, current_username, new_username):
@@ -1309,7 +1372,7 @@ class ReplaceUsernamesView(APIView):
         return True
 
     def _has_valid_schema(self, post_data):
-        """ Verifies the data is a list of objects with a single key:value pair """
+        """Verifies the data is a list of objects with a single key:value pair"""
         if not isinstance(post_data, list):
             return False
         for obj in post_data:
@@ -1369,12 +1432,16 @@ class CourseDiscussionSettingsAPIView(DeveloperErrorViewMixin, APIView):
         * available_division_schemes: A list of available division schemes for the course.
 
     """
+
     authentication_classes = (
         JwtAuthentication,
         BearerAuthenticationAllowInactiveUser,
         SessionAuthenticationAllowInactiveUser,
     )
-    parser_classes = (JSONParser, MergePatchParser,)
+    parser_classes = (
+        JSONParser,
+        MergePatchParser,
+    )
     permission_classes = (permissions.IsAuthenticated, IsStaffOrAdmin)
 
     def _get_request_kwargs(self, course_id):
@@ -1390,14 +1457,14 @@ class CourseDiscussionSettingsAPIView(DeveloperErrorViewMixin, APIView):
         if not form.is_valid():
             raise ValidationError(form.errors)
 
-        course_key = form.cleaned_data['course_key']
-        course = form.cleaned_data['course']
+        course_key = form.cleaned_data["course_key"]
+        course = form.cleaned_data["course"]
         discussion_settings = CourseDiscussionSettings.get(course_key)
         serializer = DiscussionSettingsSerializer(
             discussion_settings,
             context={
-                'course': course,
-                'settings': discussion_settings,
+                "course": course,
+                "settings": discussion_settings,
             },
             partial=True,
         )
@@ -1416,15 +1483,15 @@ class CourseDiscussionSettingsAPIView(DeveloperErrorViewMixin, APIView):
         if not form.is_valid():
             raise ValidationError(form.errors)
 
-        course = form.cleaned_data['course']
-        course_key = form.cleaned_data['course_key']
+        course = form.cleaned_data["course"]
+        course_key = form.cleaned_data["course_key"]
         discussion_settings = CourseDiscussionSettings.get(course_key)
 
         serializer = DiscussionSettingsSerializer(
             discussion_settings,
             context={
-                'course': course,
-                'settings': discussion_settings,
+                "course": course,
+                "settings": discussion_settings,
             },
             data=request.data,
             partial=True,
@@ -1493,6 +1560,7 @@ class CourseDiscussionRolesAPIView(DeveloperErrorViewMixin, APIView):
 
         * division_scheme: The division scheme used by the course.
     """
+
     authentication_classes = (
         JwtAuthentication,
         BearerAuthenticationAllowInactiveUser,
@@ -1513,11 +1581,13 @@ class CourseDiscussionRolesAPIView(DeveloperErrorViewMixin, APIView):
         if not form.is_valid():
             raise ValidationError(form.errors)
 
-        course_id = form.cleaned_data['course_key']
-        role = form.cleaned_data['role']
+        course_id = form.cleaned_data["course_key"]
+        role = form.cleaned_data["role"]
 
-        data = {'course_id': course_id, 'users': role.users.all()}
-        context = {'course_discussion_settings': CourseDiscussionSettings.get(course_id)}
+        data = {"course_id": course_id, "users": role.users.all()}
+        context = {
+            "course_discussion_settings": CourseDiscussionSettings.get(course_id)
+        }
 
         serializer = DiscussionRolesListSerializer(data, context=context)
         return Response(serializer.data)
@@ -1531,23 +1601,25 @@ class CourseDiscussionRolesAPIView(DeveloperErrorViewMixin, APIView):
         if not form.is_valid():
             raise ValidationError(form.errors)
 
-        course_id = form.cleaned_data['course_key']
-        rolename = form.cleaned_data['rolename']
+        course_id = form.cleaned_data["course_key"]
+        rolename = form.cleaned_data["rolename"]
 
         serializer = DiscussionRolesSerializer(data=request.data)
         if not serializer.is_valid():
             raise ValidationError(serializer.errors)
 
-        action = serializer.validated_data['action']
-        user = serializer.validated_data['user']
+        action = serializer.validated_data["action"]
+        user = serializer.validated_data["user"]
         try:
             update_forum_role(course_id, user, rolename, action)
         except Role.DoesNotExist as err:
             raise ValidationError(f"Role '{rolename}' does not exist") from err
 
-        role = form.cleaned_data['role']
-        data = {'course_id': course_id, 'users': role.users.all()}
-        context = {'course_discussion_settings': CourseDiscussionSettings.get(course_id)}
+        role = form.cleaned_data["role"]
+        data = {"course_id": course_id, "users": role.users.all()}
+        context = {
+            "course_discussion_settings": CourseDiscussionSettings.get(course_id)
+        }
         serializer = DiscussionRolesListSerializer(data, context=context)
         return Response(serializer.data)
 
@@ -1571,7 +1643,9 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
     """
 
     authentication_classes = (
-        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
     )
     permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
 
@@ -1592,19 +1666,21 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
         course_ids = [course_id]
         if course_or_org == "org":
             org_id = CourseKey.from_string(course_id).org
-            enrollments = CourseEnrollment.objects.filter(user=request.user).values_list('course_id', flat=True)
-            course_ids.extend([
-                str(c_id)
-                for c_id in enrollments
-                if c_id.org == org_id
-            ])
+            enrollments = CourseEnrollment.objects.filter(
+                user=request.user
+            ).values_list("course_id", flat=True)
+            course_ids.extend([str(c_id) for c_id in enrollments if c_id.org == org_id])
             course_ids = list(set(course_ids))
             log.info(f"<<Bulk Delete>> {username} enrolled in {enrollments}")
-        log.info(f"<<Bulk Delete>> Posts for {username} in {course_ids} - for {course_or_org} {course_id}")
+        log.info(
+            f"<<Bulk Delete>> Posts for {username} in {course_ids} - for {course_or_org} {course_id}"
+        )
 
         comment_count = Comment.get_user_comment_count(user.id, course_ids)
         thread_count = Thread.get_user_threads_count(user.id, course_ids)
-        log.info(f"<<Bulk Delete>> {username} in {course_ids} - Count thread {thread_count}, comment {comment_count}")
+        log.info(
+            f"<<Bulk Delete>> {username} in {course_ids} - Count thread {thread_count}, comment {comment_count}"
+        )
 
         if execute_task:
             event_data = {
@@ -1619,7 +1695,7 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
             )
         return Response(
             {"comment_count": comment_count, "thread_count": thread_count},
-            status=status.HTTP_202_ACCEPTED
+            status=status.HTTP_202_ACCEPTED,
         )
 
 
@@ -1642,7 +1718,9 @@ class RestoreContent(DeveloperErrorViewMixin, APIView):
     """
 
     authentication_classes = (
-        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
     )
     permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
 
@@ -1653,36 +1731,49 @@ class RestoreContent(DeveloperErrorViewMixin, APIView):
         content_type = request.data.get("content_type")
         content_id = request.data.get("content_id")
         course_id = request.data.get("course_id")
-        
+
         if not all([content_type, content_id, course_id]):
             raise BadRequest("content_type, content_id, and course_id are required.")
-        
+
         if content_type not in ["thread", "comment", "response"]:
             raise BadRequest("content_type must be 'thread', 'comment', or 'response'.")
-        
+
         restored_by_user_id = str(request.user.id)
-        
+
         try:
             if content_type == "thread":
-                success = Thread.restore_thread(content_id, course_id=course_id, restored_by=restored_by_user_id)
+                success = Thread.restore_thread(
+                    content_id, course_id=course_id, restored_by=restored_by_user_id
+                )
             else:  # comment or response (both are comments in the backend)
-                success = Comment.restore_comment(content_id, course_id=course_id, restored_by=restored_by_user_id)
-            
+                success = Comment.restore_comment(
+                    content_id, course_id=course_id, restored_by=restored_by_user_id
+                )
+
             if success:
                 return Response(
-                    {"success": True, "message": f"{content_type.capitalize()} restored successfully"},
-                    status=status.HTTP_200_OK
+                    {
+                        "success": True,
+                        "message": f"{content_type.capitalize()} restored successfully",
+                    },
+                    status=status.HTTP_200_OK,
                 )
             else:
                 return Response(
-                    {"success": False, "message": f"{content_type.capitalize()} not found or already restored"},
-                    status=status.HTTP_404_NOT_FOUND
+                    {
+                        "success": False,
+                        "message": f"{content_type.capitalize()} not found or already restored",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
                 )
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             log.error("Error restoring %s %s: %s", content_type, content_id, str(e))
             return Response(
-                {"success": False, "message": f"Error restoring {content_type}: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {
+                    "success": False,
+                    "message": f"Error restoring {content_type}: {str(e)}",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -1705,7 +1796,9 @@ class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
     """
 
     authentication_classes = (
-        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
     )
     permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
 
@@ -1725,19 +1818,29 @@ class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
         course_ids = [course_id]
         if course_or_org == "org":
             org_id = CourseKey.from_string(course_id).org
-            enrollments = CourseEnrollment.objects.filter(user=request.user).values_list('course_id', flat=True)
-            course_ids.extend([
-                str(c_id)
-                for c_id in enrollments
-                if c_id.org == org_id
-            ])
+            enrollments = CourseEnrollment.objects.filter(
+                user=request.user
+            ).values_list("course_id", flat=True)
+            course_ids.extend([str(c_id) for c_id in enrollments if c_id.org == org_id])
             course_ids = list(set(course_ids))
             log.info("<<Bulk Restore>> %s enrolled in %s", username, enrollments)
-        log.info("<<Bulk Restore>> Posts for %s in %s - for %s %s", username, course_ids, course_or_org, course_id)
+        log.info(
+            "<<Bulk Restore>> Posts for %s in %s - for %s %s",
+            username,
+            course_ids,
+            course_or_org,
+            course_id,
+        )
 
         comment_count = Comment.get_user_deleted_comment_count(user.id, course_ids)
         thread_count = Thread.get_user_deleted_threads_count(user.id, course_ids)
-        log.info("<<Bulk Restore>> %s in %s - Count thread %s, comment %s", username, course_ids, thread_count, comment_count)
+        log.info(
+            "<<Bulk Restore>> %s in %s - Count thread %s, comment %s",
+            username,
+            course_ids,
+            thread_count,
+            comment_count,
+        )
 
         if execute_task:
             event_data = {
@@ -1752,7 +1855,7 @@ class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
             )
         return Response(
             {"comment_count": comment_count, "thread_count": thread_count},
-            status=status.HTTP_202_ACCEPTED
+            status=status.HTTP_202_ACCEPTED,
         )
 
 
@@ -1791,7 +1894,9 @@ class DeletedContentView(DeveloperErrorViewMixin, APIView):
     """
 
     authentication_classes = (
-        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
     )
     permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
 
@@ -1801,40 +1906,45 @@ class DeletedContentView(DeveloperErrorViewMixin, APIView):
         """
         try:
             course_key = CourseKey.from_string(course_id)
-        except Exception:
-            raise BadRequest("Invalid course_id")
+        except Exception as e:
+            raise BadRequest("Invalid course_id") from e
 
         # Get query parameters
-        content_type = request.GET.get('content_type', None)  # 'thread', 'comment', or None for all
-        page = int(request.GET.get('page', 1))
-        per_page = int(request.GET.get('per_page', 20))
-        author_id = request.GET.get('author_id', None)
+        content_type = request.GET.get(
+            "content_type", None
+        )  # 'thread', 'comment', or None for all
+        page = int(request.GET.get("page", 1))
+        per_page = int(request.GET.get("per_page", 20))
+        author_id = request.GET.get("author_id", None)
 
         # Validate parameters
-        if content_type and content_type not in ['thread', 'comment']:
+        if content_type and content_type not in ["thread", "comment"]:
             raise BadRequest("content_type must be 'thread' or 'comment'")
-        
-        if per_page > 100:
-            per_page = 100  # Limit to prevent excessive load
+
+        per_page = min(per_page, 100)  # Limit to prevent excessive load
 
         try:
             # Import here to avoid circular imports
-            from lms.djangoapps.discussion.rest_api.api import get_deleted_content_for_course
-            
+            from lms.djangoapps.discussion.rest_api.api import (
+                get_deleted_content_for_course,
+            )
+
             results = get_deleted_content_for_course(
                 request=request,
                 course_id=str(course_key),
                 content_type=content_type,
                 page=page,
                 per_page=per_page,
-                author_id=author_id
+                author_id=author_id,
             )
-            
+
             return Response(results, status=status.HTTP_200_OK)
-            
-        except Exception as e:
-            logging.exception("Error retrieving deleted content for course %s: %s", course_id, e)
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.exception(
+                "Error retrieving deleted content for course %s: %s", course_id, e
+            )
             return Response(
                 {"error": "Failed to retrieve deleted content"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
