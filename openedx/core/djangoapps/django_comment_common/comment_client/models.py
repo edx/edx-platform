@@ -174,13 +174,13 @@ class Model:
         course_key = get_course_key(self.attributes.get("course_id") or course_id)
         response = None
         if self.type == "comment":
-            response = forum_api.delete_comment(
+            response = forum_api.delete_comment(  # pylint: disable=unexpected-keyword-arg
                 comment_id=self.attributes["id"],
                 course_id=str(course_key),
                 deleted_by=deleted_by,
             )
         elif self.type == "thread":
-            response = forum_api.delete_thread(
+            response = forum_api.delete_thread(  # pylint: disable=unexpected-keyword-arg
                 thread_id=self.attributes["id"],
                 course_id=str(course_key),
                 deleted_by=deleted_by,

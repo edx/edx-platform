@@ -63,6 +63,7 @@ def perform_request(method, url, data_or_params=None, raw=False,
         data = None
         params = data_or_params.copy()
         params.update(request_id_dict)
+    import pdb;pdb.set_trace()
     response = requests.request(
         method,
         url,

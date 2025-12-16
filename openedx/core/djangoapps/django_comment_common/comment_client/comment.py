@@ -176,7 +176,7 @@ class Comment(models.Model):
             course_id = comment.get("course_id")
             if comment_id:
                 # Use forum_api.delete_comment which supports deleted_by parameter
-                forum_api.delete_comment(
+                forum_api.delete_comment(  # pylint: disable=unexpected-keyword-arg
                     comment_id, course_id=course_id, deleted_by=deleted_by
                 )
                 comments_deleted += 1
