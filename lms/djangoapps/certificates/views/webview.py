@@ -514,6 +514,25 @@ def render_html_view(request, course_id, certificate=None):  # pylint: disable=t
         )
         return _render_invalid_certificate(request, course_id, platform_name, configuration)
 
+    # Defense-in-depth: block certificate view when proctoring review is pending.
+    #
+    # This mirrors the `certificate_blocked_due_to_proctoring` flag exposed via courseware
+    # APIs. The learner-facing MFE should hide links, but we also block direct URL access.
+    try:
+        from lms.djangoapps.certificates.proctoring_block import is_certificate_view_blocked_due_to_proctoring
+
+        if is_certificate_view_blocked_due_to_proctoring(user, course_key):
+            log.info(
+                "Certificate webview blocked due to proctoring. user_id=%s course_id=%s verify_uuid=%s",
+                user_id,
+                course_id,
+                user_certificate.verify_uuid,
+            )
+            return _render_invalid_certificate(request, course_id, platform_name, configuration)
+    except Exception:
+        # Never block certificate access if proctoring state cannot be determined.
+        pass
+
     # Get the active certificate configuration for this course
     # If we do not have an active certificate, we'll need to send the user to the "Invalid" screen
     # Passing in the 'preview' parameter, if specified, will return a configuration, if defined

@@ -173,6 +173,7 @@ class CourseApiTestViews(BaseCoursewareTests, MasqueradeMixin):
                 assert response.data['linkedin_add_to_profile_url'] is None
             else:
                 assert response.data['certificate_data']['cert_status'] == 'earned_but_not_available'
+                assert response.data['certificate_data']['certificate_blocked_due_to_proctoring'] is False
                 expected_verify_identity_url = IDVerificationService.get_verify_location(
                     course_id=self.course.id
                 )

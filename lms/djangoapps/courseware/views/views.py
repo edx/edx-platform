@@ -169,7 +169,7 @@ log = logging.getLogger("edx.courseware")
 REQUIREMENTS_DISPLAY_MODES = CourseMode.CREDIT_MODES + [CourseMode.VERIFIED]
 
 CertData = namedtuple(
-    "CertData", ["cert_status", "title", "msg", "download_url", "cert_web_view_url", "certificate_available_date"]
+    "CertData", ["cert_status", "title", "msg", "download_url", "cert_web_view_url", "certificate_available_date",  "certificate_blocked_due_to_proctoring"]
 )
 EARNED_BUT_NOT_AVAILABLE_CERT_STATUS = 'earned_but_not_available'
 
@@ -181,7 +181,8 @@ AUDIT_PASSING_CERT_DATA = CertData(
     _('You are enrolled in the audit track for this course. The audit track does not include a certificate.'),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
 )
 
 HONOR_PASSING_CERT_DATA = CertData(
@@ -190,7 +191,8 @@ HONOR_PASSING_CERT_DATA = CertData(
     _('You are enrolled in the honor track for this course. The honor track does not include a certificate.'),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
 )
 
 INELIGIBLE_PASSING_CERT_DATA = {
@@ -207,7 +209,8 @@ GENERATING_CERT_DATA = CertData(
     ),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
 )
 
 INVALID_CERT_DATA = CertData(
@@ -216,7 +219,8 @@ INVALID_CERT_DATA = CertData(
     _('Please contact your course team if you have any questions.'),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
 )
 
 REQUESTING_CERT_DATA = CertData(
@@ -225,7 +229,8 @@ REQUESTING_CERT_DATA = CertData(
     _("You've earned a certificate for this course."),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
 )
 
 
@@ -236,7 +241,8 @@ def _earned_but_not_available_cert_data(cert_downloadable_status):
         _('After this course officially ends, you will receive an email notification with your certificate.'),
         download_url=None,
         cert_web_view_url=None,
-        certificate_available_date=cert_downloadable_status.get('certificate_available_date')
+        certificate_available_date=cert_downloadable_status.get('certificate_available_date'),
+        certificate_blocked_due_to_proctoring=False,
     )
 
 
@@ -247,7 +253,8 @@ def _not_earned_but_available_date_cert_data(cert_downloadable_status):
         _('After this course officially ends, you will receive an email notification with your certificate.'),
         download_url=None,
         cert_web_view_url=None,
-        certificate_available_date=cert_downloadable_status.get('certificate_available_date')
+        certificate_available_date=cert_downloadable_status.get('certificate_available_date'),
+        certificate_blocked_due_to_proctoring=False,
     )
 
 
@@ -258,7 +265,8 @@ def _downloadable_cert_data(download_url=None, cert_web_view_url=None):
         _("You've earned a certificate for this course."),
         download_url=download_url,
         cert_web_view_url=cert_web_view_url,
-        certificate_available_date=None
+        certificate_available_date=None,
+        certificate_blocked_due_to_proctoring=False,
     )
 
 
@@ -275,7 +283,8 @@ def _unverified_cert_data():
         ).format(platform_name=configuration_helpers.get_value('PLATFORM_NAME', settings.PLATFORM_NAME)),
         download_url=None,
         cert_web_view_url=None,
-        certificate_available_date=None
+        certificate_available_date=None,
+        certificate_blocked_due_to_proctoring=False,
     )
 
 
@@ -1157,6 +1166,29 @@ def get_cert_data(student, course, enrollment_mode, course_grade=None):
 
     if not certs_api.get_active_web_certificate(course) and not certs_api.is_valid_pdf_certificate(cert_data):
         return
+
+    # Proctoring-based certificate view/download blocking.
+    #
+    # Default is False for safety/backward compatibility. Only compute this for
+    # downloadable certificates to avoid unnecessary proctoring API calls.
+    try:
+        if (
+            cert_data.cert_status == CertificateStatuses.downloadable
+            and (cert_data.download_url or cert_data.cert_web_view_url)
+        ):
+            from lms.djangoapps.certificates.proctoring_block import (
+                is_certificate_view_blocked_due_to_proctoring,
+            )
+
+            cert_data = cert_data._replace(
+                certificate_blocked_due_to_proctoring=is_certificate_view_blocked_due_to_proctoring(
+                    student,
+                    course.id,
+                )
+            )
+    except Exception:  # pragma: no cover
+        # If proctoring is misconfigured/unavailable, never block certificate access.
+        cert_data = cert_data._replace(certificate_blocked_due_to_proctoring=False)
 
     return cert_data
 

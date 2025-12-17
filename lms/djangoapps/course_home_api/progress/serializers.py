@@ -116,7 +116,8 @@ class CertificateDataSerializer(ReadOnlySerializer):
     cert_web_view_url = serializers.CharField()
     download_url = serializers.CharField()
     certificate_available_date = serializers.DateTimeField()
-
+    # LMS-derived flag; default should be treated as False by consumers if missing.
+    certificate_blocked_due_to_proctoring = serializers.BooleanField(default=False)
 
 class VerificationDataSerializer(ReadOnlySerializer):
     """
