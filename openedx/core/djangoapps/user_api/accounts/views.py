@@ -23,6 +23,7 @@ from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from edx_ace import ace
 from edx_ace.recipient import Recipient
+from edx_django_utils.monitoring import record_exception
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from enterprise.models import EnterpriseCourseEnrollment, EnterpriseCustomerUser, PendingEnterpriseCustomerUser
@@ -1100,10 +1101,24 @@ class LMSAccountRetirementView(ViewSet):
                 user=retirement.user,
             )
         except UserRetirementStatus.DoesNotExist:
+            log.error(
+                'UserRetirementStatus not found for retirement action'
+            )
+            record_exception()
             return Response(status=status.HTTP_404_NOT_FOUND)
         except RetirementStateError as exc:
+            log.error(
+                'RetirementStateError during user retirement: user_id=%s, error=%s',
+                getattr(retirement, 'user', {}).get('id', 'unknown') if 'retirement' in locals() else 'unknown', str(exc)
+            )
+            record_exception()
             return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:  # pylint: disable=broad-except
+            log.error(
+                'Unexpected error during user retirement: user_id=%s, error=%s',
+                getattr(retirement, 'user', {}).get('id', 'unknown') if 'retirement' in locals() else 'unknown', str(exc)
+            )
+            record_exception()
             return Response(str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
