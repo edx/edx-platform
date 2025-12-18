@@ -1,5 +1,5 @@
 # pylint: disable=missing-docstring,unused-argument,broad-except
-"""" Common utilities for comment client wrapper """
+""" " Common utilities for comment client wrapper"""
 
 
 import logging
@@ -15,13 +15,18 @@ log = logging.getLogger(__name__)
 
 
 def strip_none(dic):
-    return {k: v for k, v in dic.items() if v is not None}  # lint-amnesty, pylint: disable=consider-using-dict-comprehension
+    return {
+        k: v for k, v in dic.items() if v is not None
+    }  # lint-amnesty, pylint: disable=consider-using-dict-comprehension
 
 
 def strip_blank(dic):
     def _is_blank(v):
         return isinstance(v, str) and len(v.strip()) == 0
-    return {k: v for k, v in dic.items() if not _is_blank(v)}  # lint-amnesty, pylint: disable=consider-using-dict-comprehension
+
+    return {
+        k: v for k, v in dic.items() if not _is_blank(v)
+    }  # lint-amnesty, pylint: disable=consider-using-dict-comprehension
 
 
 def extract(dic, keys):
@@ -31,57 +36,67 @@ def extract(dic, keys):
         return strip_none({k: dic.get(k) for k in keys})
 
 
-def perform_request(method, url, data_or_params=None, raw=False,
-                    metric_action=None, metric_tags=None, paged_results=False):
+def perform_request(
+    method,
+    url,
+    data_or_params=None,
+    raw=False,
+    metric_action=None,
+    metric_tags=None,
+    paged_results=False,
+):
     # To avoid dependency conflict
     from openedx.core.djangoapps.django_comment_common.models import ForumsConfig
+
     config = ForumsConfig.current()
 
     if not config.enabled:
-        raise CommentClientMaintenanceError('service disabled')
+        raise CommentClientMaintenanceError("service disabled")
 
     if metric_tags is None:
         metric_tags = []
 
-    metric_tags.append(f'method:{method}')
+    metric_tags.append(f"method:{method}")
     if metric_action:
-        metric_tags.append(f'action:{metric_action}')
+        metric_tags.append(f"action:{metric_action}")
 
     if data_or_params is None:
         data_or_params = {}
     headers = {
-        'X-Edx-Api-Key': config.api_key,
-        'Accept-Language': get_language(),
+        "X-Edx-Api-Key": config.api_key,
+        "Accept-Language": get_language(),
     }
     request_id = uuid4()
-    request_id_dict = {'request_id': request_id}
+    request_id_dict = {"request_id": request_id}
 
-    if method in ['post', 'put', 'patch']:
+    if method in ["post", "put", "patch"]:
         data = data_or_params
         params = request_id_dict
     else:
         data = None
         params = data_or_params.copy()
         params.update(request_id_dict)
-    import pdb;pdb.set_trace()
+
     response = requests.request(
         method,
         url,
         data=data,
         params=params,
         headers=headers,
-        timeout=config.connection_timeout
+        timeout=config.connection_timeout,
     )
 
-    metric_tags.append(f'status_code:{response.status_code}')
+    metric_tags.append(f"status_code:{response.status_code}")
     status_code = int(response.status_code)
     if status_code > 200:
-        metric_tags.append('result:failure')
+        metric_tags.append("result:failure")
     else:
-        metric_tags.append('result:success')
+        metric_tags.append("result:success")
 
     if 200 < status_code < 500:  # lint-amnesty, pylint: disable=no-else-raise
-        log.info(f'Investigation Log: CommentClientRequestError for request with {method} and params {params}')
+        log.info(
+            f"Investigation Log: CommentClientRequestError for request with {method} and params {params}"
+        )
         raise CommentClientRequestError(response.text, response.status_code)
     # Heroku returns a 503 when an application is in maintenance mode
     elif status_code == 503:
@@ -97,8 +112,7 @@ def perform_request(method, url, data_or_params=None, raw=False,
             except ValueError:
                 raise CommentClientError(  # lint-amnesty, pylint: disable=raise-missing-from
                     "Invalid JSON response for request {request_id}; first 100 characters: '{content}'".format(
-                        request_id=request_id,
-                        content=response.text[:100]
+                        request_id=request_id, content=response.text[:100]
                     )
                 )
             return data
@@ -110,9 +124,9 @@ def clean_forum_params(params):
     for k, v in params.items():
         if v is not None and v != []:
             if isinstance(v, str):
-                if v.lower() == 'true':
+                if v.lower() == "true":
                     result[k] = True
-                elif v.lower() == 'false':
+                elif v.lower() == "false":
                     result[k] = False
                 else:
                     result[k] = v
@@ -140,9 +154,11 @@ class CommentClientMaintenanceError(CommentClientError):
 
 
 class CommentClientPaginatedResult:
-    """ class for paginated results returned from comment services"""
+    """class for paginated results returned from comment services"""
 
-    def __init__(self, collection, page, num_pages, thread_count=0, corrected_text=None):
+    def __init__(
+        self, collection, page, num_pages, thread_count=0, corrected_text=None
+    ):
         self.collection = collection
         self.page = page
         self.num_pages = num_pages
@@ -151,9 +167,11 @@ class CommentClientPaginatedResult:
 
 
 class SubscriptionsPaginatedResult:
-    """ class for paginated results returned from comment services"""
+    """class for paginated results returned from comment services"""
 
-    def __init__(self, collection, page, num_pages, subscriptions_count=0, corrected_text=None):
+    def __init__(
+        self, collection, page, num_pages, subscriptions_count=0, corrected_text=None
+    ):
         self.collection = collection
         self.page = page
         self.num_pages = num_pages
@@ -169,23 +187,23 @@ def check_forum_heartbeat():
     """
     # To avoid dependency conflict
     from openedx.core.djangoapps.django_comment_common.models import ForumsConfig
+
     config = ForumsConfig.current()
 
     if not config.enabled:
         # If this check is enabled but forums disabled, don't connect, just report no error
-        return 'forum', True, 'OK'
+        return "forum", True, "OK"
 
     try:
         res = requests.get(
-            '%s/heartbeat' % COMMENTS_SERVICE,
-            timeout=config.connection_timeout
+            "%s/heartbeat" % COMMENTS_SERVICE, timeout=config.connection_timeout
         ).json()
-        if res['OK']:
-            return 'forum', True, 'OK'
+        if res["OK"]:
+            return "forum", True, "OK"
         else:
-            return 'forum', False, res.get('check', 'Forum heartbeat failed')
+            return "forum", False, res.get("check", "Forum heartbeat failed")
     except Exception as fail:
-        return 'forum', False, str(fail)
+        return "forum", False, str(fail)
 
 
 def get_course_key(course_id: CourseKey | str | None) -> CourseKey | None:

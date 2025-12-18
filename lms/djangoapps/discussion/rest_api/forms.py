@@ -95,9 +95,7 @@ class ThreadListGetForm(_PaginationForm):
         try:
             return CourseLocator.from_string(value)
         except InvalidKeyError as e:
-            raise ValidationError(
-                f"'{value}' is not a valid course id"
-            ) from e
+            raise ValidationError(f"'{value}' is not a valid course id") from e
 
     def clean_following(self):
         """Validate following"""
@@ -164,9 +162,7 @@ class UserCommentListGetForm(_PaginationForm):
         try:
             return CourseLocator.from_string(value)
         except InvalidKeyError as e:
-            raise ValidationError(
-                f"'{value}' is not a valid course id"
-            ) from e
+            raise ValidationError(f"'{value}' is not a valid course id") from e
 
 
 class CommentActionsForm(Form):

@@ -10,7 +10,9 @@ from eventtracking import tracker
 from rest_framework.serializers import ValidationError
 
 from forum import api as forum_api
-from forum.api.threads import prepare_thread_api_response  # pylint: disable=import-error
+from forum.api.threads import (
+    prepare_thread_api_response,
+)  # pylint: disable=import-error
 from forum.backend import get_backend  # pylint: disable=import-error
 from forum.backends.mongodb.threads import CommentThread  # pylint: disable=import-error
 from forum.utils import ForumV2RequestError  # pylint: disable=import-error

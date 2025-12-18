@@ -5,7 +5,9 @@ import time
 from bs4 import BeautifulSoup
 
 from forum import api as forum_api
-from forum.backends.mongodb.comments import Comment as ForumComment  # pylint: disable=import-error
+from forum.backends.mongodb.comments import (
+    Comment as ForumComment,
+)  # pylint: disable=import-error
 from openedx.core.djangoapps.django_comment_common.comment_client import (
     models,
     settings,

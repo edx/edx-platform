@@ -39,9 +39,7 @@ class Model:
             return self.attributes[name]
         except KeyError as e:
             if self.retrieved or self.id is None:
-                raise AttributeError(
-                    f"Field {name} does not exist"
-                ) from e
+                raise AttributeError(f"Field {name} does not exist") from e
             self.retrieve()
             return self.__getattr__(name)
 
@@ -174,16 +172,20 @@ class Model:
         course_key = get_course_key(self.attributes.get("course_id") or course_id)
         response = None
         if self.type == "comment":
-            response = forum_api.delete_comment(  # pylint: disable=unexpected-keyword-arg
-                comment_id=self.attributes["id"],
-                course_id=str(course_key),
-                deleted_by=deleted_by,
+            response = (
+                forum_api.delete_comment(  # pylint: disable=unexpected-keyword-arg
+                    comment_id=self.attributes["id"],
+                    course_id=str(course_key),
+                    deleted_by=deleted_by,
+                )
             )
         elif self.type == "thread":
-            response = forum_api.delete_thread(  # pylint: disable=unexpected-keyword-arg
-                thread_id=self.attributes["id"],
-                course_id=str(course_key),
-                deleted_by=deleted_by,
+            response = (
+                forum_api.delete_thread(  # pylint: disable=unexpected-keyword-arg
+                    thread_id=self.attributes["id"],
+                    course_id=str(course_key),
+                    deleted_by=deleted_by,
+                )
             )
         if response is None:
             raise CommentClientRequestError("Forum v2 API call is missing")

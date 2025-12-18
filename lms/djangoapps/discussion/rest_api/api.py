@@ -1430,7 +1430,7 @@ def get_comment_list(
             # CS does not apply resp_skip and resp_limit to endorsed responses
             # of a question post
             responses = cc_thread["endorsed_responses"][
-                response_skip: (response_skip + page_size)
+                response_skip : (response_skip + page_size)
             ]
             resp_total = len(cc_thread["endorsed_responses"])
         else:
@@ -1992,7 +1992,7 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
 
         response_skip = page_size * (page - 1)
         paged_response_comments = response_comments[
-            response_skip: (response_skip + page_size)
+            response_skip : (response_skip + page_size)
         ]
         if not paged_response_comments and page != 1:
             raise PageNotFoundError("Page not found (No results on this page).")
@@ -2334,6 +2334,7 @@ def _get_user_label_function(course_staff_user_ids, moderator_user_ids, ta_user_
     Returns:
         A function that takes a user_id and returns the appropriate label or None
     """
+
     def get_user_label(user_id):
         """Get role label for a user ID."""
         if not user_id:
@@ -2349,6 +2350,7 @@ def _get_user_label_function(course_staff_user_ids, moderator_user_ids, ta_user_
         except (ValueError, TypeError):
             pass
         return None
+
     return get_user_label
 
 
@@ -2524,12 +2526,7 @@ def _add_user_profiles_to_content(deleted_content, usernames_set, request):
 
 
 def get_deleted_content_for_course(
-    request,
-    course_id,
-    content_type=None,
-    page=1,
-    per_page=20,
-    author_id=None
+    request, course_id, content_type=None, page=1, per_page=20, author_id=None
 ):
     """
     Retrieve all deleted content (threads, comments) for a course.
