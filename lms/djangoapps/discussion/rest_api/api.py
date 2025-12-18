@@ -1430,7 +1430,7 @@ def get_comment_list(
             # CS does not apply resp_skip and resp_limit to endorsed responses
             # of a question post
             responses = cc_thread["endorsed_responses"][
-                response_skip : (response_skip + page_size)
+                response_skip: (response_skip + page_size)
             ]
             resp_total = len(cc_thread["endorsed_responses"])
         else:
@@ -1992,7 +1992,7 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
 
         response_skip = page_size * (page - 1)
         paged_response_comments = response_comments[
-            response_skip : (response_skip + page_size)
+            response_skip: (response_skip + page_size)
         ]
         if not paged_response_comments and page != 1:
             raise PageNotFoundError("Page not found (No results on this page).")
