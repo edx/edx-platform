@@ -427,16 +427,6 @@ class Thread(models.Model):
             thread_id=thread_id, course_id=course_id, restored_by=restored_by
         )
 
-    @classmethod
-    def _restore_thread(cls, thread_id, course_id=None, restored_by=None):
-        """
-        Restores a soft-deleted thread by setting is_deleted=False and clearing deletion metadata
-        Internal method that delegates to forum API
-        """
-        return forum_api.restore_thread(
-            thread_id=thread_id, course_id=course_id, restored_by=restored_by
-        )
-
 
 def _url_for_flag_abuse_thread(thread_id):
     return f"{settings.PREFIX}/threads/{thread_id}/abuse_flag"

@@ -225,16 +225,6 @@ class Comment(models.Model):
             comment_id=comment_id, course_id=course_id, restored_by=restored_by
         )
 
-    @classmethod
-    def _restore_comment(cls, comment_id, course_id=None, restored_by=None):
-        """
-        Restores a soft-deleted comment by setting is_deleted=False and clearing deletion metadata
-        Internal method that delegates to forum API
-        """
-        return forum_api.restore_comment(
-            comment_id=comment_id, course_id=course_id, restored_by=restored_by
-        )
-
 
 def _url_for_thread_comments(thread_id):
     return f"{settings.PREFIX}/threads/{thread_id}/comments"
