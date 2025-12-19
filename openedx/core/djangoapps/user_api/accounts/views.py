@@ -1116,7 +1116,7 @@ class LMSAccountRetirementView(ViewSet):
         except RetirementStateError as exc:
             try:
                 user_id = retirement.user.id
-            except (AttributeError, NameError):
+            except AttributeError:
                 user_id = 'unknown'
             log.error(
                 'RetirementStateError during user retirement: user_id=%s, error=%s',
@@ -1127,7 +1127,7 @@ class LMSAccountRetirementView(ViewSet):
         except Exception as exc:  # pylint: disable=broad-except
             try:
                 user_id = retirement.user.id
-            except (AttributeError, NameError):
+            except AttributeError:
                 user_id = 'unknown'
             log.error(
                 'Unexpected error during user retirement: user_id=%s, error=%s',
