@@ -2337,8 +2337,6 @@ def _get_user_label_function(course_staff_user_ids, moderator_user_ids, ta_user_
 
     def get_user_label(user_id):
         """Get role label for a user ID."""
-        if not user_id:
-            return None
         try:
             user_id_int = int(user_id)
             if user_id_int in course_staff_user_ids:
@@ -2348,6 +2346,7 @@ def _get_user_label_function(course_staff_user_ids, moderator_user_ids, ta_user_
             elif user_id_int in ta_user_ids:
                 return "Community TA"
         except (ValueError, TypeError):
+            # If user_id has any issues, there's no label to return
             pass
         return None
 
@@ -2377,6 +2376,7 @@ def _process_deleted_thread(thread_data, get_user_label_fn, usernames_set):
             deleted_by_username = deleted_user.username
             usernames_set.add(deleted_by_username)
         except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, skip setting deleted fields
             pass
 
     if author_username:
@@ -2435,6 +2435,7 @@ def _process_deleted_comment(comment_data, get_user_label_fn, usernames_set):
             deleted_by_username = deleted_user.username
             usernames_set.add(deleted_by_username)
         except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, skip setting deleted fields
             pass
 
     if author_username:

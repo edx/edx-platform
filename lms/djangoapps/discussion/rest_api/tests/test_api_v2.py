@@ -10,25 +10,20 @@ import itertools
 import random
 from datetime import datetime, timedelta
 from unittest import mock
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import ddt
 import httpretty
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import override_settings
 from django.test.client import RequestFactory
-from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import CourseLocator
 from pytz import UTC
 from rest_framework.exceptions import PermissionDenied
 
 from common.djangoapps.student.tests.factories import (
     AdminFactory,
-    BetaTesterFactory,
     CourseEnrollmentFactory,
-    StaffFactory,
     UserFactory,
 )
 from common.djangoapps.util.testing import UrlResetMixin
@@ -43,12 +38,9 @@ from lms.djangoapps.discussion.rest_api.api import (
     delete_comment,
     delete_thread,
     get_comment_list,
-    get_course,
-    get_course_topics,
     get_course_topics_v2,
     get_thread,
     get_thread_list,
-    get_user_comments,
     update_comment,
     update_thread,
 )
@@ -60,16 +52,13 @@ from lms.djangoapps.discussion.rest_api.exceptions import (
 )
 from lms.djangoapps.discussion.rest_api.serializers import TopicOrdering
 from lms.djangoapps.discussion.rest_api.tests.utils import (
-    CommentsServiceMockMixin,
     ForumMockUtilsMixin,
     make_paginated_api_response,
-    parsed_body,
 )
 from lms.djangoapps.discussion.tests.utils import (
     make_minimal_cs_comment,
     make_minimal_cs_thread,
 )
-from openedx.core.djangoapps.course_groups.models import CourseUserGroupPartitionGroup
 from openedx.core.djangoapps.course_groups.tests.helpers import CohortFactory
 from openedx.core.djangoapps.discussions.models import (
     DiscussionsConfiguration,
@@ -96,7 +85,6 @@ from xmodule.modulestore.tests.django_utils import (
     SharedModuleStoreTestCase,
 )
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
-from xmodule.partitions.partitions import Group, UserPartition
 
 User = get_user_model()
 
