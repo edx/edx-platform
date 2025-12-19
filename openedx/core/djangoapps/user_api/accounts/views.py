@@ -1114,7 +1114,10 @@ class LMSAccountRetirementView(ViewSet):
             record_exception()
             return Response(status=status.HTTP_404_NOT_FOUND)
         except RetirementStateError as exc:
-            user_id = getattr(retirement, 'user', {}).get('id', 'unknown') if 'retirement' in locals() else 'unknown'
+            try:
+                user_id = retirement.user.id
+            except (AttributeError, NameError):
+                user_id = 'unknown'
             log.error(
                 'RetirementStateError during user retirement: user_id=%s, error=%s',
                 user_id, str(exc)
@@ -1122,7 +1125,10 @@ class LMSAccountRetirementView(ViewSet):
             record_exception()
             return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:  # pylint: disable=broad-except
-            user_id = getattr(retirement, 'user', {}).get('id', 'unknown') if 'retirement' in locals() else 'unknown'
+            try:
+                user_id = retirement.user.id
+            except (AttributeError, NameError):
+                user_id = 'unknown'
             log.error(
                 'Unexpected error during user retirement: user_id=%s, error=%s',
                 user_id, str(exc)
