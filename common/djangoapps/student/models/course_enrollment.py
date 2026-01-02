@@ -1581,7 +1581,14 @@ class ManualEnrollmentAudit(models.Model):
             return False
 
         for manual_enrollment_audit in manual_enrollment_audits:
-            manual_enrollment_audit.history.update(reason="", enrolled_email=retired_email)
+            try:
+                manual_enrollment_audit.history.update(reason="", enrolled_email=retired_email)
+            except CourseOverview.DoesNotExist:
+                # Course overview no longer exists, skip historical update but continue retirement
+                log.warning(
+                    f"CourseOverview missing for enrollment during retirement, skipping historical update "
+                    f"for audit {manual_enrollment_audit.id}"
+                )
         manual_enrollment_audits.update(reason="", enrolled_email=retired_email)
         return True
 
