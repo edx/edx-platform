@@ -723,6 +723,30 @@ class TestManualEnrollmentAudit(SharedModuleStoreTestCase):
         assert not ManualEnrollmentAudit.objects.filter(enrollment=enrollment).exclude(enrolled_email='xxx')
         assert not ManualEnrollmentAudit.objects.filter(enrollment=enrollment).exclude(reason='')
 
+    def test_retirement_with_missing_course_overview(self):
+        """
+        Tests that retirement succeeds gracefully when CourseOverview is missing,
+        skipping historical updates but still updating current records.
+        """
+        enrollment = CourseEnrollment.enroll(self.user, self.course.id)
+        ManualEnrollmentAudit.create_manual_enrollment_audit(
+            self.instructor, self.user.email, ALLOWEDTOENROLL_TO_ENROLLED,
+            'test enrollment with missing overview', enrollment
+        )
+
+        # Delete the CourseOverview to simulate the missing overview scenario
+        CourseOverview.objects.filter(id=self.course.id).delete()
+
+        # Retirement should complete successfully without raising CourseOverview.DoesNotExist
+        ManualEnrollmentAudit.retire_manual_enrollments(user=self.user, retired_email="retired@test.com")
+
+        # Verify the main audit records were still updated despite missing CourseOverview
+        assert ManualEnrollmentAudit.objects.filter(enrollment=enrollment).exists()
+        assert not ManualEnrollmentAudit.objects.filter(enrollment=enrollment).exclude(
+            enrolled_email='retired@test.com'
+        )
+        assert not ManualEnrollmentAudit.objects.filter(enrollment=enrollment).exclude(reason='')
+
 
 class TestAccountRecovery(TestCase):
     """
