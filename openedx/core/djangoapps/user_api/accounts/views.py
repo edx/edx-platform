@@ -1121,22 +1121,20 @@ class LMSAccountRetirementView(ViewSet):
             except AttributeError:
                 user_id = 'unknown'
 
-            error_details = {
-                'error_type': 'RetirementStateError',
-                'user_id': user_id,
-                'original_error': str(exc),
-                'timestamp': datetime.datetime.now(pytz.UTC).isoformat()
-            }
-
-            try:
-                current_responses = json.loads(retirement.responses) if retirement.responses else []
-                current_responses.append(error_details)
-                retirement.responses = json.dumps(current_responses)
-                retirement.save()
-            except (json.JSONDecodeError, AttributeError):
-                pass
-
             log_error = self._sanitize_error_message(str(exc))
+            
+            # Store error information in retirement status as plain text
+            error_msg = f"RetirementStateError: {log_error}"
+            try:
+                if 'retirement' in locals() and retirement:
+                    if retirement.responses:
+                        retirement.responses += f"\\n{error_msg}"
+                    else:
+                        retirement.responses = error_msg
+                    retirement.save()
+            except AttributeError:
+                pass  # Continue with logging even if response storage fails
+
             log.error(
                 'RetirementStateError during user retirement: user_id=%s, error=%s',
                 user_id, log_error
@@ -1149,22 +1147,20 @@ class LMSAccountRetirementView(ViewSet):
             except AttributeError:
                 user_id = 'unknown'
 
-            error_details = {
-                'error_type': type(exc).__name__,
-                'user_id': user_id,
-                'original_error': str(exc),
-                'timestamp': datetime.datetime.now(pytz.UTC).isoformat()
-            }
-
-            try:
-                current_responses = json.loads(retirement.responses) if retirement.responses else []
-                current_responses.append(error_details)
-                retirement.responses = json.dumps(current_responses)
-                retirement.save()
-            except (json.JSONDecodeError, AttributeError):
-                pass
-
             log_error = self._sanitize_error_message(str(exc))
+            
+            # Store error information in retirement status as plain text
+            error_msg = f"{type(exc).__name__}: {log_error}"
+            try:
+                if 'retirement' in locals() and retirement:
+                    if retirement.responses:
+                        retirement.responses += f"\\n{error_msg}"
+                    else:
+                        retirement.responses = error_msg
+                    retirement.save()
+            except AttributeError:
+                pass  # Continue with logging even if response storage fails
+
             log.error(
                 'Unexpected error during user retirement: user_id=%s, error=%s',
                 user_id, log_error
@@ -1189,11 +1185,19 @@ class LMSAccountRetirementView(ViewSet):
 
         message = error_message
 
+        # Remove email addresses
         message = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
                           '-', message, flags=re.IGNORECASE)
 
+        # Remove username values in various formats
         message = re.sub(r"username='[^']*'", "username='-'", message)
         message = re.sub(r'username="[^"]*"', 'username="-"', message)
+        message = re.sub(r'username:\s*[^\s,]+', 'username: -', message)
+        message = re.sub(r'username=\s*[^\s,]+', 'username=-', message)
+        
+        # Remove common username patterns in error messages
+        message = re.sub(r'\bUser\s+[A-Za-z0-9._-]+\s+not found', 'User - not found', message, flags=re.IGNORECASE)
+        message = re.sub(r'for user\s+[A-Za-z0-9._-]+', 'for user -', message, flags=re.IGNORECASE)
 
         return message
 
