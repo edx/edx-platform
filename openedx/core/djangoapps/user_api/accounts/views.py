@@ -1128,14 +1128,13 @@ class LMSAccountRetirementView(ViewSet):
                 'timestamp': datetime.datetime.now(pytz.UTC).isoformat()
             }
 
-            # Store detailed error information in retirement status
             try:
                 current_responses = json.loads(retirement.responses) if retirement.responses else []
                 current_responses.append(error_details)
                 retirement.responses = json.dumps(current_responses)
                 retirement.save()
             except (json.JSONDecodeError, AttributeError):
-                pass  # Continue with logging even if response storage fails
+                pass
 
             log_error = self._sanitize_error_message(str(exc))
             log.error(
@@ -1157,14 +1156,13 @@ class LMSAccountRetirementView(ViewSet):
                 'timestamp': datetime.datetime.now(pytz.UTC).isoformat()
             }
 
-            # Store detailed error information in retirement status
             try:
                 current_responses = json.loads(retirement.responses) if retirement.responses else []
                 current_responses.append(error_details)
                 retirement.responses = json.dumps(current_responses)
                 retirement.save()
             except (json.JSONDecodeError, AttributeError):
-                pass  # Continue with logging even if response storage fails
+                pass
 
             log_error = self._sanitize_error_message(str(exc))
             log.error(
@@ -1189,14 +1187,11 @@ class LMSAccountRetirementView(ViewSet):
         if not error_message:
             return error_message
 
-        # Simple PII removal for the most common cases in retirement errors
         message = error_message
 
-        # Remove email addresses
         message = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
                           '-', message, flags=re.IGNORECASE)
 
-        # Remove username values but keep the structure
         message = re.sub(r"username='[^']*'", "username='-'", message)
         message = re.sub(r'username="[^"]*"', 'username="-"', message)
 
