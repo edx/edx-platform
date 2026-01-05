@@ -6,7 +6,6 @@ https://openedx.atlassian.net/wiki/display/TNL/User+API
 """
 
 import datetime
-import json
 import logging
 import re
 from functools import wraps
@@ -1072,7 +1071,7 @@ class LMSAccountRetirementView(ViewSet):
     parser_classes = (JSONParser,)
 
     @request_requires_username
-    def post(self, request):
+    def post(self, request):  # pylint: disable=too-many-statements
         """
         POST /api/user/v1/accounts/retire_misc/
 
@@ -1122,7 +1121,7 @@ class LMSAccountRetirementView(ViewSet):
                 user_id = 'unknown'
 
             log_error = self._sanitize_error_message(str(exc))
-            
+
             # Store error information in retirement status as plain text
             error_msg = f"RetirementStateError: {log_error}"
             try:
@@ -1148,7 +1147,7 @@ class LMSAccountRetirementView(ViewSet):
                 user_id = 'unknown'
 
             log_error = self._sanitize_error_message(str(exc))
-            
+
             # Store error information in retirement status as plain text
             error_msg = f"{type(exc).__name__}: {log_error}"
             try:
@@ -1187,14 +1186,14 @@ class LMSAccountRetirementView(ViewSet):
 
         # Remove email addresses
         message = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-                          '-', message, flags=re.IGNORECASE)
+                         '-', message, flags=re.IGNORECASE)
 
         # Remove username values in various formats
         message = re.sub(r"username='[^']*'", "username='-'", message)
         message = re.sub(r'username="[^"]*"', 'username="-"', message)
         message = re.sub(r'username:\s*[^\s,]+', 'username: -', message)
         message = re.sub(r'username=\s*[^\s,]+', 'username=-', message)
-        
+
         # Remove common username patterns in error messages
         message = re.sub(r'\bUser\s+[A-Za-z0-9._-]+\s+not found', 'User - not found', message, flags=re.IGNORECASE)
         message = re.sub(r'for user\s+[A-Za-z0-9._-]+', 'for user -', message, flags=re.IGNORECASE)
