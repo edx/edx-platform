@@ -1115,24 +1115,7 @@ class LMSAccountRetirementView(ViewSet):
             record_exception()
             return Response(status=status.HTTP_404_NOT_FOUND)
         except RetirementStateError as exc:
-            try:
-                user_id = retirement.user.id
-            except AttributeError:
-                user_id = 'unknown'
-
-            log_error = self._sanitize_error_message(str(exc))
-
-            # Store error information in retirement status as plain text
-            error_msg = f"RetirementStateError: {log_error}"
-            try:
-                if 'retirement' in locals() and retirement:
-                    if retirement.responses:
-                        retirement.responses += f"\\n{error_msg}"
-                    else:
-                        retirement.responses = error_msg
-                    retirement.save()
-            except AttributeError:
-                pass  # Continue with logging even if response storage fails
+            user_id, log_error = self._store_retirement_error(exc, retirement, "RetirementStateError")
 
             log.error(
                 'RetirementStateError during user retirement: user_id=%s, error=%s',
@@ -1141,24 +1124,7 @@ class LMSAccountRetirementView(ViewSet):
             record_exception()
             return Response("RetirementStateError occurred during retirement", status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:  # pylint: disable=broad-except
-            try:
-                user_id = retirement.user.id
-            except AttributeError:
-                user_id = 'unknown'
-
-            log_error = self._sanitize_error_message(str(exc))
-
-            # Store error information in retirement status as plain text
-            error_msg = f"{type(exc).__name__}: {log_error}"
-            try:
-                if 'retirement' in locals() and retirement:
-                    if retirement.responses:
-                        retirement.responses += f"\\n{error_msg}"
-                    else:
-                        retirement.responses = error_msg
-                    retirement.save()
-            except AttributeError:
-                pass  # Continue with logging even if response storage fails
+            user_id, log_error = self._store_retirement_error(exc, retirement)
 
             log.error(
                 'Unexpected error during user retirement: user_id=%s, error=%s',
@@ -1185,7 +1151,7 @@ class LMSAccountRetirementView(ViewSet):
         message = error_message
 
         # Remove email addresses
-        message = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+        message = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b',
                          '-', message, flags=re.IGNORECASE)
 
         # Remove username values in various formats
@@ -1199,6 +1165,46 @@ class LMSAccountRetirementView(ViewSet):
         message = re.sub(r'for user\s+[A-Za-z0-9._-]+', 'for user -', message, flags=re.IGNORECASE)
 
         return message
+
+    def _store_retirement_error(self, exc, retirement, error_prefix=""):
+        """
+        Store sanitized error information in retirement status and return user_id and log_error for logging.
+
+        Args:
+            exc: The exception object
+            retirement: The retirement object (may be None)
+            error_prefix: Optional prefix for the error message (e.g., "RetirementStateError")
+
+        Returns:
+            tuple: (user_id, log_error) for logging purposes
+        """
+        # Get user_id safely
+        try:
+            user_id = retirement.user.id if retirement else 'unknown'
+        except AttributeError:
+            user_id = 'unknown'
+
+        # Sanitize error message
+        log_error = self._sanitize_error_message(str(exc))
+
+        # Create error message with prefix
+        if error_prefix:
+            error_msg = f"{error_prefix}: {log_error}"
+        else:
+            error_msg = f"{type(exc).__name__}: {log_error}"
+
+        # Store error information in retirement status as plain text
+        try:
+            if retirement is not None:
+                if retirement.responses:
+                    retirement.responses += f"\n{error_msg}"
+                else:
+                    retirement.responses = error_msg
+                retirement.save()
+        except AttributeError as e:
+            log.warning('Failed to store error in retirement status: %s', str(e))
+
+        return user_id, log_error
 
 
 class AccountRetirementView(ViewSet):
