@@ -6,7 +6,9 @@ https://openedx.atlassian.net/wiki/display/TNL/User+API
 """
 
 import datetime
+import json
 import logging
+import re
 from functools import wraps
 
 import pytz
@@ -1118,25 +1120,87 @@ class LMSAccountRetirementView(ViewSet):
                 user_id = retirement.user.id
             except AttributeError:
                 user_id = 'unknown'
+
+            error_details = {
+                'error_type': 'RetirementStateError',
+                'user_id': user_id,
+                'original_error': str(exc),
+                'timestamp': datetime.datetime.now(pytz.UTC).isoformat()
+            }
+
+            # Store detailed error information in retirement status
+            try:
+                current_responses = json.loads(retirement.responses) if retirement.responses else []
+                current_responses.append(error_details)
+                retirement.responses = json.dumps(current_responses)
+                retirement.save()
+            except (json.JSONDecodeError, AttributeError):
+                pass  # Continue with logging even if response storage fails
+
+            log_error = self._sanitize_error_message(str(exc))
             log.error(
                 'RetirementStateError during user retirement: user_id=%s, error=%s',
-                user_id, str(exc)
+                user_id, log_error
             )
             record_exception()
-            return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
+            return Response("RetirementStateError occurred during retirement", status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:  # pylint: disable=broad-except
             try:
                 user_id = retirement.user.id
             except AttributeError:
                 user_id = 'unknown'
+
+            error_details = {
+                'error_type': type(exc).__name__,
+                'user_id': user_id,
+                'original_error': str(exc),
+                'timestamp': datetime.datetime.now(pytz.UTC).isoformat()
+            }
+
+            # Store detailed error information in retirement status
+            try:
+                current_responses = json.loads(retirement.responses) if retirement.responses else []
+                current_responses.append(error_details)
+                retirement.responses = json.dumps(current_responses)
+                retirement.save()
+            except (json.JSONDecodeError, AttributeError):
+                pass  # Continue with logging even if response storage fails
+
+            log_error = self._sanitize_error_message(str(exc))
             log.error(
                 'Unexpected error during user retirement: user_id=%s, error=%s',
-                user_id, str(exc)
+                user_id, log_error
             )
             record_exception()
-            return Response(str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response("Internal error occurred during retirement", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def _sanitize_error_message(self, error_message):
+        """
+        Remove common PII from error messages while preserving debugging context.
+
+        Args:
+            error_message (str): The original error message
+
+        Returns:
+            str: Error message with PII removed
+        """
+        if not error_message:
+            return error_message
+
+        # Simple PII removal for the most common cases in retirement errors
+        message = error_message
+
+        # Remove email addresses
+        message = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+                          '-', message, flags=re.IGNORECASE)
+
+        # Remove username values but keep the structure
+        message = re.sub(r"username='[^']*'", "username='-'", message)
+        message = re.sub(r'username="[^"]*"', 'username="-"', message)
+
+        return message
 
 
 class AccountRetirementView(ViewSet):
