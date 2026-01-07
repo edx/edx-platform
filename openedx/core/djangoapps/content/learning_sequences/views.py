@@ -104,7 +104,9 @@ class CourseOutlineView(APIView):
                 },
             }
 
-        def _sequence_repr(self, sequence, sequence_schedule, sequence_exam, accessible_sequences, previewable_sequences):
+        def _sequence_repr(
+                self, sequence, sequence_schedule, sequence_exam, accessible_sequences, previewable_sequences
+            ):
             """Representation of a Sequence."""
             if sequence_schedule is None:
                 schedule_item_dict = {'start': None, 'effective_start': None, 'due': None}
