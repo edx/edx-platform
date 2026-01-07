@@ -18,6 +18,8 @@ from rest_framework.views import APIView
 
 from lms.djangoapps.courseware.access import has_access
 from lms.djangoapps.courseware.masquerade import setup_masquerade
+from lms.djangoapps.course_home_api.toggles import learner_can_preview_verified_content
+
 from openedx.core import types
 from openedx.core.lib.api.view_utils import validate_course_key
 
@@ -95,13 +97,14 @@ class CourseOutlineView(APIView):
                             schedule.sequences.get(seq_usage_key),
                             exam_information.sequences.get(seq_usage_key, {}),
                             user_course_outline.accessible_sequences,
+                            user_course_outline.previewable_sequences,
                         )
                         for seq_usage_key, sequence in user_course_outline.sequences.items()
                     },
                 },
             }
 
-        def _sequence_repr(self, sequence, sequence_schedule, sequence_exam, accessible_sequences):
+        def _sequence_repr(self, sequence, sequence_schedule, sequence_exam, accessible_sequences, previewable_sequences):
             """Representation of a Sequence."""
             if sequence_schedule is None:
                 schedule_item_dict = {'start': None, 'effective_start': None, 'due': None}
@@ -117,6 +120,7 @@ class CourseOutlineView(APIView):
                 "id": str(sequence.usage_key),
                 "title": sequence.title,
                 "accessible": sequence.usage_key in accessible_sequences,
+                "previewable": sequence.usage_key in previewable_sequences,
                 "inaccessible_after_due": sequence.inaccessible_after_due,
                 **schedule_item_dict,
             }
@@ -165,10 +169,12 @@ class CourseOutlineView(APIView):
 
         # Get target user (and override request user for the benefit of any waffle checks)
         request.user = self._determine_user(request, course_key)
-
+        preview_verified_content = learner_can_preview_verified_content(course_key, request.user)
         try:
             # Grab the user's outline and send our response...
-            user_course_outline_details = get_user_course_outline_details(course_key, request.user, at_time)
+            user_course_outline_details = get_user_course_outline_details(
+                course_key, request.user, at_time, preview_verified_content
+            )
         except CourseOutlineData.DoesNotExist as does_not_exist_err:
             if not request.user.id:
                 # Outline is private or doesn't exist. But don't leak whether a course exists or not to anonymous
