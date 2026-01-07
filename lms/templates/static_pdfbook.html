@@ -19,79 +19,63 @@ from openedx.core.djangolib.js_utils import (
 <%include file="/courseware/course_navigation.html" args="active_page='pdftextbook/{0}'.format(book_index)" />
 <script>
 $(function(){
-  function sanitizeUrl(url) {
-    var temp = $('<div>').text(url).html();
-    if (/^(javascript|data|vbscript|file):/i.test(temp)) {
-      return '';
-    }
-    // Check for external URLs
-    if (temp.startsWith('http://') || temp.startsWith('https://')) {
-      return '';
-    }
-    return temp;
-  }
+  var currentChapterUrl = null;
+  var currentChapterTitle = null;
 
-  function isDangerousSrc(src) {
-    if (!src) return false;
-    // Check for dangerous protocols
-    if (/^(javascript|data|vbscript|file):/i.test(src)) {
-      return true;
-    }
-    // Check if file parameter contains dangerous content
-    try {
-      var url = new URL(src, window.location.origin);
-      var fileParam = url.searchParams.get('file');
-      if (fileParam) {
-        if (/^(javascript|data|vbscript|file|http:\/\/|https:\/\/)/i.test(fileParam)) {
-          return true;
-        }
+  // Handle PDF URL requests from iframe (PostMessage API requires 'message' event type)
+  function handlePdfUrlRequest(event) {
+    // Verify this is a PDF URL request from our iframe
+    if (event.data && event.data.type === 'request_pdf_url') {
+      if (currentChapterUrl) {
+        // Send the selected chapter URL back to the PDF viewer iframe
+        event.source.postMessage({
+          type: 'pdf_url_response',
+          url: currentChapterUrl,
+          title: currentChapterTitle || '',
+          author: 'edX Course',
+          subject: 'Course Material',
+          keywords: 'education,textbook,course'
+        }, '*');
       }
-    } catch (e) {
-      return true;
-    }
-    return false;
-  }
-
-  // Security: Monitor iframe src changes to prevent XSS via inspect element
-  var iframe = $('#viewer-frame')[0];
-  if (iframe) {
-    var observer = new MutationObserver(function(mutations) {
-      mutations.forEach(function(mutation) {
-        if (mutation.type === 'attributes' && mutation.attributeName === 'src') {
-          var currentSrc = iframe.getAttribute('src');
-          if (isDangerousSrc(currentSrc)) {
-            iframe.setAttribute('src', '');
-          }
-        }
-      });
-    });
-
-    observer.observe(iframe, {
-      attributes: true,
-      attributeFilter: ['src']
-    });
-
-    // Also validate initial src
-    var initialSrc = iframe.getAttribute('src');
-    if (isDangerousSrc(initialSrc)) {
-      iframe.setAttribute('src', '');
     }
   }
+
+  // Listen for PostMessage communication from PDF viewer iframe
+  window.addEventListener('message', handlePdfUrlRequest);
 
   $('.chapter').click(function(e){
     e.preventDefault();
-    var url = sanitizeUrl($(this).attr('rel'));
-    if (!url) {
+    var $this = $(this);
+    var url = $this.attr('rel');
+    var chapterTitle = $this.text();
+
+    // Store the current chapter URL for postMessage
+    currentChapterUrl = url;
+    currentChapterTitle = chapterTitle;
+
+    if ($('#viewer-frame').attr('src').length !== 0) {
+      $('#viewer-frame')[0].contentWindow.postMessage({type: 'chapter_change'}, '*');
+      Logger.log("textbook.pdf.chapter.navigated", {
+        "name": "textbook.pdf.chapter.navigated",
+        "chapter": url,
+        "chapter_title": chapterTitle
+      });
       return;
     }
-    var title = $('<div>').text($(this).text()).html();
+
+    // Load iframe without file parameter - secure approach (first time only)
     $('#viewer-frame').attr({
-        'src': '${request.path | n, js_escaped_string}?viewer=true&file=' + encodeURIComponent(url) + '#zoom=page-fit&disableRange=true',
-        'title': title
-        });
-    $('#viewer-frame').focus();
-    Logger.log("textbook.pdf.chapter.navigated", {"name": "textbook.pdf.chapter.navigated", "chapter": url, "chapter_title": title});
+      'src': '${request.path | n, js_escaped_string}?viewer=true#zoom=page-fit&disableRange=true',
+      'title': chapterTitle
     });
+    $('#viewer-frame').focus();
+
+    Logger.log("textbook.pdf.chapter.navigated", {
+      "name": "textbook.pdf.chapter.navigated",
+      "chapter": url,
+      "chapter_title": chapterTitle
+    });
+  });
 });
 </script>
 

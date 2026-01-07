@@ -81,16 +81,6 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
     course = get_course_with_access(request.user, 'load', course_key)
     staff_access = bool(has_access(request.user, 'staff', course))
 
-    # Security: Check if file parameter contains external URL or dangerous schemes and reject it
-    file_param = request.GET.get('file', '')
-    if file_param:
-        # Block external URLs
-        if file_param.startswith(('http://', 'https://')):
-            raise Http404("External URLs are not allowed in file parameter")
-        # Block dangerous URL schemes (XSS vectors)
-        if file_param.lower().startswith(('javascript:', 'data:', 'vbscript:', 'file:')):
-            raise Http404("Dangerous URL scheme detected in file parameter")
-
     book_index = int(book_index)
     if book_index < 0 or book_index >= len(course.pdf_textbooks):
         raise Http404(f"Invalid book index value: {book_index}")
@@ -102,9 +92,6 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
     if 'url' in textbook:
         textbook['url'] = remap_static_url(textbook['url'], course)
         current_url = textbook['url']
-        if not current_url.startswith(('http://', 'https://')):
-            viewer_params = '&file='
-            viewer_params += current_url
 
     # then remap all the chapter URLs as well, if they are provided.
     current_chapter = None
@@ -120,9 +107,6 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
             current_chapter = textbook['chapters'][0]
 
         current_url = current_chapter['url']
-        if not current_url.startswith(('http://', 'https://')):
-            viewer_params = '&file='
-            viewer_params += current_url
 
     viewer_params += '#zoom=page-fit&disableRange=true'
     if page is not None:
