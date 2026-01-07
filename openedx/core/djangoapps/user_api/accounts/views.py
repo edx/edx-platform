@@ -1108,7 +1108,7 @@ class LMSAccountRetirementView(ViewSet):
                 user=retirement.user,
             )
         except UserRetirementStatus.DoesNotExist:
-            log.error(
+            log.exception(
                 'UserRetirementStatus not found for retirement action'
             )
             record_exception()
@@ -1118,9 +1118,10 @@ class LMSAccountRetirementView(ViewSet):
                 user_id = retirement.user.id
             except AttributeError:
                 user_id = 'unknown'
-            log.error(
-                'RetirementStateError during user retirement: user_id=%s, error=%s',
-                user_id, str(exc)
+            exception_type = type(exc).__name__
+            log.exception(
+                'RetirementStateError during user retirement: user_id=%s, exception_type=%s, error=%s',
+                user_id, exception_type, str(exc)
             )
             record_exception()
             return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
@@ -1129,9 +1130,10 @@ class LMSAccountRetirementView(ViewSet):
                 user_id = retirement.user.id
             except AttributeError:
                 user_id = 'unknown'
-            log.error(
-                'Unexpected error during user retirement: user_id=%s, error=%s',
-                user_id, str(exc)
+            exception_type = type(exc).__name__
+            log.exception(
+                'Unexpected error during user retirement: user_id=%s, exception_type=%s, error=%s',
+                user_id, exception_type, str(exc)
             )
             record_exception()
             return Response(str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
