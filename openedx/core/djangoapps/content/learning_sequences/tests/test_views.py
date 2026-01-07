@@ -14,22 +14,22 @@ Where possible, seed data using public API methods (e.g. replace_course_outline
 from this app, edx-when's set_dates_for_course).
 """
 import attr
-import ddt
-from unittest.mock import patch
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from common.djangoapps.course_modes.models import CourseMode
+
+import ddt
+from unittest.mock import patch
 from edx_when.api import set_dates_for_course
 from opaque_keys.edx.keys import CourseKey
 from rest_framework.test import APITestCase, APIClient
 
+from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
 from common.djangoapps.student.tests.factories import UserFactory
 from lms.djangoapps.courseware.tests.helpers import MasqueradeMixin
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
-from openedx.core.djangoapps.content.learning_sequences.data import CourseOutlineData
 from xmodule.partitions.partitions import ENROLLMENT_TRACK_PARTITION_ID
 from ..api import replace_course_outline
 from ..api.tests.test_data import generate_sections
@@ -375,8 +375,8 @@ class CourseOutlineViewAuditPreviewTest(CacheIsolationTestCase, APITestCase):
         cls.audit_student = UserFactory.create(
             username='audit_student', email='audit_student@example.com', is_staff=False, password='student_pass'
         )
-        CourseEnrollment.enroll(cls.audit_student, cls.course_key, 'mode')
-        CourseEnrollment.enroll(cls.verified_student, cls.course_key, 'verified')
+        CourseEnrollment.enroll(cls.audit_student, cls.course_key, CourseMode.AUDIT)
+        CourseEnrollment.enroll(cls.verified_student, cls.course_key, CourseMode.VERIFIED)
 
     def setUp(self):
         super().setUp()
