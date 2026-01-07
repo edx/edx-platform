@@ -1118,10 +1118,9 @@ class LMSAccountRetirementView(ViewSet):
                 user_id = retirement.user.id
             except AttributeError:
                 user_id = 'unknown'
-            exception_type = type(exc).__name__
             log.exception(
-                'RetirementStateError during user retirement: user_id=%s, exception_type=%s, error=%s',
-                user_id, exception_type, str(exc)
+                'RetirementStateError during user retirement: user_id=%s, error=%s',
+                user_id, str(exc)
             )
             record_exception()
             return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
