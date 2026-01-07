@@ -15,7 +15,7 @@ from this app, edx-when's set_dates_for_course).
 """
 import attr
 import ddt
-from mock import patch
+from unittest.mock import patch
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from common.djangoapps.course_modes.models import CourseMode
