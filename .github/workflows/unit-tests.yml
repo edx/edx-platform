@@ -45,7 +45,7 @@ jobs:
         mongo-version:
           - "7.0"
         os-version:
-          - ubuntu-24.04
+          - ubuntu-latest
 
         # It's useful to run some subset of the tests on the older version of Ubuntu
         # so that we don't spend too many resources on this but can find major issues quickly
@@ -59,12 +59,12 @@ jobs:
             python-version: "3.11"
             django-version: "pinned"
             mongo-version: "7.0"
-            os-version: "ubuntu-22.04"
+            os-version: "ubuntu-latest"
           - shard_name: "xmodule-with-lms"
             python-version: "3.11"
             django-version: "pinned"
             mongo-version: "7.0"
-            os-version: "ubuntu-22.04"
+            os-version: "ubuntu-latest"
 
     steps:
       - name: checkout repo
@@ -147,7 +147,7 @@ jobs:
           overwrite: true
 
   collect-and-verify:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - name: Setup Python
@@ -211,7 +211,7 @@ jobs:
   # https://github.com/orgs/community/discussions/33579
   success:
     name: Unit tests successful
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     if: always()
     needs: [run-tests]
     steps:
@@ -222,7 +222,7 @@ jobs:
           jobs: ${{ toJSON(needs) }}
 
   compile-warnings-report:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: [run-tests]
     steps:
       - uses: actions/checkout@v5
@@ -250,7 +250,7 @@ jobs:
           overwrite: true
 
   merge-artifacts:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: [compile-warnings-report]
     steps:
       - name: Merge Pytest Warnings JSON Artifacts
@@ -270,7 +270,7 @@ jobs:
   # Combine and upload coverage reports.
   coverage:
     if: (github.repository == 'edx/edx-platform-private') || (github.repository == 'openedx/edx-platform' && (startsWith(github.base_ref, 'open-release') == false))
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: [run-tests]
     strategy:
       matrix:
