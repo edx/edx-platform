@@ -290,8 +290,8 @@ def get_user_course_outline_details(course_key: CourseKey,
     data returned.
 
     preview_verified_content can be set to True to have the function also return info about content
-    that the learner can see but not access due to to enrollment track partitions removing verified-only
-    content from an audit learner's outline 
+    that the learner can see but not access due to enrollment track partitions removing verified-only
+    content from an audit learner's outline
     """
     user_course_outline, processors = _get_user_course_outline_and_processors(
         course_key, user, at_time, preview_verified_content=preview_verified_content
