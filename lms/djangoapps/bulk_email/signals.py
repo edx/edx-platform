@@ -31,7 +31,7 @@ def force_optout_all(sender, **kwargs):  # lint-amnesty, pylint: disable=unused-
         try:
             Optout.objects.get_or_create(user=user, course_id=enrollment.course.id)
         except CourseOverview.DoesNotExist:
-            log.warning(f"CourseOverview not found for enrollment {enrollment.id}, skipping optout creation")
+            log.warning(f"CourseOverview not found for enrollment {enrollment.id} (user: {user.id}), skipping optout creation")
             continue
 
 
