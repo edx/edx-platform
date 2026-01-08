@@ -10,6 +10,7 @@ from django.core import mail
 from django.core.management import call_command
 from django.urls import reverse
 
+from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import AdminFactory, CourseEnrollmentFactory, UserFactory
 from lms.djangoapps.bulk_email.models import BulkEmailFlag, Optout
 from lms.djangoapps.bulk_email.signals import force_optout_all
@@ -97,12 +98,17 @@ class TestOptoutCourseEmailsBySignal(ModuleStoreTestCase):
         nonexistent_course_key = CourseKey.from_string('course-v1:TestX+Missing+2023')
 
         # Create an enrollment with a course_id that doesn't have a CourseOverview
-        from common.djangoapps.student.models import CourseEnrollment
-        orphaned_enrollment = CourseEnrollment.objects.create(
+        CourseEnrollment.objects.create(
             user=self.student,
             course_id=nonexistent_course_key,
             mode='honor'
         )
+
+        # Verify the orphaned enrollment exists
+        assert CourseEnrollment.objects.filter(
+            user=self.student,
+            course_id=nonexistent_course_key
+        ).exists()
 
         force_optout_all(sender=self.__class__, user=self.student)
 
