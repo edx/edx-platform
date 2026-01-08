@@ -176,7 +176,7 @@ ENABLE_COURSE_DISCOVERY_DEFAULT_LANGUAGE_FILTER = WaffleSwitch(
 # .. toggle_creation_date: 2026-01-08
 # .. toggle_target_removal_date: None
 # .. toggle_warning: n/a
-# .. toggle_tickets: https://github.com/edx/edx-platform/pull/TBD
+# .. toggle_tickets: https://github.com/edx/edx-platform/pull/81
 ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE = WaffleFlag(
     f'{WAFFLE_FLAG_NAMESPACE}.unify_site_and_translation_language', __name__
 )
