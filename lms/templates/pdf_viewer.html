@@ -61,13 +61,12 @@ http://sourceforge.net/adobe/cmap/wiki/License/
                 PDFViewerApplication.mouseScroll(0);
 
                 setTimeout(function() {
-                  if (PDFViewerApplication.pdfDocument && PDFViewerApplication.pdfDocument.documentInfo) {
-                    var info = PDFViewerApplication.pdfDocument.documentInfo;
-                    if (event.data.title) info.Title = event.data.title;
-                    if (event.data.author) info.Author = event.data.author;
-                    if (event.data.subject) info.Subject = event.data.subject;
-                    if (event.data.keywords) info.Keywords = event.data.keywords;
-                    info.Creator = 'edX Platform';
+                  if (PDFViewerApplication.pdfDocument) {
+                    if (event.data.title) document.getElementById('titleField').textContent = event.data.title;
+                    if (event.data.author) document.getElementById('authorField').textContent = event.data.author;
+                    if (event.data.subject) document.getElementById('subjectField').textContent = event.data.subject;
+                    if (event.data.keywords) document.getElementById('keywordsField').textContent = event.data.keywords;
+                    document.getElementById('creatorField').textContent = 'edX Platform';
                   }
                 }, 500);
               }
@@ -78,6 +77,10 @@ http://sourceforge.net/adobe/cmap/wiki/License/
 
           window.addEventListener('message', handlePdfUrlResponse);
         }
+
+        document.addEventListener('DOMContentLoaded', function () {
+          PDFViewerApplication && PDFViewerApplication.open(PDF_URL);
+        });
     </script>
 
     <script type="text/javascript" src="${static.url('js/vendor/pdfjs/debugger.js')}"></script>
