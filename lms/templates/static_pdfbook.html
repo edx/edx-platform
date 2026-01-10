@@ -35,7 +35,7 @@ from openedx.core.djangolib.js_utils import (
       <iframe
         title="${current_chapter.get('title')}"
         id="viewer-frame"
-        src="${request.path | n}?viewer=true#zoom=page-fit&disableRange=true"
+        src="${request.path | n}?viewer=true${viewer_params | n}"
         width="856" height="1108" frameborder="0" tabindex="-1" seamless></iframe>
     </div>
   </div>
@@ -86,7 +86,7 @@ from openedx.core.djangolib.js_utils import (
 
     // Load iframe without file parameter - secure approach (first time only)
     $('#viewer-frame').attr({
-      'src': '${request.path | n}?viewer=true#zoom=page-fit&disableRange=true'
+      'src': '${request.path | n}?viewer=true#zoom=page-fit&disableRange=true${viewer_params | n}'
     }).focus();
   });
 </script>
