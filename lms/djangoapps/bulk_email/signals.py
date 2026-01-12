@@ -33,7 +33,7 @@ def force_optout_all(sender, **kwargs):  # lint-amnesty, pylint: disable=unused-
         except CourseOverview.DoesNotExist:
             log.warning(
                 f"CourseOverview not found for enrollment {enrollment.id} (user: {user.id}), "
-                f"skipping optout creation"
+                f"skipping optout creation. This may mean the course was deleted."
             )
             continue
 
