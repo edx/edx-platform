@@ -3448,6 +3448,7 @@ class CourseAboutViewTests(ModuleStoreTestCase):
             else:
                 assert response.status_code == 200
 
+
 @ddt.ddt
 class UnifiedSiteAndTranslationLanguageEnabledViewTests(TestCase):
     """
@@ -3461,4 +3462,3 @@ class UnifiedSiteAndTranslationLanguageEnabledViewTests(TestCase):
         with override_waffle_flag(ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE, enabled):
             response = self.client.get(url)
         assert response.json()['enabled'] == enabled
-
