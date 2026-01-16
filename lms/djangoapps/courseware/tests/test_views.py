@@ -79,6 +79,7 @@ from lms.djangoapps.courseware.toggles import (
     COURSEWARE_MICROFRONTEND_ENABLE_NAVIGATION_SIDEBAR,
     COURSEWARE_MICROFRONTEND_SEARCH_ENABLED,
     COURSEWARE_OPTIMIZED_RENDER_XBLOCK,
+    ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE,
 )
 from completion.waffle import ENABLE_COMPLETION_TRACKING_SWITCH
 from lms.djangoapps.courseware.user_state_client import DjangoXBlockUserStateClient
@@ -3446,3 +3447,18 @@ class CourseAboutViewTests(ModuleStoreTestCase):
                 assert response.url == "http://example.com/catalog/courses/{}/about".format(self.course.id)
             else:
                 assert response.status_code == 200
+
+@ddt.ddt
+class UnifiedSiteAndTranslationLanguageEnabledViewTests(TestCase):
+    """
+    Tests for the unified_site_and_translation_language_enabled view
+    """
+
+    @ddt.data(True, False)
+    def test_view(self, enabled):
+        course_id = 'course-v1:org+course+run'
+        url = reverse('unified_translations_enabled_view', args=[course_id])
+        with override_waffle_flag(ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE, enabled):
+            response = self.client.get(url)
+        assert response.json()['enabled'] == enabled
+

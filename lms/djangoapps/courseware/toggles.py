@@ -2,7 +2,7 @@
 Toggles for courseware in-course experience.
 """
 
-from edx_toggles.toggles import SettingToggle, WaffleFlag, WaffleSwitch
+from edx_toggles.toggles import SettingToggle, WaffleSwitch
 
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 

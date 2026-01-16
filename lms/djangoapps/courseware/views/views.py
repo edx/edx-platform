@@ -2404,10 +2404,14 @@ def courseware_mfe_navigation_sidebar_toggles(request, course_id=None):
         "enable_completion_tracking": ENABLE_COMPLETION_TRACKING_SWITCH.is_enabled()
     })
 
+
 @api_view(['GET'])
 def unified_site_and_translation_language_enabled(request, course_id=None):
     """
     Simple GET endpoint to expose whether the user/course has access to the unified translations feature
     """
-    course_key = CourseKey.from_string(course_id) if course_id else None
+    try:
+        course_key = CourseKey.from_string(course_id) if course_id else None
+    except InvalidKeyError:
+        return JsonResponse({"error": "Invalid course_id"})
     return JsonResponse({'enabled': unified_site_and_translation_language_is_enabled(course_key)})

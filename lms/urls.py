@@ -760,7 +760,7 @@ urlpatterns += [
 
 urlpatterns += [
     re_path(
-        fr'^courses/{settings.COURSE_ID_PATTERN}/unified-translations/enabled',
+        fr'^courses/{settings.COURSE_ID_PATTERN}/unified-translations/enabled/$',
         courseware_views.unified_site_and_translation_language_enabled,
         name='unified_translations_enabled_view'
     )
