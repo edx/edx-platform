@@ -251,7 +251,8 @@ class NotificationFilter:
             )
             user_ids = getattr(self, filter_name)(user_ids, course)
         return user_ids
-    
+
+
 class GroupTAinCohortFilter(NotificationAudienceFilterBase):
     """
     Returns Group Community TA (Group Moderator) user ids for the provided cohort IDs.
@@ -268,23 +269,18 @@ class GroupTAinCohortFilter(NotificationAudienceFilterBase):
         if not cohort_ids:
             return []
 
-        # Get user ids who are members of the cohort group(s)
+        # Subquery: users who belong to the given cohort(s)
         cohort_users_qs = CourseUserGroup.objects.filter(
             course_id=self.course_key,
             id__in=cohort_ids,
-            group_type=CourseUserGroup.COHORT
+            group_type=CourseUserGroup.COHORT,
         ).values_list("users__id", flat=True)
 
-        # If no users in cohort, short-circuit
-        cohort_user_ids = list(cohort_users_qs)
-        if not cohort_user_ids:
-            return []
-
-        # Now get those users who have the Group Moderator forum role in this course
+        # Single DB query, no Python list evaluation
         group_moderator_user_ids_qs = Role.objects.filter(
             course_id=self.course_key,
             name=FORUM_ROLE_GROUP_MODERATOR,
-            users__id__in=cohort_user_ids
-        ).values_list("users__id", flat=True)
+            users__id__in=cohort_users_qs,
+        ).values_list("users__id", flat=True).distinct()
 
         return list(group_moderator_user_ids_qs)
