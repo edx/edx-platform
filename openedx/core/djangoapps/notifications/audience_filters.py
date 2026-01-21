@@ -251,7 +251,8 @@ class NotificationFilter:
             )
             user_ids = getattr(self, filter_name)(user_ids, course)
         return user_ids
-    
+
+
 class GroupTAinCohortFilter(NotificationAudienceFilterBase):
     """
     Returns Group Community TA (Group Moderator) user ids for the provided cohort IDs.
