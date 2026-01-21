@@ -2,7 +2,7 @@
 Toggles for courseware in-course experience.
 """
 
-from edx_toggles.toggles import SettingToggle, WaffleSwitch
+from edx_toggles.toggles import SettingToggle, WaffleSwitch, WaffleFlag
 
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 
@@ -169,7 +169,7 @@ ENABLE_COURSE_DISCOVERY_DEFAULT_LANGUAGE_FILTER = WaffleSwitch(
 )
 
 # .. toggle_name: courseware.unify_site_and_translation_language
-# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_implementation: WaffleFlag
 # .. toggle_default: False
 # .. toggle_description: Update LMS to use site language for xpert unit translations and enable new header site language switcher.
 # .. toggle_use_cases: opt_in
@@ -177,7 +177,7 @@ ENABLE_COURSE_DISCOVERY_DEFAULT_LANGUAGE_FILTER = WaffleSwitch(
 # .. toggle_target_removal_date: None
 # .. toggle_warning: None.
 # .. toggle_tickets: https://github.com/edx/edx-platform/pull/81
-ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE = CourseWaffleFlag(
+ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE = WaffleFlag(
     f'{WAFFLE_FLAG_NAMESPACE}.unify_site_and_translation_language', __name__
 )
 
@@ -217,8 +217,8 @@ def courseware_disable_navigation_sidebar_blocks_caching(course_key=None):
     return COURSEWARE_MICROFRONTEND_NAVIGATION_SIDEBAR_BLOCKS_DISABLE_CACHING.is_enabled(course_key)
 
 
-def unified_site_and_translation_language_is_enabled(course_key=None):
+def unified_site_and_translation_language_is_enabled():
     """
     Return whether the courseware.unify_site_and_translation_language flag is on.
     """
-    return ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE.is_enabled(course_key)
+    return ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE.is_enabled()
