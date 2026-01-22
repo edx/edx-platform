@@ -2405,6 +2405,7 @@ def courseware_mfe_navigation_sidebar_toggles(request, course_id=None):
     })
 
 
+@login_required
 @api_view(['GET'])
 def unified_site_and_translation_language_enabled(request):
     """
