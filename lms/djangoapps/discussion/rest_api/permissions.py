@@ -7,7 +7,7 @@ from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import permissions
 
-from common.djangoapps.student.models import CourseAccessRole, CourseEnrollment
+from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.roles import (
     CourseInstructorRole,
     CourseStaffRole,
@@ -210,9 +210,6 @@ def can_take_action_on_spam(user, course_id):
         ).values_list('name', flat=True).distinct()
     )
     if bool(user_roles & {FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR}):
-        return True
-
-    if CourseAccessRole.objects.filter(user=user, course_id__in=course_ids, role__in=["instructor", "staff"]).exists():
         return True
     return False
 
