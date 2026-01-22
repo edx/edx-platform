@@ -3457,8 +3457,7 @@ class UnifiedSiteAndTranslationLanguageEnabledViewTests(TestCase):
 
     @ddt.data(True, False)
     def test_view(self, enabled):
-        course_id = 'course-v1:org+course+run'
-        url = reverse('unified_translations_enabled_view', args=[course_id])
+        url = reverse('unified_translations_enabled_view')
         with override_waffle_flag(ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE, enabled):
             response = self.client.get(url)
         assert response.json()['enabled'] == enabled
