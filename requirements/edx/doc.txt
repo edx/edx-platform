@@ -12,7 +12,7 @@ aiohappyeyeballs==2.6.1
     # via
     #   -r requirements/edx/base.txt
     #   aiohttp
-aiohttp==3.13.0
+aiohttp==3.13.3
     # via
     #   -r requirements/edx/base.txt
     #   geoip2
@@ -654,7 +654,7 @@ enmerkar==0.7.1
     #   enmerkar-underscore
 enmerkar-underscore==2.4.0
     # via -r requirements/edx/base.txt
-enterprise-integrated-channels==0.1.32
+enterprise-integrated-channels==0.1.35
     # via -r requirements/edx/base.txt
 event-tracking==3.3.0
     # via

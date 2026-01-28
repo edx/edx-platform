@@ -17,7 +17,7 @@ aiohappyeyeballs==2.6.1
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
     #   aiohttp
-aiohttp==3.13.0
+aiohttp==3.13.3
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -46,10 +46,6 @@ aniso8601==10.0.1
     #   -r requirements/edx/testing.txt
     #   edx-tincan-py35
     #   tincan
-annotated-doc==0.0.4
-    # via
-    #   -r requirements/edx/testing.txt
-    #   fastapi
 annotated-types==0.7.0
     # via
     #   -r requirements/edx/doc.txt
@@ -880,7 +876,7 @@ enmerkar-underscore==2.4.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
-enterprise-integrated-channels==0.1.32
+enterprise-integrated-channels==0.1.35
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
