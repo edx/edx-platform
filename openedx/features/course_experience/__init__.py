@@ -83,6 +83,16 @@ RELATIVE_DATES_DISABLE_RESET_FLAG = CourseWaffleFlag(f'{WAFFLE_FLAG_NAMESPACE}.r
 # .. toggle_tickets: https://openedx.atlassian.net/browse/AA-36
 CALENDAR_SYNC_FLAG = CourseWaffleFlag(f'{WAFFLE_FLAG_NAMESPACE}.calendar_sync', __name__)  # lint-amnesty, pylint: disable=toggle-missing-annotation
 
+# .. toggle_name: course_experience.enable_ses_for_courseupdate
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Used to determine whether or not to use AWS SES to send Course Update emails for the course.
+# .. toggle_use_cases: opt_in, temporary
+# .. toggle_creation_date: 2026-01-27
+# .. toggle_target_removal_date: None
+# .. toggle_warning: This temporary feature toggle does not have a target removal date.
+ENABLE_SES_FOR_COURSEUPDATE = CourseWaffleFlag(f'{WAFFLE_FLAG_NAMESPACE}.enable_ses_for_courseupdate', __name__)  # lint-amnesty, pylint: disable=toggle-missing-annotation
+
 
 def course_home_page_title(_course):
     """
