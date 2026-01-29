@@ -317,8 +317,7 @@ def get_component_templates(courselike, library=False):  # lint-amnesty, pylint:
 
     # Add games xblock if enabled (checked at request time)
     if is_games_xblock_enabled():
-        COMPONENT_TYPES.append('games')
-        BETA_COMPONENT_TYPES.append('games')
+        component_types.append('games')
         component_display_names['games'] = _("Games")
 
     # Libraries do not support discussions, drag-and-drop, and openassessment and other libraries
