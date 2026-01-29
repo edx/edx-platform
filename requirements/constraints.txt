@@ -136,3 +136,8 @@ django-debug-toolbar<6.0.0
 # Issue: https://github.com/openedx/edx-platform/issues/37435
 cryptography<46.0.0
 pact-python<3.0.0
+
+# Date: 2026-01-29
+# asgiref 3.10.0 does not exist in PyPI. The latest available version is 3.8.1.
+# Pinning to 3.8.1 to avoid pip install failures.
+asgiref==3.8.1
