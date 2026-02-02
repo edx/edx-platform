@@ -16,7 +16,7 @@ from onelogin.saml2.settings import OneLogin_Saml2_Settings
 from social_core.backends.saml import OID_EDU_PERSON_ENTITLEMENT, SAMLAuth, SAMLIdentityProvider
 from social_core.exceptions import AuthForbidden, AuthInvalidParameter, AuthMissingParameter
 
-from common.djangoapps.student.helpers import is_safe_login_or_logout_redirect
+from openedx.core.djangoapps.user_authn.utils import is_safe_login_or_logout_redirect
 from common.djangoapps.third_party_auth.exceptions import IncorrectConfigurationException
 from openedx.core.djangoapps.theming.helpers import get_current_request
 
@@ -147,6 +147,9 @@ class SAMLAuthBackend(SAMLAuth):  # pylint: disable=abstract-method
             require_https=request.is_secure(),
         ):
             request.session['next'] = next_decoded
+        else:
+            # RelayState included an unsafe destination; clear any stale 'next' value
+            request.session.pop('next', None)
 
         # Always rewrite RelayState to just the IdP slug so the SAML backend can locate the provider.
         post_copy = request.POST.copy()
