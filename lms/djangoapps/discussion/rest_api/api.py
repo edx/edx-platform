@@ -2365,7 +2365,18 @@ def _process_deleted_thread(thread_data, get_user_label_fn, usernames_set):
     Returns:
         dict: Formatted content item for the thread
     """
-    author_username = thread_data.get("author_username", "")
+    author_username = thread_data.get("author_username", "") or None
+    author_id = thread_data.get("author_id", "")
+
+    # If author_username is missing or empty, try to get it from author_id
+    if not author_username and author_id:
+        try:
+            author_user = User.objects.get(id=int(author_id))
+            author_username = author_user.username
+        except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, use placeholder
+            author_username = None
+
     deleted_by_id = thread_data.get("deleted_by")
     deleted_by_username = None
 
@@ -2387,28 +2398,59 @@ def _process_deleted_thread(thread_data, get_user_label_fn, usernames_set):
     preview_text = strip_tags(body_text)[:100] if body_text else ""
 
     thread_id = thread_data.get("_id", thread_data.get("id"))
+
+    # Calculate vote information
+    votes = thread_data.get("votes", {})
+    vote_count = votes.get("up_count", 0) if isinstance(votes, dict) else thread_data.get("vote_count", 0)
+
+    # Get abuse flaggers
+    abuse_flaggers = thread_data.get("abuse_flaggers", [])
+    abuse_flagged_count = len(abuse_flaggers) if abuse_flaggers else None
+
     return {
         "id": str(thread_id) + "-thread",
         "type": "thread",
         "title": thread_data.get("title", ""),
-        "body": body_text,
+        "raw_body": body_text,
+        "rendered_body": body_text,  # For deleted content, just use raw body
         "preview_body": preview_text,
         "course_id": thread_data.get("course_id", ""),
         "author": author_username,
         "author_id": thread_data.get("author_id", ""),
         "author_label": get_user_label_fn(thread_data.get("author_id")),
+        "topic_id": thread_data.get("commentable_id", ""),
         "commentable_id": thread_data.get("commentable_id", ""),
+        "group_id": thread_data.get("group_id"),
+        "group_name": None,  # Will be populated by API layer if needed
         "created_at": thread_data.get("created_at"),
         "updated_at": thread_data.get("updated_at"),
+        "thread_type": thread_data.get("thread_type", "discussion"),
+        "anonymous": thread_data.get("anonymous", False),
+        "anonymous_to_peers": thread_data.get("anonymous_to_peers", False),
+        "pinned": thread_data.get("pinned", False),
+        "closed": thread_data.get("closed", False),
+        "following": False,  # Deleted content is not followable
+        "abuse_flagged": len(abuse_flaggers) > 0 if abuse_flaggers else False,
+        "abuse_flagged_count": abuse_flagged_count,
+        "voted": False,  # Cannot vote on deleted content
+        "vote_count": vote_count,
+        "comment_count": thread_data.get("comment_count", 0),
+        "unread_comment_count": 0,  # Deleted content has no unread count
+        "comment_list_url": None,
+        "endorsed_comment_list_url": None,
+        "non_endorsed_comment_list_url": None,
+        "read": True,  # Treat deleted content as read
+        "has_endorsed": thread_data.get("endorsed", False),
+        "editable_fields": [],  # Deleted content is not editable
+        "can_delete": False,  # Already deleted
         "is_deleted": True,
         "deleted_at": thread_data.get("deleted_at"),
         "deleted_by": deleted_by_username,
         "deleted_by_label": get_user_label_fn(deleted_by_id) if deleted_by_id else None,
-        "thread_type": thread_data.get("thread_type", "discussion"),
-        "anonymous": thread_data.get("anonymous", False),
-        "anonymous_to_peers": thread_data.get("anonymous_to_peers", False),
-        "vote_count": thread_data.get("vote_count", 0),
-        "comment_count": thread_data.get("comment_count", 0),
+        "close_reason_code": thread_data.get("close_reason_code"),
+        "close_reason": None,
+        "closed_by": thread_data.get("closed_by"),
+        "closed_by_label": None,
     }
 
 
@@ -2424,7 +2466,18 @@ def _process_deleted_comment(comment_data, get_user_label_fn, usernames_set):
     Returns:
         dict: Formatted content item for the comment
     """
-    author_username = comment_data.get("author_username", "")
+    author_username = comment_data.get("author_username", "") or None
+    author_id = comment_data.get("author_id", "")
+
+    # If author_username is missing or empty, try to get it from author_id
+    if not author_username and author_id:
+        try:
+            author_user = User.objects.get(id=int(author_id))
+            author_username = author_user.username
+        except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, use placeholder
+            author_username = None
+
     deleted_by_id = comment_data.get("deleted_by")
     deleted_by_username = None
 
@@ -2460,16 +2513,27 @@ def _process_deleted_comment(comment_data, get_user_label_fn, usernames_set):
     preview_text = strip_tags(body_text)[:100] if body_text else ""
 
     comment_id = comment_data.get("_id", comment_data.get("id"))
+
+    # Calculate vote information
+    votes = comment_data.get("votes", {})
+    vote_count = votes.get("up_count", 0) if isinstance(votes, dict) else comment_data.get("vote_count", 0)
+
+    # Get abuse flaggers
+    abuse_flaggers = comment_data.get("abuse_flaggers", [])
+    abuse_flagged_count = len(abuse_flaggers) if abuse_flaggers else None
+
     return {
         "id": str(comment_id) + "-comment",
         "type": comment_type,
-        "body": body_text,
+        "raw_body": body_text,
+        "rendered_body": body_text,  # For deleted content, just use raw body
         "preview_body": preview_text,
         "title": thread_title,  # Use parent thread title for comments/responses
         "course_id": comment_data.get("course_id", ""),
         "author": author_username,
         "author_id": comment_data.get("author_id", ""),
         "author_label": get_user_label_fn(comment_data.get("author_id")),
+        "thread_id": str(thread_id),
         "comment_thread_id": str(thread_id),
         "thread_title": thread_title,
         "parent_id": (
@@ -2479,15 +2543,24 @@ def _process_deleted_comment(comment_data, get_user_label_fn, usernames_set):
         ),
         "created_at": comment_data.get("created_at"),
         "updated_at": comment_data.get("updated_at"),
-        "is_deleted": True,
-        "deleted_at": comment_data.get("deleted_at"),
-        "deleted_by": deleted_by_username,
-        "deleted_by_label": get_user_label_fn(deleted_by_id) if deleted_by_id else None,
         "depth": depth,
         "anonymous": comment_data.get("anonymous", False),
         "anonymous_to_peers": comment_data.get("anonymous_to_peers", False),
         "endorsed": comment_data.get("endorsed", False),
-        "vote_count": comment_data.get("vote_count", 0),
+        "endorsed_by": comment_data.get("endorsed_by"),
+        "endorsed_by_label": None,
+        "endorsed_at": comment_data.get("endorsed_at"),
+        "abuse_flagged": len(abuse_flaggers) > 0 if abuse_flaggers else False,
+        "abuse_flagged_count": abuse_flagged_count,
+        "voted": False,  # Cannot vote on deleted content
+        "vote_count": vote_count,
+        "editable_fields": [],  # Deleted content is not editable
+        "can_delete": False,  # Already deleted
+        "child_count": comment_data.get("child_count", 0),
+        "is_deleted": True,
+        "deleted_at": comment_data.get("deleted_at"),
+        "deleted_by": deleted_by_username,
+        "deleted_by_label": get_user_label_fn(deleted_by_id) if deleted_by_id else None,
     }
 
 
