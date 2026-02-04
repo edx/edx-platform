@@ -14,7 +14,9 @@ from django.contrib.sites.models import Site
 from django.conf import settings
 from django.core import mail
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from enterprise.models import (
     EnterpriseCourseEnrollment,
@@ -1084,9 +1086,82 @@ class TestAccountRetirementCleanup(RetirementTestCase):
         assert response.status_code == expected_status
         return response
 
-    def test_simple_success(self):
-        self.cleanup_and_assert_status()
-        assert not UserRetirementStatus.objects.all()
+    def _assert_redacted_update_delete_queries(self, queries, redacted_username, redacted_email, redacted_name):
+        """
+        Helper method to verify UPDATE and DELETE queries contain correct field-value assignments.
+        Args:
+            queries: List of captured query dicts from CaptureQueriesContext
+            redacted_username: Expected redacted username value
+            redacted_email: Expected redacted email value
+            redacted_name: Expected redacted name value
+        """
+        update_queries = [q for q in queries if 'UPDATE' in q['sql'] and 'user_api_userretirementstatus' in q['sql']]
+        delete_queries = [q for q in queries if 'DELETE' in q['sql'] and 'user_api_userretirementstatus' in q['sql']]
+        # Should have 1 bulk UPDATE and 1 bulk DELETE query (not individual per-record queries)
+        assert len(update_queries) == 1, f"Expected 1 UPDATE query, found {len(update_queries)}"
+        assert len(delete_queries) == 1, f"Expected 1 DELETE query, found {len(delete_queries)}"
+        # Verify UPDATE query contains the correct field-value assignments
+        for update_query in update_queries:
+            sql_lower = update_query['sql']
+            # Check that the correct field is set with the correct value
+            # This ensures that if someone swaps the assignments, the test will fail
+            assert "original_username" in sql_lower and f"= '{redacted_username}'" in sql_lower, (
+                f"UPDATE query missing 'original_username = {redacted_username}': {sql_lower}"
+            )
+            assert "original_email" in sql_lower and f"= '{redacted_email}'" in sql_lower, (
+                f"UPDATE query missing 'original_email = {redacted_email}': {sql_lower}"
+            )
+            assert "original_name" in sql_lower and f"= '{redacted_name}'" in sql_lower, (
+                f"UPDATE query missing 'original_name = {redacted_name}': {sql_lower}"
+            )
+        # Verify DELETE query filters by the redacted values
+        for delete_query in delete_queries:
+            sql_lower = delete_query['sql']
+            # The DELETE should filter by the redacted values to ensure we're deleting the right records
+            assert f"original_username = '{redacted_username}'" in sql_lower, (
+                f"DELETE query missing 'original_username = {redacted_username}' in WHERE clause: {sql_lower}"
+            )
+            assert f"original_email = '{redacted_email}'" in sql_lower, (
+                f"DELETE query missing 'original_email = {redacted_email}' in WHERE clause: {sql_lower}"
+            )
+            assert f"original_name = '{redacted_name}'" in sql_lower, (
+                f"DELETE query missing 'original_name = {redacted_name}' in WHERE clause: {sql_lower}"
+            )
+
+    def test_default_redacted_values(self):
+        """
+        Test basic cleanup with default redacted values.
+        Verify that redaction (UPDATE) happens before deletion (DELETE).
+        Captures actual SQL queries to ensure UPDATE queries contain correct field-value assignments.
+        """
+        with CaptureQueriesContext(connection) as context:
+            self.cleanup_and_assert_status()
+        # Verify records are deleted after redaction
+        retirements = UserRetirementStatus.objects.all()
+        assert retirements.count() == 0
+        # Verify UPDATE and DELETE queries with default 'redacted' value
+        self._assert_redacted_update_delete_queries(context.captured_queries, 'redacted', 'redacted', 'redacted')
+
+    def test_custom_redacted_values(self):
+        """Test that custom redacted values are applied before deletion."""
+        custom_username = 'username-redacted-12345'
+        custom_email = 'email-redacted-67890'
+        custom_name = 'name-redacted-abcde'
+        data = {
+            'usernames': self.usernames,
+            'redacted_username': custom_username,
+            'redacted_email': custom_email,
+            'redacted_name': custom_name
+        }
+        with CaptureQueriesContext(connection) as context:
+            self.cleanup_and_assert_status(data=data)
+        # Verify records are deleted after redaction
+        retirements = UserRetirementStatus.objects.all()
+        assert retirements.count() == 0
+        # Verify UPDATE and DELETE queries with custom redacted values
+        self._assert_redacted_update_delete_queries(
+            context.captured_queries, custom_username, custom_email, custom_name
+        )
 
     def test_leaves_other_users(self):
         remaining_usernames = []

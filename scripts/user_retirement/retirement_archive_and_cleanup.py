@@ -18,14 +18,11 @@ import click
 from botocore.exceptions import BotoCoreError, ClientError
 from six import text_type
 
-# Add top-level module path to sys.path before importing tubular code.
-sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+# Add top-level project path to sys.path before importing scripts code
+sys.path.append(path.abspath(path.join(path.dirname(__file__), '../..')))
 
 # pylint: disable=wrong-import-position
-from tubular.scripts.helpers import (
-    _config_or_exit, _fail, _fail_exception, _log, _setup_lms_api_or_exit
-)
-
+from scripts.user_retirement.utils.helpers import _config_or_exit, _fail, _fail_exception, _log, _setup_lms_api_or_exit
 
 SCRIPT_SHORTNAME = 'Archive and Cleanup'
 
@@ -65,8 +62,8 @@ def _fetch_learners_to_archive_or_exit(config, start_date, end_date, initial_sta
 
 def _batch_learners(learners=None, batch_size=None):
     """
-    To avoid potentially overwhelming the LMS with a large number of user retirements to
-    redact, create a list of smaller batches of users to iterate over. This has the
+    To avoid potentially overwheling the LMS with a large number of user retirements to
+    delete, create a list of smaller batches of users to iterate over. This has the
     added benefit of reducing the amount of user retirement archive requests that can
     get into a bad state should this script experience an error.
 
@@ -78,7 +75,7 @@ def _batch_learners(learners=None, batch_size=None):
     """
     if batch_size:
         return [
-            learners[i:i+batch_size] for i, _ in list(enumerate(learners))[::batch_size]
+            learners[i:i + batch_size] for i, _ in list(enumerate(learners))[::batch_size]
         ]
     else:
         return [learners]
@@ -199,16 +196,20 @@ def _archive_retirements_or_exit(config, learners, dry_run=False):
         FAIL_EXCEPTION(ERR_ARCHIVING, 'Unexpected error occurred archiving retirements!', exc)
 
 
-def _cleanup_retirements_or_exit(config, learners, redacted_username='redacted', redacted_email='redacted', redacted_name='redacted'):
+def _cleanup_retirements_or_exit(config, learners, redacted_username='redacted',
+                                 redacted_email='redacted', redacted_name='redacted'):
     """
-    Bulk redacts the retirements for this run
+    Bulk deletes the retirements for this run after redacting PII fields
     """
     LOG('Cleaning up retirements for {} learners'.format(len(learners)))
     try:
         usernames = [l['original_username'] for l in learners]
-        config['LMS'].bulk_cleanup_retirements(usernames, redacted_username, redacted_email, redacted_name)
+        config['LMS'].bulk_cleanup_retirements(
+            usernames, redacted_username, redacted_email, redacted_name
+        )
     except Exception as exc:  # pylint: disable=broad-except
-        FAIL_EXCEPTION(ERR_DELETING, 'Unexpected error occurred redacting retirements!', exc)
+        FAIL_EXCEPTION(ERR_DELETING, 'Unexpected error occurred redacting/deleting retirements!', exc)
+
 
 def _get_utc_now():
     """
@@ -224,7 +225,7 @@ def _get_utc_now():
 )
 @click.option(
     '--cool_off_days',
-    help='Number of days a retirement should exist before being archived and redacted.',
+    help='Number of days a retirement should exist before being archived and deleted.',
     type=int,
     default=37  # 7 days before retirement, 30 after
 )
@@ -263,39 +264,30 @@ def _get_utc_now():
 )
 @click.option(
     '--redacted_username',
-    help='Value to redact username field with',
+    help='Value to use for redacted username field',
     type=str,
     default='redacted'
 )
 @click.option(
     '--redacted_email',
-    help='Value to redact email field with',
+    help='Value to use for redacted email field',
     type=str,
     default='redacted'
 )
 @click.option(
     '--redacted_name',
-    help='Value to redact name field with',
+    help='Value to use for redacted name field',
     type=str,
     default='redacted'
 )
-def archive_and_cleanup(
-    config_file,
-    cool_off_days,
-    dry_run,
-    start_date,
-    end_date,
-    batch_size,
-    redacted_username,
-    redacted_email,
-    redacted_name,
-):
+def archive_and_cleanup(config_file, cool_off_days, dry_run, start_date, end_date, batch_size,
+                        redacted_username, redacted_email, redacted_name):
     """
     Cleans up UserRetirementStatus rows in LMS by:
     1- Getting all rows currently in COMPLETE that were created --cool_off_days ago or more,
         unless a specific timeframe is specified
     2- Archiving them to S3 in an Athena-queryable format
-    3- Redacting them from LMS (by username)
+    3- Deleting them from LMS (by username)
     """
     try:
         LOG('Starting bulk update script: Config: {}'.format(config_file))
@@ -344,7 +336,9 @@ def archive_and_cleanup(
                 if dry_run:
                     LOG('This is a dry-run. Exiting before any retirements are cleaned up')
                 else:
-                    _cleanup_retirements_or_exit(config, batch, redacted_username, redacted_email, redacted_name)
+                    _cleanup_retirements_or_exit(
+                        config, batch, redacted_username, redacted_email, redacted_name
+                    )
                     LOG('Archive and cleanup complete for batch #{}'.format(str(index + 1)))
                     time.sleep(DELAY)
         else:
