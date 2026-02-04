@@ -1100,7 +1100,7 @@ class TestAccountRetirementCleanup(RetirementTestCase):
         # Should have exactly 1 bulk UPDATE and 1 bulk DELETE query (not individual per-record queries)
         assert len(update_queries) == 1, f"Expected 1 UPDATE query, found {len(update_queries)}"
         assert len(delete_queries) == 1, f"Expected 1 DELETE query, found {len(delete_queries)}"
-        
+
         # Verify UPDATE query redacts records with the correct field-value assignments
         for update_query in update_queries:
             sql_lower = update_query['sql']
@@ -1114,7 +1114,7 @@ class TestAccountRetirementCleanup(RetirementTestCase):
             assert "original_name" in sql_lower and f"= '{redacted_name}'" in sql_lower, (
                 f"UPDATE query missing 'original_name = {redacted_name}': {sql_lower}"
             )
-        
+
         # Verify DELETE query is a single bulk operation (uses ID-based deletion after the update)
         # Django optimizes by deleting the records using their IDs rather than re-filtering
         for delete_query in delete_queries:
