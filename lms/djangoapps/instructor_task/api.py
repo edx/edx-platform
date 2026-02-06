@@ -93,9 +93,7 @@ def get_instructor_task_history(course_id, usage_key=None, student=None, task_ty
     # Bulk email history is user-facing; only show tasks that represent
     # real delivered emails (SUCCESS with succeeded > 0) or future scheduled sends.
     if task_type == InstructorTaskTypes.BULK_COURSE_EMAIL:
-        instructor_tasks = InstructorTask.objects.filter(
-            course_id=course_id
-        ).filter(
+        instructor_tasks = instructor_tasks.filter(
             # SUCCESS tasks must have delivery results, while SCHEDULED tasks
             # have no task_output yet and must be included explicitly.
             Q(
