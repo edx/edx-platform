@@ -1999,3 +1999,415 @@ def add_stats_for_users_with_null_values(course_stats, users_in_course):
         })
     updated_course_stats = sorted(updated_course_stats, key=lambda d: len(d['username']))
     return updated_course_stats
+
+
+def _get_user_label_function(course_staff_user_ids, moderator_user_ids, ta_user_ids):
+    """
+    Create and return a function that determines user labels based on role.
+
+    Args:
+        course_staff_user_ids: List of user IDs for course staff
+        moderator_user_ids: List of user IDs for moderators
+        ta_user_ids: List of user IDs for TAs
+
+    Returns:
+        A function that takes a user_id and returns the appropriate label or None
+    """
+
+    def get_user_label(user_id):
+        """Get role label for a user ID."""
+        try:
+            user_id_int = int(user_id)
+            if user_id_int in course_staff_user_ids:
+                return "Staff"
+            elif user_id_int in moderator_user_ids:
+                return "Moderator"
+            elif user_id_int in ta_user_ids:
+                return "Community TA"
+        except (ValueError, TypeError):
+            # If user_id has any issues, there's no label to return
+            pass
+        return None
+
+    return get_user_label
+
+
+def _process_deleted_thread(thread_data, get_user_label_fn, usernames_set):
+    """
+    Process a single deleted thread into the standardized content item format.
+
+    Args:
+        thread_data: Raw thread data from forum API
+        get_user_label_fn: Function to get user labels by user ID
+        usernames_set: Set to collect usernames for profile image fetch (modified in-place)
+
+    Returns:
+        dict: Formatted content item for the thread
+    """
+    author_username = thread_data.get("author_username", "") or None
+    author_id = thread_data.get("author_id", "")
+
+    # If author_username is missing or empty, try to get it from author_id
+    if not author_username and author_id:
+        try:
+            author_user = User.objects.get(id=int(author_id))
+            author_username = author_user.username
+        except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, use placeholder
+            author_username = None
+
+    deleted_by_id = thread_data.get("deleted_by")
+    deleted_by_username = None
+
+    # Get deleted_by username
+    if deleted_by_id:
+        try:
+            deleted_user = User.objects.get(id=int(deleted_by_id))
+            deleted_by_username = deleted_user.username
+            usernames_set.add(deleted_by_username)
+        except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, skip setting deleted fields
+            pass
+
+    if author_username:
+        usernames_set.add(author_username)
+
+    # Strip HTML tags from preview
+    body_text = thread_data.get("body", "")
+    preview_text = strip_tags(body_text)[:100] if body_text else ""
+
+    thread_id = thread_data.get("_id", thread_data.get("id"))
+
+    # Calculate vote information
+    votes = thread_data.get("votes", {})
+    vote_count = votes.get("up_count", 0) if isinstance(votes, dict) else thread_data.get("vote_count", 0)
+
+    # Get abuse flaggers
+    abuse_flaggers = thread_data.get("abuse_flaggers", [])
+    abuse_flagged_count = len(abuse_flaggers) if abuse_flaggers else None
+
+    return {
+        "id": str(thread_id) + "-thread",
+        "type": "thread",
+        "title": thread_data.get("title", ""),
+        "raw_body": body_text,
+        "rendered_body": body_text,  # For deleted content, just use raw body
+        "preview_body": preview_text,
+        "course_id": thread_data.get("course_id", ""),
+        "author": author_username,
+        "author_id": thread_data.get("author_id", ""),
+        "author_label": get_user_label_fn(thread_data.get("author_id")),
+        "topic_id": thread_data.get("commentable_id", ""),
+        "commentable_id": thread_data.get("commentable_id", ""),
+        "group_id": thread_data.get("group_id"),
+        "group_name": None,  # Will be populated by API layer if needed
+        "created_at": thread_data.get("created_at"),
+        "updated_at": thread_data.get("updated_at"),
+        "thread_type": thread_data.get("thread_type", "discussion"),
+        "anonymous": thread_data.get("anonymous", False),
+        "anonymous_to_peers": thread_data.get("anonymous_to_peers", False),
+        "pinned": thread_data.get("pinned", False),
+        "closed": thread_data.get("closed", False),
+        "following": False,  # Deleted content is not followable
+        "abuse_flagged": len(abuse_flaggers) > 0 if abuse_flaggers else False,
+        "abuse_flagged_count": abuse_flagged_count,
+        "voted": False,  # Cannot vote on deleted content
+        "vote_count": vote_count,
+        "comment_count": thread_data.get("comment_count", 0),
+        "unread_comment_count": 0,  # Deleted content has no unread count
+        "comment_list_url": None,
+        "endorsed_comment_list_url": None,
+        "non_endorsed_comment_list_url": None,
+        "read": True,  # Treat deleted content as read
+        "has_endorsed": thread_data.get("endorsed", False),
+        "editable_fields": [],  # Deleted content is not editable
+        "can_delete": False,  # Already deleted
+        "is_deleted": True,
+        "deleted_at": thread_data.get("deleted_at"),
+        "deleted_by": deleted_by_username,
+        "deleted_by_label": get_user_label_fn(deleted_by_id) if deleted_by_id else None,
+        "close_reason_code": thread_data.get("close_reason_code"),
+        "close_reason": None,
+        "closed_by": thread_data.get("closed_by"),
+        "closed_by_label": None,
+    }
+
+
+def _process_deleted_comment(comment_data, get_user_label_fn, usernames_set):
+    """
+    Process a single deleted comment into the standardized content item format.
+
+    Args:
+        comment_data: Raw comment data from forum API
+        get_user_label_fn: Function to get user labels by user ID
+        usernames_set: Set to collect usernames for profile image fetch (modified in-place)
+
+    Returns:
+        dict: Formatted content item for the comment
+    """
+    author_username = comment_data.get("author_username", "") or None
+    author_id = comment_data.get("author_id", "")
+
+    # If author_username is missing or empty, try to get it from author_id
+    if not author_username and author_id:
+        try:
+            author_user = User.objects.get(id=int(author_id))
+            author_username = author_user.username
+        except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, use placeholder
+            author_username = None
+
+    deleted_by_id = comment_data.get("deleted_by")
+    deleted_by_username = None
+
+    # Get deleted_by username
+    if deleted_by_id:
+        try:
+            deleted_user = User.objects.get(id=int(deleted_by_id))
+            deleted_by_username = deleted_user.username
+            usernames_set.add(deleted_by_username)
+        except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, skip setting deleted fields
+            pass
+
+    if author_username:
+        usernames_set.add(author_username)
+
+    # Determine if this is a response (depth=0) or comment (depth>0)
+    depth = comment_data.get("depth", 0)
+    comment_type = "response" if depth == 0 else "comment"
+
+    # Get parent thread title for context
+    thread_id = comment_data.get("comment_thread_id", "")
+    thread_title = ""
+    if thread_id:
+        try:
+            parent_thread = Thread(id=thread_id).retrieve()
+            thread_title = parent_thread.get("title", "")
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    # Strip HTML tags from preview
+    body_text = comment_data.get("body", "")
+    preview_text = strip_tags(body_text)[:100] if body_text else ""
+
+    comment_id = comment_data.get("_id", comment_data.get("id"))
+
+    # Calculate vote information
+    votes = comment_data.get("votes", {})
+    vote_count = votes.get("up_count", 0) if isinstance(votes, dict) else comment_data.get("vote_count", 0)
+
+    # Get abuse flaggers
+    abuse_flaggers = comment_data.get("abuse_flaggers", [])
+    abuse_flagged_count = len(abuse_flaggers) if abuse_flaggers else None
+
+    return {
+        "id": str(comment_id) + "-comment",
+        "type": comment_type,
+        "raw_body": body_text,
+        "rendered_body": body_text,  # For deleted content, just use raw body
+        "preview_body": preview_text,
+        "title": thread_title,  # Use parent thread title for comments/responses
+        "course_id": comment_data.get("course_id", ""),
+        "author": author_username,
+        "author_id": comment_data.get("author_id", ""),
+        "author_label": get_user_label_fn(comment_data.get("author_id")),
+        "thread_id": str(thread_id),
+        "comment_thread_id": str(thread_id),
+        "thread_title": thread_title,
+        "parent_id": (
+            str(comment_data.get("parent_id", ""))
+            if comment_data.get("parent_id")
+            else None
+        ),
+        "created_at": comment_data.get("created_at"),
+        "updated_at": comment_data.get("updated_at"),
+        "depth": depth,
+        "anonymous": comment_data.get("anonymous", False),
+        "anonymous_to_peers": comment_data.get("anonymous_to_peers", False),
+        "endorsed": comment_data.get("endorsed", False),
+        "endorsed_by": comment_data.get("endorsed_by"),
+        "endorsed_by_label": None,
+        "endorsed_at": comment_data.get("endorsed_at"),
+        "abuse_flagged": len(abuse_flaggers) > 0 if abuse_flaggers else False,
+        "abuse_flagged_count": abuse_flagged_count,
+        "voted": False,  # Cannot vote on deleted content
+        "vote_count": vote_count,
+        "editable_fields": [],  # Deleted content is not editable
+        "can_delete": False,  # Already deleted
+        "child_count": comment_data.get("child_count", 0),
+        "is_deleted": True,
+        "deleted_at": comment_data.get("deleted_at"),
+        "deleted_by": deleted_by_username,
+        "deleted_by_label": get_user_label_fn(deleted_by_id) if deleted_by_id else None,
+    }
+
+
+def _add_user_profiles_to_content(deleted_content, usernames_set, request):
+    """
+    Fetch user profile images and add them to each content item.
+
+    Args:
+        deleted_content: List of content items (modified in-place)
+        usernames_set: Set of usernames to fetch profile images for
+        request: Django request object for getting profile images
+    """
+    # Add profile images for all users
+    username_profile_dict = _get_user_profile_dict(
+        request, usernames=",".join(usernames_set)
+    )
+
+    # Add users dict with profile images to each item
+    for item in deleted_content:
+        users_dict = {}
+
+        # Add author profile
+        author_username = item.get("author")
+        if author_username and author_username in username_profile_dict:
+            users_dict[author_username] = _user_profile(
+                username_profile_dict[author_username]
+            )
+
+        # Add deleted_by profile
+        deleted_by_username = item.get("deleted_by")
+        if deleted_by_username and deleted_by_username in username_profile_dict:
+            users_dict[deleted_by_username] = _user_profile(
+                username_profile_dict[deleted_by_username]
+            )
+
+        item["users"] = users_dict
+
+
+def get_deleted_content_for_course(
+    request, course_id, content_type=None, page=1, per_page=20, author_id=None
+):
+    """
+    Retrieve all deleted content (threads, comments) for a course.
+
+    Args:
+        request: The django request object for getting user profile images
+        course_id (str): Course identifier
+        content_type (str, optional): Filter by 'thread' or 'comment'. If None, returns all types.
+        page (int): Page number for pagination (1-based)
+        per_page (int): Number of items per page
+        author_id (str, optional): Filter by author ID
+
+    Returns:
+        dict: Paginated results with deleted content including author labels and profile images
+    """
+
+    import math
+
+    from lms.djangoapps.discussion.rest_api.utils import (
+        get_course_staff_users_list,
+        get_course_ta_users_list,
+        get_moderator_users_list,
+    )
+
+    try:
+        # Get course and user role information for labels
+        course_key = CourseKey.from_string(course_id)
+        course = _get_course(course_key, request.user)
+
+        course_staff_user_ids = get_course_staff_users_list(course.id)
+        moderator_user_ids = get_moderator_users_list(course.id)
+        ta_user_ids = get_course_ta_users_list(course.id)
+
+        # Get user label function
+        get_user_label = _get_user_label_function(
+            course_staff_user_ids, moderator_user_ids, ta_user_ids
+        )
+
+        # Build query parameters for forum API
+        query_params = {
+            "course_id": course_id,
+            "is_deleted": True,  # Only get deleted content
+            "page": page,
+            "per_page": per_page,
+        }
+
+        if author_id:
+            query_params["author_id"] = author_id
+
+        deleted_content = []
+        total_count = 0
+        usernames_set = set()  # Track all usernames for profile image fetch
+
+        # Get deleted threads
+        if content_type is None or content_type == "thread":
+            try:
+                deleted_threads = forum_api.get_deleted_threads_for_course(
+                    course_id=course_id,
+                    page=page if content_type == "thread" else 1,
+                    per_page=per_page if content_type == "thread" else 1000,
+                    author_id=author_id,
+                )
+                for thread_data in deleted_threads.get("threads", []):
+                    content_item = _process_deleted_thread(
+                        thread_data, get_user_label, usernames_set
+                    )
+                    deleted_content.append(content_item)
+
+                if content_type == "thread":
+                    total_count = deleted_threads.get(
+                        "total_count", len(deleted_content)
+                    )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.warning(
+                    "Failed to get deleted threads for course %s: %s", course_id, e
+                )
+
+        # Get deleted comments
+        if content_type is None or content_type == "comment":
+            try:
+                deleted_comments = forum_api.get_deleted_comments_for_course(
+                    course_id=course_id,
+                    page=page if content_type == "comment" else 1,
+                    per_page=per_page if content_type == "comment" else 1000,
+                    author_id=author_id,
+                )
+                for comment_data in deleted_comments.get("comments", []):
+                    content_item = _process_deleted_comment(
+                        comment_data, get_user_label, usernames_set
+                    )
+                    deleted_content.append(content_item)
+
+                if content_type == "comment":
+                    total_count = deleted_comments.get(
+                        "total_count", len(deleted_content)
+                    )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.warning(
+                    "Failed to get deleted comments for course %s: %s", course_id, e
+                )
+
+        # If getting all content types, handle pagination differently
+        if content_type is None:
+            total_count = len(deleted_content)
+            # Sort by deletion date (most recent first)
+            deleted_content.sort(key=lambda x: x.get("deleted_at", ""), reverse=True)
+
+            # Apply pagination to combined results
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            deleted_content = deleted_content[start_idx:end_idx]
+
+        # Add profile images for all users
+        _add_user_profiles_to_content(deleted_content, usernames_set, request)
+
+        # Calculate pagination info
+        num_pages = math.ceil(total_count / per_page) if total_count > 0 else 1
+
+        return {
+            "results": deleted_content,
+            "pagination": {
+                "next": None,  # Can be computed if needed
+                "previous": None,  # Can be computed if needed
+                "count": total_count,
+                "num_pages": num_pages,
+            },
+        }
+
+    except Exception as e:
+        log.exception("Error getting deleted content for course %s: %s", course_id, e)
+        raise

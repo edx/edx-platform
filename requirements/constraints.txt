@@ -42,7 +42,7 @@ django-stubs<6
 # The team that owns this package will manually bump this package rather than having it pulled in automatically.
 # This is to allow them to better control its deployment and to do it in a process that works better
 # for them.
-edx-enterprise==6.6.2
+edx-enterprise==6.6.3
 
 # Date: 2023-07-26
 # Our legacy Sass code is incompatible with anything except this ancient libsass version.
@@ -136,3 +136,9 @@ django-debug-toolbar<6.0.0
 # Issue: https://github.com/openedx/edx-platform/issues/37435
 cryptography<46.0.0
 pact-python<3.0.0
+
+# Date 2026-02-05
+# sphinx-autoapi==3.6.1 is incompatible with astroid==4.x under python 3.11. Since we (2U) currently
+# deploy edxapp to edx.org using python 3.11, we must pin sphinx-autoapi to avoid dependency
+# conflicts. Remove this constraint once we migrate to python 3.12.
+sphinx-autoapi<3.6.1

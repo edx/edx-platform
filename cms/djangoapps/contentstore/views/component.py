@@ -72,10 +72,6 @@ COMPONENT_TYPES = [
 
 BETA_COMPONENT_TYPES = ['library_v2', 'itembank']
 
-if is_games_xblock_enabled():
-    COMPONENT_TYPES.append('games')
-    BETA_COMPONENT_TYPES.append('games')
-
 ADVANCED_COMPONENT_TYPES = sorted({name for name, class_ in XBlock.load_classes()} - set(COMPONENT_TYPES))
 
 ADVANCED_PROBLEM_TYPES = settings.ADVANCED_PROBLEM_TYPES
@@ -312,14 +308,17 @@ def get_component_templates(courselike, library=False):  # lint-amnesty, pylint:
         'itembank': _("Problem Bank"),
         'drag-and-drop-v2': _("Drag and Drop"),
     }
-    if is_games_xblock_enabled():
-        component_display_names['games'] = _("Games")
 
     component_templates = []
     categories = set()
     # The component_templates array is in the order of "advanced" (if present), followed
     # by the components in the order listed in COMPONENT_TYPES.
     component_types = COMPONENT_TYPES[:]
+
+    # Add games xblock if enabled (checked at request time)
+    if is_games_xblock_enabled():
+        component_types.append('games')
+        component_display_names['games'] = _("Games")
 
     # Libraries do not support discussions, drag-and-drop, and openassessment and other libraries
     component_not_supported_by_library = [
@@ -465,12 +464,16 @@ def get_component_templates(courselike, library=False):  # lint-amnesty, pylint:
                         )
                         categories.add(component)
 
+        beta_types = BETA_COMPONENT_TYPES[:]
+        if is_games_xblock_enabled() and category == 'games':
+            beta_types.append('games')
+
         component_templates.append({
             "type": category,
             "templates": templates_for_category,
             "display_name": component_display_names[category],
             "support_legend": create_support_legend_dict(),
-            "beta": category in BETA_COMPONENT_TYPES,
+            "beta": category in beta_types,
         })
 
     # Libraries do not support advanced components at this time.

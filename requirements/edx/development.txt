@@ -17,7 +17,7 @@ aiohappyeyeballs==2.6.1
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
     #   aiohttp
-aiohttp==3.13.0
+aiohttp==3.13.3
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -46,10 +46,6 @@ aniso8601==10.0.1
     #   -r requirements/edx/testing.txt
     #   edx-tincan-py35
     #   tincan
-annotated-doc==0.0.4
-    # via
-    #   -r requirements/edx/testing.txt
-    #   fastapi
 annotated-types==0.7.0
     # via
     #   -r requirements/edx/doc.txt
@@ -78,7 +74,7 @@ asn1crypto==1.5.1
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
     #   snowflake-connector-python
-astroid==3.3.11
+astroid==4.0.3
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -208,7 +204,6 @@ cffi==1.17.1
     #   cryptography
     #   pact-python
     #   pynacl
-    #   snowflake-connector-python
 chardet==5.2.0
     # via
     #   -r requirements/edx/doc.txt
@@ -335,7 +330,7 @@ distlib==0.4.0
     # via
     #   -r requirements/edx/testing.txt
     #   virtualenv
-django==4.2.26
+django==4.2.28
     # via
     #   -c requirements/common_constraints.txt
     #   -c requirements/constraints.txt
@@ -752,7 +747,7 @@ edx-drf-extensions==10.6.0
     #   edxval
     #   enterprise-integrated-channels
     #   openedx-learning
-edx-enterprise==6.6.2
+edx-enterprise==6.6.3
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/doc.txt
@@ -880,7 +875,7 @@ enmerkar-underscore==2.4.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
-enterprise-integrated-channels==0.1.32
+enterprise-integrated-channels==0.1.38
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -1598,7 +1593,7 @@ pylatexenc==2.10
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
     #   olxcleaner
-pylint==3.3.9
+pylint==4.0.4
     # via
     #   -r requirements/edx/testing.txt
     #   edx-lint
@@ -1610,7 +1605,7 @@ pylint-celery==0.3
     # via
     #   -r requirements/edx/testing.txt
     #   edx-lint
-pylint-django==2.6.1
+pylint-django==2.7.0
     # via
     #   -r requirements/edx/testing.txt
     #   edx-lint
@@ -1940,7 +1935,7 @@ snowballstemmer==3.0.1
     # via
     #   -r requirements/edx/doc.txt
     #   sphinx
-snowflake-connector-python==3.18.0
+snowflake-connector-python==4.2.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -1985,8 +1980,10 @@ sphinx==8.2.3
     #   sphinxcontrib-httpdomain
     #   sphinxcontrib-openapi
     #   sphinxext-rediraffe
-sphinx-autoapi==3.6.1
-    # via -r requirements/edx/doc.txt
+sphinx-autoapi==3.6.0
+    # via
+    #   -c requirements/constraints.txt
+    #   -r requirements/edx/doc.txt
 sphinx-book-theme==1.1.4
     # via -r requirements/edx/doc.txt
 sphinx-design==0.6.1

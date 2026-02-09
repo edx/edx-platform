@@ -760,6 +760,14 @@ urlpatterns += [
 
 urlpatterns += [
     re_path(
+        r'^api/unified-translations/enabled/$',
+        courseware_views.unified_site_and_translation_language_enabled,
+        name='unified_translations_enabled_view'
+    )
+]
+
+urlpatterns += [
+    re_path(
         r'^courses/{}/lti_tab/(?P<provider_uuid>[^/]+)/$'.format(
             settings.COURSE_ID_PATTERN,
         ),

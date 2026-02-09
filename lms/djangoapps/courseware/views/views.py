@@ -159,6 +159,7 @@ from ..tabs import _get_dynamic_tabs
 from ..toggles import (
     COURSEWARE_OPTIMIZED_RENDER_XBLOCK,
     ENABLE_COURSE_DISCOVERY_DEFAULT_LANGUAGE_FILTER,
+    unified_site_and_translation_language_is_enabled,
 )
 
 log = logging.getLogger("edx.courseware")
@@ -2402,3 +2403,12 @@ def courseware_mfe_navigation_sidebar_toggles(request, course_id=None):
         # Add completion tracking status for the sidebar use while a global place for switches is put in place
         "enable_completion_tracking": ENABLE_COMPLETION_TRACKING_SWITCH.is_enabled()
     })
+
+
+@login_required
+@api_view(['GET'])
+def unified_site_and_translation_language_enabled(request):
+    """
+    Simple GET endpoint to expose whether the user/course has access to the unified translations feature
+    """
+    return JsonResponse({'enabled': unified_site_and_translation_language_is_enabled()})
