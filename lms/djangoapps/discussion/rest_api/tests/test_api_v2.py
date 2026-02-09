@@ -10,7 +10,6 @@ import itertools
 import random
 from datetime import datetime, timedelta
 from unittest import mock
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import ddt
 import httpretty
