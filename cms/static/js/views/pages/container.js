@@ -512,7 +512,7 @@ function($, _, Backbone, gettext, BasePage,
                 if((useNewTextEditor === 'True' && blockType === 'html')
                         || (useNewVideoEditor === 'True' && blockType === 'video')
                         || (useNewProblemEditor === 'True' && blockType === 'problem')
-                        || (blockType === 'games')
+                        || (blockType === 'games') || (blockType === 'invideoquiz')
                 ) {
                     var destinationUrl = primaryHeader.attr('authoring_MFE_base_url')
                         + '/' + blockType
