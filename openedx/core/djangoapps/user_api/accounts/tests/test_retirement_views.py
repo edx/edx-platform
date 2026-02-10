@@ -1115,11 +1115,9 @@ class TestAccountRetirementCleanup(RetirementTestCase):
             f"UPDATE query missing '\"original_name\" = {redacted_name}': {sql_lower}"
         )
 
-        # Verify DELETE query is a single bulk operation (uses ID-based deletion after the update)
-        # Django optimizes by deleting the records using their IDs rather than re-filtering
+        # Verify DELETE is from the correct table
         delete_query = delete_queries[0]
         sql_lower = delete_query['sql']
-        # Ensure it's deleting from the UserRetirementStatus table
         assert 'user_api_userretirementstatus' in sql_lower, (
             f"DELETE query against unexpected table: {sql_lower}"
         )
