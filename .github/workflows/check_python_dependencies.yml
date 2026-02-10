@@ -20,11 +20,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Upgrade pip and setuptools
+        run: python -m pip install --upgrade pip setuptools
+
       - name: Install repo-tools
         run: pip install edx-repo-tools[find_dependencies]
-
-      - name: Install setuptool
-        run: pip install setuptools
 
       - name: Run Python script
         run: |
