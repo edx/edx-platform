@@ -20,14 +20,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install compatible packaging tools
-        run: python -m pip install --upgrade "pip<24" "setuptools<70"
+      - name: Upgrade pip and setuptools
+        run: python -m pip install --upgrade pip setuptools
 
       - name: Install repo-tools
-        run: python -m pip install edx-repo-tools[find_dependencies]
-
-      - name: Ensure setuptools is available
-        run: python -m pip install --force-reinstall "setuptools<70"
+        run: |
+          python -m pip install edx-repo-tools[find_dependencies]
+          python -m pip install --upgrade 'requirements-parser>=0.13.0'
 
       - name: Run Python script
         run: |
