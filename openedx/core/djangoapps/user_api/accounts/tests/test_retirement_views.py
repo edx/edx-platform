@@ -1102,27 +1102,27 @@ class TestAccountRetirementCleanup(RetirementTestCase):
         assert len(delete_queries) == 1, f"Expected 1 DELETE query, found {len(delete_queries)}"
 
         # Verify UPDATE query redacts records with the correct field-value assignments
-        for update_query in update_queries:
-            sql_lower = update_query['sql']
-            # Ensure original_username, original_email, and original_name are set to redacted values
-            assert "original_username" in sql_lower and f"= '{redacted_username}'" in sql_lower, (
-                f"UPDATE query missing 'original_username = {redacted_username}': {sql_lower}"
-            )
-            assert "original_email" in sql_lower and f"= '{redacted_email}'" in sql_lower, (
-                f"UPDATE query missing 'original_email = {redacted_email}': {sql_lower}"
-            )
-            assert "original_name" in sql_lower and f"= '{redacted_name}'" in sql_lower, (
-                f"UPDATE query missing 'original_name = {redacted_name}': {sql_lower}"
-            )
+        update_query = update_queries[0]
+        sql_lower = update_query['sql']
+        # Ensure original_username, original_email, and original_name are set to redacted values
+        assert f'"original_username" = \'{redacted_username}\'' in sql_lower, (
+            f"UPDATE query missing '\"original_username\" = {redacted_username}': {sql_lower}"
+        )
+        assert f'"original_email" = \'{redacted_email}\'' in sql_lower, (
+            f"UPDATE query missing '\"original_email\" = {redacted_email}': {sql_lower}"
+        )
+        assert f'"original_name" = \'{redacted_name}\'' in sql_lower, (
+            f"UPDATE query missing '\"original_name\" = {redacted_name}': {sql_lower}"
+        )
 
         # Verify DELETE query is a single bulk operation (uses ID-based deletion after the update)
         # Django optimizes by deleting the records using their IDs rather than re-filtering
-        for delete_query in delete_queries:
-            sql_lower = delete_query['sql']
-            # Ensure it's a single DELETE statement for the UserRetirementStatus table
-            assert 'DELETE FROM' in sql_lower and 'user_api_userretirementstatus' in sql_lower, (
-                f"DELETE query doesn't match expected pattern: {sql_lower}"
-            )
+        delete_query = delete_queries[0]
+        sql_lower = delete_query['sql']
+        # Ensure it's deleting from the UserRetirementStatus table
+        assert 'user_api_userretirementstatus' in sql_lower, (
+            f"DELETE query against unexpected table: {sql_lower}"
+        )
 
     def test_default_redacted_values(self):
         """

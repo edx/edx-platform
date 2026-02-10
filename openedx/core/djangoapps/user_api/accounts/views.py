@@ -1036,7 +1036,7 @@ class AccountRetirementStatusView(ViewSet):
         }
         ```
 
-        Redacts a batch of retirement requests by redacting PII fields.
+        Redacts and then deletes a batch of retirement requests by username.
         """
         try:
             usernames = request.data["usernames"]
@@ -1048,6 +1048,7 @@ class AccountRetirementStatusView(ViewSet):
                 raise TypeError("Usernames should be an array.")
 
             complete_state = RetirementState.objects.get(state_name="COMPLETE")
+            # Get the retirement records to delete
             retirements = UserRetirementStatus.objects.filter(
                 original_username__in=usernames, current_state=complete_state
             )
@@ -1065,6 +1066,7 @@ class AccountRetirementStatusView(ViewSet):
                 original_name=redacted_name
             )
 
+            # Delete using fresh filter by the redacted values to ensure a single bulk DELETE query
             UserRetirementStatus.objects.filter(
                 original_username=redacted_username,
                 original_email=redacted_email,
