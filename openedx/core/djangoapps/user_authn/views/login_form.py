@@ -203,7 +203,6 @@ def login_and_registration_form(request, initial_mode="login"):
     enterprise_customer = enterprise_customer_for_request(request)
 
     if should_redirect_to_authn_microfrontend():
-
         # This is to handle a case where a logged-in cookie is not present but the user is authenticated.
         # Note: If we don't handle this learner is redirected to authn MFE and then back to dashboard
         # instead of the desired redirect URL (e.g. finish_auth) resulting in learners not enrolling
