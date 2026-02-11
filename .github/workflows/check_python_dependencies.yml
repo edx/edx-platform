@@ -25,6 +25,9 @@ jobs:
           python -m ensurepip --upgrade
           pip install --upgrade pip setuptools
 
+      - name: Ensure setuptools and wheel are installed
+        run: pip install --upgrade setuptools wheel
+
       - name: Install repo-tools
         run: pip install edx-repo-tools[find_dependencies]
 
