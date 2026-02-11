@@ -23,15 +23,15 @@ jobs:
       - name: Install tools for dependency check
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "setuptools>=68" "edx-repo-tools[find_dependencies]"
+          # setuptools no longer ships pkg_resources; install pkg_resources explicitly
+          python -m pip install pkg_resources "edx-repo-tools[find_dependencies]"
  
-      - name: Verify setuptools and pkg_resources
+      - name: Verify pkg_resources availability
         run: |
           python - << 'PY'
           import sys
           print("Python exe:", sys.executable)
-          import setuptools, pkg_resources
-          print("setuptools version:", setuptools.__version__)
+          import pkg_resources
           print("pkg_resources from:", pkg_resources.__file__)
           PY
  
