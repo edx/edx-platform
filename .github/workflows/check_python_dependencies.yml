@@ -1,40 +1,42 @@
 name: Check Python Dependencies
- 
+
 on:
   pull_request:
- 
+
 jobs:
   check_dependencies:
     runs-on: ubuntu-latest
- 
+
     strategy:
       matrix:
         python-version: ["3.12"]
- 
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
- 
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
- 
+
       - name: Install tools for dependency check
         run: |
           python -m pip install --upgrade pip
-          # setuptools no longer ships pkg_resources; install pkg_resources explicitly
-          python -m pip install pkg_resources "edx-repo-tools[find_dependencies]"
- 
-      - name: Verify pkg_resources availability
+          # Ensure setuptools is installed, as pkg_resources is part of setuptools
+          python -m pip install --upgrade setuptools "edx-repo-tools[find_dependencies]"
+
+      - name: Verify setuptools and pkg_resources availability
         run: |
           python - << 'PY'
           import sys
           print("Python exe:", sys.executable)
+          import setuptools
+          print("setuptools version:", setuptools.__version__)
           import pkg_resources
           print("pkg_resources from:", pkg_resources.__file__)
           PY
- 
+
       - name: Run Python dependency check
         run: |
           python -m edx_repo_tools.find_dependencies.find_python_dependencies \
