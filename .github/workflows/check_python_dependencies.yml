@@ -1,34 +1,43 @@
 name: Check Python Dependencies
-
+ 
 on:
   pull_request:
-
+ 
 jobs:
   check_dependencies:
     runs-on: ubuntu-latest
-
+ 
     strategy:
       matrix:
         python-version: ["3.12"]
-
+ 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
-
+ 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install repo-tools
-        run: pip install edx-repo-tools[find_dependencies]
-
-      - name: Install setuptool
-        run: pip install setuptools
-
-      - name: Run Python script
+ 
+      - name: Install tools for dependency check
         run: |
-          find_python_dependencies \
+          python -m pip install --upgrade pip
+          python -m pip install "setuptools>=68" "edx-repo-tools[find_dependencies]"
+ 
+      - name: Verify setuptools and pkg_resources
+        run: |
+          python - << 'PY'
+          import sys
+          print("Python exe:", sys.executable)
+          import setuptools, pkg_resources
+          print("setuptools version:", setuptools.__version__)
+          print("pkg_resources from:", pkg_resources.__file__)
+          PY
+ 
+      - name: Run Python dependency check
+        run: |
+          python -m edx_repo_tools.find_dependencies.find_python_dependencies \
             --req-file requirements/edx/base.txt \
             --req-file requirements/edx/testing.txt \
             --ignore https://github.com/edx/edx-name-affirmation \
