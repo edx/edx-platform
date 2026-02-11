@@ -23,11 +23,11 @@ jobs:
       - name: Install tools for dependency check
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "edx-repo-tools[find_dependencies]" setuptools
+          python -m pip install setuptools "edx-repo-tools[find_dependencies]"
  
       - name: Run Python dependency check
         run: |
-          find_python_dependencies \
+          python -m edx_repo_tools.find_dependencies.find_python_dependencies \
             --req-file requirements/edx/base.txt \
             --req-file requirements/edx/testing.txt \
             --ignore https://github.com/edx/edx-name-affirmation \
