@@ -9,7 +9,7 @@ import re
 from contextlib import contextmanager
 from datetime import datetime
 from io import StringIO
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import dateutil.parser
 from common.djangoapps.student.tests.factories import UserFactory
@@ -54,8 +54,13 @@ from cms.djangoapps.contentstore.video_storage_handlers import (
     convert_video_status,
     storage_service_bucket,
     storage_service_key,
-    PUBLIC_VIDEO_SHARE
+    PUBLIC_VIDEO_SHARE,
+    UPLOAD_VIA_BOTO3,
 )
+
+# Constant defined to make it clear when we're grabbing the kwargs from a
+# unittest.mock.call (which is a list of [args, kwargs]).
+CALL_KW = 1
 
 
 class VideoUploadTestBase:
@@ -167,6 +172,40 @@ class VideoUploadTestBase:
             if video["edx_video_id"] == edx_video_id
         )
 
+    @contextmanager
+    def patch_presign_url(self, files):
+        """
+        Decorator that patches boto3 to mock out S3 URL presigning.
+
+        Assumes that the only client in use is S3, and that only the presigning
+        method will be called. Makes assertions about what calls were made.
+
+        Decorator yields a result dictionary that will be populated *after* the
+        context closes. The one key is "calls", a list of call objects to the mock.
+
+        Arguments:
+          files: List of files to use for upload (dict of file_name and content_type)
+        """
+        mock_gen_url = Mock(side_effect=[
+            'http://example.com/url_{}'.format(file_info['file_name'])
+            for file_info in files
+        ])
+        mock_s3_client = Mock()
+        mock_s3_client.generate_presigned_url = mock_gen_url
+        with patch(
+                'cms.djangoapps.contentstore.video_storage_handlers.boto3.client',
+                return_value=mock_s3_client
+        ) as mock_boto_client:
+            results = {}
+            try:
+                yield results  # run wrapped block
+            finally:
+                results['calls'] = mock_gen_url.call_args_list
+
+        # Ensure that we're only trying to load the S3 client
+        for c in mock_boto_client.call_args_list:
+            self.assertEqual(c, call('s3'))
+
 
 class VideoStudioAccessTestsMixin:
     """
@@ -215,10 +254,11 @@ class VideoUploadPostTestsMixin:
     """
     Shared test cases for video post tests.
     """
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @override_settings(AWS_ACCESS_KEY_ID='test_key_id', AWS_SECRET_ACCESS_KEY='test_secret')
     @patch('boto.s3.key.Key')
     @patch('cms.djangoapps.contentstore.video_storage_handlers.S3Connection')
-    def test_post_success(self, mock_conn, mock_key):
+    def test_post_success_boto2(self, mock_conn, mock_key):
         files = [
             {
                 'file_name': 'first.mp4',
@@ -274,7 +314,7 @@ class VideoUploadPostTestsMixin:
                     settings.VIDEO_UPLOAD_PIPELINE['ROOT_PATH'] +
                     '/([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$'
                 ),
-                key_call_args[1]
+                key_call_args[CALL_KW]
             )
             self.assertIsNotNone(path_match)
             video_id = path_match.group(1)
@@ -308,6 +348,77 @@ class VideoUploadPostTestsMixin:
             response_file = response_obj['files'][i]
             self.assertEqual(response_file['file_name'], file_info['file_name'])
             self.assertEqual(response_file['upload_url'], mock_key_instance.generate_url())
+
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, True)
+    def test_post_success(self):
+        files = [
+            {
+                'file_name': 'first.mp4',
+                'content_type': 'video/mp4',
+            },
+            {
+                'file_name': 'second.mp4',
+                'content_type': 'video/mp4',
+            },
+            {
+                'file_name': 'third.mov',
+                'content_type': 'video/quicktime',
+            },
+            {
+                'file_name': 'fourth.mp4',
+                'content_type': 'video/mp4',
+            },
+        ]
+
+        with self.patch_presign_url(files) as presign_results:
+            response = self.client.post(
+                self.url,
+                json.dumps({'files': files}),
+                content_type='application/json'
+            )
+        self.assertEqual(response.status_code, 200)
+        response_obj = json.loads(response.content.decode('utf-8'))
+
+        self.assertEqual(len(response_obj['files']), len(files))
+        presign_calls = presign_results['calls']
+        self.assertEqual(len(presign_calls), len(files))
+        for i, file_info in enumerate(files):
+            call_kwargs = presign_calls[i][CALL_KW]
+
+            self.assertEqual(call_kwargs['ClientMethod'], 'put_object')
+            path_match = re.match(
+                (
+                    settings.VIDEO_UPLOAD_PIPELINE['ROOT_PATH'] +
+                    '/([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$'
+                ),
+                call_kwargs['Params']['Key']
+            )
+            self.assertIsNotNone(path_match)
+            video_id = path_match.group(1)
+
+            self.assertEqual(
+                call_kwargs['Params']['Metadata'],
+                {
+                    'course_video_upload_token': self.test_token,
+                    'client_video_id': file_info['file_name'],
+                    'course_key': str(self.course.id),
+                }
+            )
+            self.assertEqual(call_kwargs['Params']['ContentType'], file_info['content_type'])
+            self.assertEqual(call_kwargs['ExpiresIn'], KEY_EXPIRATION_IN_SECONDS)
+
+            # Ensure VAL was updated
+            val_info = get_video_info(video_id)
+            self.assertEqual(val_info['status'], 'upload')
+            self.assertEqual(val_info['client_video_id'], file_info['file_name'])
+            self.assertEqual(val_info['status'], 'upload')
+            self.assertEqual(val_info['duration'], 0)
+            self.assertEqual(val_info['courses'], [{str(self.course.id): None}])
+
+            # Ensure response is correct
+            response_file = response_obj['files'][i]
+            self.assertEqual(response_file['file_name'], file_info['file_name'])
+            self.assertEqual(response_file['upload_url'], f"http://example.com/url_{file_info['file_name']}")
 
     def test_post_non_json(self):
         response = self.client.post(self.url, {"files": []})
@@ -479,6 +590,7 @@ class VideosHandlerTestCase(
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'video_upload_pagination')
 
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @override_settings(AWS_ACCESS_KEY_ID="test_key_id", AWS_SECRET_ACCESS_KEY="test_secret")
     @patch("boto.s3.key.Key")
     @patch("cms.djangoapps.contentstore.video_storage_handlers.S3Connection")
@@ -511,7 +623,7 @@ class VideosHandlerTestCase(
         )
     )
     @ddt.unpack
-    def test_video_supported_file_formats(self, files, expected_status, mock_conn, mock_key):
+    def test_video_supported_file_formats_boto2(self, files, expected_status, mock_conn, mock_key):
         """
         Test that video upload works correctly against supported and unsupported file formats.
         """
@@ -542,9 +654,60 @@ class VideosHandlerTestCase(
             self.assertIn('error', response)
             self.assertEqual(response['error'], "Request 'files' entry contain unsupported content_type")
 
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, True)
+    @ddt.data(
+        (
+            [
+                {
+                    "file_name": "supported-1.mp4",
+                    "content_type": "video/mp4",
+                },
+                {
+                    "file_name": "supported-2.mov",
+                    "content_type": "video/quicktime",
+                },
+            ],
+            200
+        ),
+        (
+            [
+                {
+                    "file_name": "unsupported-1.txt",
+                    "content_type": "text/plain",
+                },
+                {
+                    "file_name": "unsupported-2.png",
+                    "content_type": "image/png",
+                },
+            ],
+            400
+        )
+    )
+    @ddt.unpack
+    def test_video_supported_file_formats(self, files, expected_status):
+        """
+        Test that video upload works correctly against supported and unsupported file formats.
+        """
+        # Check supported formats
+        with self.patch_presign_url(files):
+            response = self.client.post(
+                self.url,
+                json.dumps({"files": files}),
+                content_type="application/json"
+            )
+        self.assertEqual(response.status_code, expected_status)
+        response = json.loads(response.content.decode('utf-8'))
+
+        if expected_status == 200:
+            self.assertNotIn('error', response)
+        else:
+            self.assertIn('error', response)
+            self.assertEqual(response['error'], "Request 'files' entry contain unsupported content_type")
+
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @override_settings(AWS_ACCESS_KEY_ID='test_key_id', AWS_SECRET_ACCESS_KEY='test_secret')
     @patch('cms.djangoapps.contentstore.video_storage_handlers.S3Connection')
-    def test_upload_with_non_ascii_charaters(self, mock_conn):
+    def test_upload_with_non_ascii_characters_boto2(self, mock_conn):
         """
         Test that video uploads throws error message when file name contains special characters.
         """
@@ -564,11 +727,28 @@ class VideosHandlerTestCase(
         response = json.loads(response.content.decode('utf-8'))
         self.assertEqual(response['error'], 'The file name for %s must contain only ASCII characters.' % file_name)
 
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, True)
+    def test_upload_with_non_ascii_characters(self):
+        """
+        Test that video uploads throws error message when file name contains special characters.
+        """
+        file_name = 'test\u2019_file.mp4'
+        files = [{'file_name': file_name, 'content_type': 'video/mp4'}]
+        response = self.client.post(
+            self.url,
+            json.dumps({'files': files}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 400)
+        response = json.loads(response.content.decode('utf-8'))
+        self.assertEqual(response['error'], 'The file name for %s must contain only ASCII characters.' % file_name)
+
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @override_settings(AWS_ACCESS_KEY_ID='test_key_id', AWS_SECRET_ACCESS_KEY='test_secret', AWS_SECURITY_TOKEN='token')
     @patch('boto.s3.key.Key')
     @patch('cms.djangoapps.contentstore.video_storage_handlers.S3Connection')
     @override_waffle_flag(ENABLE_DEVSTACK_VIDEO_UPLOADS, active=True)
-    def test_devstack_upload_connection(self, mock_conn, mock_key):
+    def test_devstack_upload_connection_boto2(self, mock_conn, mock_key):
         files = [{'file_name': 'first.mp4', 'content_type': 'video/mp4'}]
         mock_conn.get_bucket = Mock()
         mock_key_instances = [
@@ -593,9 +773,22 @@ class VideosHandlerTestCase(
             security_token=settings.AWS_SECURITY_TOKEN
         )
 
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, True)
+    @override_waffle_flag(ENABLE_DEVSTACK_VIDEO_UPLOADS, active=True)
+    def test_devstack_upload_connection(self):
+        files = [{'file_name': 'first.mp4', 'content_type': 'video/mp4'}]
+        with self.patch_presign_url(files):
+            response = self.client.post(
+                self.url,
+                json.dumps({'files': files}),
+                content_type='application/json'
+            )
+        self.assertEqual(response.status_code, 200)
+
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @patch('boto.s3.key.Key')
     @patch('cms.djangoapps.contentstore.video_storage_handlers.S3Connection')
-    def test_send_course_to_vem_pipeline(self, mock_conn, mock_key):
+    def test_send_course_to_vem_pipeline_boto2(self, mock_conn, mock_key):
         """
         Test that uploads always go to VEM S3 bucket by default.
         """
@@ -622,6 +815,26 @@ class VideosHandlerTestCase(
             settings.VIDEO_UPLOAD_PIPELINE['VEM_S3_BUCKET'], validate=False  # pylint: disable=unsubscriptable-object
         )
 
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, True)
+    def test_send_course_to_vem_pipeline(self):
+        """
+        Test that uploads always go to VEM S3 bucket by default.
+        """
+        files = [{'file_name': 'first.mp4', 'content_type': 'video/mp4'}]
+        with self.patch_presign_url(files) as presign_results:
+            response = self.client.post(
+                self.url,
+                json.dumps({'files': files}),
+                content_type='application/json'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            presign_results['calls'][0][CALL_KW]['Params']['Bucket'],
+            settings.VIDEO_UPLOAD_PIPELINE['VEM_S3_BUCKET']
+        )
+
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @override_settings(AWS_ACCESS_KEY_ID='test_key_id', AWS_SECRET_ACCESS_KEY='test_secret')
     @patch('boto.s3.key.Key')
     @patch('cms.djangoapps.contentstore.video_storage_handlers.S3Connection')
@@ -642,7 +855,7 @@ class VideosHandlerTestCase(
             'expect_token': True
         }
     )
-    def test_video_upload_token_in_meta(self, data, mock_conn, mock_key):
+    def test_video_upload_token_in_meta_boto2(self, data, mock_conn, mock_key):
         """
         Test video upload token in s3 metadata.
         """
@@ -688,6 +901,45 @@ class VideosHandlerTestCase(
                     # if we're expecting token then we will be able to find the call to set the token
                     # in s3 metadata.
                     mock_key_instance.set_metadata.assert_any_call(*expected_args)
+
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, True)
+    @ddt.data(
+        {
+            'global_waffle': True,
+            'course_override': WaffleFlagCourseOverrideModel.ALL_CHOICES.off,
+            'expect_token': True
+        },
+        {
+            'global_waffle': False,
+            'course_override': WaffleFlagCourseOverrideModel.ALL_CHOICES.on,
+            'expect_token': False
+        },
+        {
+            'global_waffle': False,
+            'course_override': WaffleFlagCourseOverrideModel.ALL_CHOICES.off,
+            'expect_token': True
+        }
+    )
+    def test_video_upload_token_in_meta(self, data):
+        """
+        Test video upload token in s3 metadata.
+        """
+        file_data = {
+            'file_name': 'first.mp4',
+            'content_type': 'video/mp4',
+        }
+        with patch.object(WaffleFlagCourseOverrideModel, 'override_value', return_value=data['course_override']):
+            with override_waffle_flag(DEPRECATE_YOUTUBE, active=data['global_waffle']):
+                with self.patch_presign_url([file_data]) as presign_results:
+                    response = self.client.post(
+                        self.url,
+                        json.dumps({'files': [file_data]}),
+                        content_type='application/json'
+                    )
+                self.assertEqual(response.status_code, 200)
+
+        actual_token = presign_results['calls'][0][CALL_KW]['Params']['Metadata'].get('course_video_upload_token')
+        self.assertEqual(actual_token, self.test_token if data['expect_token'] else None)
 
     def _assert_video_removal(self, url, edx_video_id, deleted_videos):
         """
@@ -1434,6 +1686,7 @@ class TranscriptPreferencesTestCase(VideoUploadTestBase, CourseTestCase):
         preferences = get_transcript_preferences(course_id)
         self.assertIsNone(preferences)
 
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @ddt.data(
         (
             None,
@@ -1463,8 +1716,8 @@ class TranscriptPreferencesTestCase(VideoUploadTestBase, CourseTestCase):
     @patch('boto.s3.key.Key')
     @patch('cms.djangoapps.contentstore.video_storage_handlers.S3Connection')
     @patch('cms.djangoapps.contentstore.video_storage_handlers.get_transcript_preferences')
-    def test_transcript_preferences_metadata(self, transcript_preferences, is_video_transcript_enabled,
-                                             mock_transcript_preferences, mock_conn, mock_key):
+    def test_transcript_preferences_metadata_boto2(self, transcript_preferences, is_video_transcript_enabled,
+                                                   mock_transcript_preferences, mock_conn, mock_key):
         """
         Tests that transcript preference metadata is only set if it is video transcript feature is enabled and
         transcript preferences are already stored in the system.
@@ -1501,6 +1754,65 @@ class TranscriptPreferencesTestCase(VideoUploadTestBase, CourseTestCase):
                 mock_key_instance.set_metadata.assert_any_call(
                     'transcript_preferences', json.dumps(transcript_preferences)
                 )
+
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, True)
+    @ddt.data(
+        (
+            None,
+            False
+        ),
+        (
+            {
+                'provider': TranscriptProvider.CIELO24,
+                'cielo24_fidelity': 'PROFESSIONAL',
+                'cielo24_turnaround': 'STANDARD',
+                'preferred_languages': ['en']
+            },
+            False
+        ),
+        (
+            {
+                'provider': TranscriptProvider.CIELO24,
+                'cielo24_fidelity': 'PROFESSIONAL',
+                'cielo24_turnaround': 'STANDARD',
+                'preferred_languages': ['en']
+            },
+            True
+        )
+    )
+    @ddt.unpack
+    @override_settings(AWS_ACCESS_KEY_ID='test_key_id', AWS_SECRET_ACCESS_KEY='test_secret')
+    @patch('cms.djangoapps.contentstore.video_storage_handlers.get_transcript_preferences')
+    def test_transcript_preferences_metadata(self, transcript_preferences, is_video_transcript_enabled,
+                                             mock_transcript_preferences):
+        """
+        Tests that transcript preference metadata is only set if it is video transcript feature is enabled and
+        transcript preferences are already stored in the system.
+        """
+        file_name = 'test-video.mp4'
+        files = [{'file_name': file_name, 'content_type': 'video/mp4'}]
+
+        mock_transcript_preferences.return_value = transcript_preferences
+
+        videos_handler_url = reverse_course_url('videos_handler', self.course.id)
+        with patch(
+            'openedx.core.djangoapps.video_config.models.VideoTranscriptEnabledFlag.feature_enabled'
+        ) as video_transcript_feature:
+            video_transcript_feature.return_value = is_video_transcript_enabled
+            with self.patch_presign_url(files) as presign_results:
+                response = self.client.post(
+                    videos_handler_url, json.dumps({'files': files}),
+                    content_type='application/json',
+                )
+
+        self.assertEqual(response.status_code, 200)
+
+        # Ensure `transcript_preferences` was set in metadata correctly if sent through request.
+        actual_value = presign_results['calls'][0][CALL_KW]['Params']['Metadata'].get('transcript_preferences')
+        if is_video_transcript_enabled and transcript_preferences:
+            self.assertEqual(actual_value, json.dumps(transcript_preferences))
+        else:
+            self.assertEqual(actual_value, None)
 
 
 @patch.dict("django.conf.settings.FEATURES", {"ENABLE_VIDEO_UPLOAD_PIPELINE": True})
@@ -1644,10 +1956,12 @@ class GetVideoFeaturesTestCase(
         self.assertEqual(response.json()[key], is_enabled)
 
 
+# TODO: Remove when UPLOAD_VIA_BOTO3 is removed.
 class GetStorageBucketTestCase(TestCase):
     """ This test just check that connection works and returns the bucket.
     It does not involve any mocking and triggers errors if has any import issue.
     """
+    @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @override_settings(AWS_ACCESS_KEY_ID='test_key_id', AWS_SECRET_ACCESS_KEY='test_secret')
     @override_settings(VIDEO_UPLOAD_PIPELINE={
         "VEM_S3_BUCKET": "vem_test_bucket", "BUCKET": "test_bucket", "ROOT_PATH": "test_root"

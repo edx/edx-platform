@@ -13,10 +13,11 @@ import requests
 import shutil
 import pathlib
 import zipfile
-
 from contextlib import closing
 from datetime import datetime, timedelta
 from uuid import uuid4
+
+import boto3
 from boto.s3.connection import S3Connection
 from boto import s3
 from django.conf import settings
@@ -80,6 +81,17 @@ VIDEO_IMAGE_UPLOAD_ENABLED = WaffleSwitch(  # lint-amnesty, pylint: disable=togg
 
 # Waffle flag namespace for studio
 WAFFLE_STUDIO_FLAG_NAMESPACE = 'studio'
+
+# .. toggle_name: videos.upload_via_boto3
+# .. toggle_implementation: WaffleSwitch
+# .. toggle_default: False
+# .. toggle_description: Use boto3 for upload rather than boto. Intended for
+#   use during rollout, after which toggle will be removed and only boto3
+#   will be supported.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-02-17
+# .. toggle_target_removal_date: 2026-03-01
+UPLOAD_VIA_BOTO3 = WaffleSwitch(f'{WAFFLE_NAMESPACE}.upload_via_boto3', __name__)
 
 ENABLE_VIDEO_UPLOAD_PAGINATION = CourseWaffleFlag(  # lint-amnesty, pylint: disable=toggle-missing-annotation
     f'{WAFFLE_STUDIO_FLAG_NAMESPACE}.enable_video_upload_pagination', __name__
@@ -812,7 +824,11 @@ def videos_post(course, request):
     if error:
         return {'error': error}, 400
 
-    bucket = storage_service_bucket()
+    if UPLOAD_VIA_BOTO3.is_enabled():
+        s3_client = boto3.client('s3')
+    else:
+        bucket = storage_service_bucket()
+
     req_files = data['files']
     resp_files = []
 
@@ -826,7 +842,8 @@ def videos_post(course, request):
             return {'error': error_msg}, 400
 
         edx_video_id = str(uuid4())
-        key = storage_service_key(bucket, file_name=edx_video_id)
+        if not UPLOAD_VIA_BOTO3.is_enabled():
+            key = storage_service_key(bucket, file_name=edx_video_id)
 
         metadata_list = [
             ('client_video_id', file_name),
@@ -846,13 +863,25 @@ def videos_post(course, request):
             if transcript_preferences is not None:
                 metadata_list.append(('transcript_preferences', json.dumps(transcript_preferences)))
 
-        for metadata_name, value in metadata_list:
-            key.set_metadata(metadata_name, value)
-        upload_url = key.generate_url(
-            KEY_EXPIRATION_IN_SECONDS,
-            'PUT',
-            headers={'Content-Type': req_file['content_type']}
-        )
+        if UPLOAD_VIA_BOTO3.is_enabled():
+            upload_url = s3_client.generate_presigned_url(
+                ClientMethod='put_object',
+                Params={
+                    'Bucket': storage_service_bucket_name(),
+                    'Key': storage_service_key_name(edx_video_id),
+                    'ContentType': req_file['content_type'],
+                    'Metadata': dict(metadata_list),
+                },
+                ExpiresIn=KEY_EXPIRATION_IN_SECONDS,
+            )
+        else:
+            for metadata_name, value in metadata_list:
+                key.set_metadata(metadata_name, value)
+            upload_url = key.generate_url(
+                KEY_EXPIRATION_IN_SECONDS,
+                'PUT',
+                headers={'Content-Type': req_file['content_type']}
+            )
 
         # persist edx_video_id in VAL
         create_video({
@@ -869,9 +898,18 @@ def videos_post(course, request):
     return {'files': resp_files}, 200
 
 
+def storage_service_bucket_name():
+    """
+    Returns name of S3 bucket to use for video upload.
+    """
+    return settings.VIDEO_UPLOAD_PIPELINE['VEM_S3_BUCKET']
+
+
 def storage_service_bucket():
     """
     Returns an S3 bucket for video upload.
+
+    This is on the deprecated boto v1 pathway. See `UPLOAD_VIA_BOTO3`.
     """
     if ENABLE_DEVSTACK_VIDEO_UPLOADS.is_enabled():
         params = {
@@ -892,17 +930,26 @@ def storage_service_bucket():
     # set since behind the scenes it fires a HEAD request that is equivalent to get_all_keys()
     # meaning it would need ListObjects on the whole bucket, not just the path used in each
     # environment (since we share a single bucket for multiple deployments in some configurations)
-    return conn.get_bucket(settings.VIDEO_UPLOAD_PIPELINE['VEM_S3_BUCKET'], validate=False)
+    return conn.get_bucket(storage_service_bucket_name(), validate=False)
+
+
+def storage_service_key_name(file_name):
+    """
+    Returns the S3 object key to be used for a given video filename.
+    """
+    return "{}/{}".format(
+        settings.VIDEO_UPLOAD_PIPELINE.get("ROOT_PATH", ""),
+        file_name
+    )
 
 
 def storage_service_key(bucket, file_name):
     """
     Returns an S3 key to the given file in the given bucket.
+
+    This is used in the deprecated boto v1 pathway. See `UPLOAD_VIA_BOTO3`.
     """
-    key_name = "{}/{}".format(
-        settings.VIDEO_UPLOAD_PIPELINE.get("ROOT_PATH", ""),
-        file_name
-    )
+    key_name = storage_service_key_name(file_name)
     return s3.key.Key(bucket, key_name)
 
 
