@@ -20,24 +20,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install tools for dependency check
-        run: |
-          python -m pip install --upgrade pip
-          # Pin setuptools to version <82 to ensure pkg_resources is included
-          python -m pip install "setuptools<82" "edx-repo-tools[find_dependencies]"
+      - name: Install repo-tools
+        run: pip install edx-repo-tools[find_dependencies]
 
-      - name: Verify pkg_resources availability
-        run: |
-          python - << 'PY'
-          import sys
-          print("Python exe:", sys.executable)
-          import pkg_resources
-          print("pkg_resources from:", pkg_resources.__file__)
-          PY
+      - name: Install setuptool
+        run: pip install setuptools
 
-      - name: Run Python dependency check
+      - name: Run Python script
         run: |
-          python -m edx_repo_tools.find_dependencies.find_python_dependencies \
+          find_python_dependencies \
             --req-file requirements/edx/base.txt \
             --req-file requirements/edx/testing.txt \
             --ignore https://github.com/edx/edx-name-affirmation \
