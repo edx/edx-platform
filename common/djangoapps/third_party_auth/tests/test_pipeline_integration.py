@@ -379,6 +379,92 @@ class EnsureUserInformationTestCase(TestCase):
                     assert response.url == expected_redirect_url
 
 
+@ddt.ddt
+class EnsureUserInformationNextUrlTestCase(test.TestCase):
+    """Tests that ensure_user_information forwards session['next'] as a query parameter."""
+
+    def _call_ensure_user_information(self, session_next, auth_entry=pipeline.AUTH_ENTRY_LOGIN,
+                                      send_to_registration_first=True):
+        """Helper to call ensure_user_information with a controlled session_get('next') value."""
+        mock_provider = mock.MagicMock(
+            send_to_registration_first=send_to_registration_first,
+            skip_email_verification=False,
+        )
+        with mock.patch(
+            'common.djangoapps.third_party_auth.pipeline.provider.Registry.get_from_pipeline'
+        ) as get_from_pipeline:
+            get_from_pipeline.return_value = mock_provider
+            with mock.patch('social_core.pipeline.partial.partial_prepare') as partial_prepare:
+                partial_prepare.return_value = mock.MagicMock(token='')
+                strategy = mock.MagicMock()
+                strategy.session_get.side_effect = lambda key, *args: (
+                    session_next if key == 'next' else mock.DEFAULT
+                )
+                response = pipeline.ensure_user_information(
+                    strategy=strategy,
+                    backend=None,
+                    auth_entry=auth_entry,
+                    pipeline_index=0,
+                )
+                return response
+
+    @mock.patch(
+        'common.djangoapps.third_party_auth.pipeline.is_tpa_next_url_on_dispatch_enabled',
+        return_value=True,
+    )
+    @ddt.data(
+        # (session_next, send_to_registration_first, expected_url)
+        ('/courses/my-course', True, '/register?next=/courses/my-course'),
+        ('/courses/my-course', False, '/login?next=/courses/my-course'),
+        ('/dashboard', True, '/register?next=/dashboard'),
+    )
+    @ddt.unpack
+    def test_next_url_forwarded_to_redirect(self, session_next, send_to_registration_first, expected_url, _flag_mock):
+        """When session contains a 'next' URL, it should be appended as a query parameter."""
+        response = self._call_ensure_user_information(
+            session_next=session_next,
+            send_to_registration_first=send_to_registration_first,
+        )
+        assert response.status_code == 302
+        assert response.url == expected_url
+
+    @mock.patch(
+        'common.djangoapps.third_party_auth.pipeline.is_tpa_next_url_on_dispatch_enabled',
+        return_value=True,
+    )
+    @ddt.data(None, '')
+    def test_no_next_url_gives_bare_redirect(self, session_next, _flag_mock):
+        """When session has no 'next' URL, the redirect should be bare /register."""
+        response = self._call_ensure_user_information(session_next=session_next)
+        assert response.status_code == 302
+        assert response.url == '/register'
+
+    @mock.patch(
+        'common.djangoapps.third_party_auth.pipeline.is_tpa_next_url_on_dispatch_enabled',
+        return_value=True,
+    )
+    def test_next_url_with_special_characters_is_encoded(self, _flag_mock):
+        """Special characters in the next URL should be percent-encoded."""
+        response = self._call_ensure_user_information(
+            session_next='/courses/my course?foo=bar&baz=1',
+        )
+        assert response.status_code == 302
+        assert response.url.startswith('/register?next=')
+        # The space and & should be encoded
+        assert '%20' in response.url or '+' in response.url
+        assert 'foo%3Dbar' in response.url or 'foo=bar' in response.url
+
+    @mock.patch(
+        'common.djangoapps.third_party_auth.pipeline.is_tpa_next_url_on_dispatch_enabled',
+        return_value=False,
+    )
+    def test_flag_disabled_gives_bare_redirect(self, _flag_mock):
+        """When the waffle flag is disabled, the redirect should be bare even with session['next']."""
+        response = self._call_ensure_user_information(session_next='/courses/my-course')
+        assert response.status_code == 302
+        assert response.url == '/register'
+
+
 class UserDetailsForceSyncTestCase(TestCase):
     """Tests to ensure learner profile data is properly synced if the provider requires it."""
 

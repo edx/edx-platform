@@ -62,6 +62,7 @@ import base64
 import hashlib
 import hmac
 import json
+import urllib.parse
 from collections import OrderedDict
 from logging import getLogger
 from smtplib import SMTPException
@@ -101,6 +102,7 @@ from common.djangoapps.third_party_auth.utils import (
     is_saml_provider,
     user_exists,
 )
+from common.djangoapps.third_party_auth.toggles import is_tpa_next_url_on_dispatch_enabled
 from common.djangoapps.track import segment
 from common.djangoapps.util.json_request import JsonResponse
 
@@ -576,13 +578,23 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
     # It is important that we always execute the entire pipeline. Even if
     # behavior appears correct without executing a step, it means important
     # invariants have been violated and future misbehavior is likely.
+    def _build_redirect_url(base_url):
+        """Append ?next=… to the redirect URL if the session carries a destination."""
+        if not is_tpa_next_url_on_dispatch_enabled():
+            return base_url
+        next_url = strategy.session_get('next')
+        if next_url and isinstance(next_url, str):
+            separator = '&' if '?' in base_url else '?'
+            base_url = f'{base_url}{separator}next={urllib.parse.quote(next_url)}'
+        return base_url
+
     def dispatch_to_login():
         """Redirects to the login page."""
-        return redirect(AUTH_DISPATCH_URLS[AUTH_ENTRY_LOGIN])
+        return redirect(_build_redirect_url(AUTH_DISPATCH_URLS[AUTH_ENTRY_LOGIN]))
 
     def dispatch_to_register():
         """Redirects to the registration page."""
-        return redirect(AUTH_DISPATCH_URLS[AUTH_ENTRY_REGISTER])
+        return redirect(_build_redirect_url(AUTH_DISPATCH_URLS[AUTH_ENTRY_REGISTER]))
 
     def should_force_account_creation():
         """ For some third party providers, we auto-create user accounts """
