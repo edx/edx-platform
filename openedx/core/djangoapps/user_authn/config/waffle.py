@@ -2,7 +2,7 @@
 Waffle flags and switches for user authn.
 """
 
-from edx_toggles.toggles import WaffleSwitch
+from edx_toggles.toggles import WaffleFlag, WaffleSwitch
 
 _WAFFLE_NAMESPACE = 'user_authn'
 
@@ -30,4 +30,17 @@ ENABLE_LOGIN_USING_THIRDPARTY_AUTH_ONLY = WaffleSwitch(
 # .. toggle_tickets: VAN-664
 ENABLE_PWNED_PASSWORD_API = WaffleSwitch(
     f'{_WAFFLE_NAMESPACE}.enable_pwned_password_api', __name__
+)
+
+# .. toggle_name: user_authn.enable_enterprise_redirect_to_authn
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, Enterprise (B2B) users are redirected to the AuthN MFE like B2C users.
+# .. toggle_use_cases: open_edx
+# .. toggle_creation_date: 2025-02-11
+# .. toggle_warning: Only enable for Enterprise pilots; SAML/TPA flows remain on legacy.
+# Gating flag for Enterprise AuthN MFE rollout
+ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN = WaffleFlag(
+    f'{_WAFFLE_NAMESPACE}.enable_enterprise_redirect_to_authn',
+    __name__
 )

@@ -19,10 +19,12 @@ from django.urls import reverse
 from django.utils.translation import gettext as _
 
 from common.djangoapps.course_modes.models import CourseMode
+from edx_toggles.toggles.testutils import override_waffle_flag
 from lms.djangoapps.branding.api import get_privacy_url
 from openedx.core.djangoapps.site_configuration.tests.mixins import SiteMixin
 from openedx.core.djangoapps.theming.tests.test_util import with_comprehensive_theme_context
 from openedx.core.djangoapps.user_authn.cookies import JWT_COOKIE_NAMES
+from openedx.core.djangoapps.user_authn.config.waffle import ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN
 from openedx.core.djangoapps.user_authn.tests.utils import setup_login_oauth_client
 from openedx.core.djangoapps.user_authn.views.login_form import login_and_registration_form
 from openedx.core.djangolib.js_utils import dump_js_escaped_json
@@ -535,6 +537,92 @@ class LoginAndRegistrationTest(ThirdPartyAuthTestMixin, UrlResetMixin, ModuleSto
 
         assert enterprise_cookie['domain'] == settings.BASE_COOKIE_DOMAIN
         assert enterprise_cookie.value == ''
+
+    @mock.patch('openedx.core.djangoapps.user_authn.views.login_form.enterprise_customer_for_request')
+    @override_settings(FEATURES=FEATURES_WITH_AUTHN_MFE_ENABLED)
+    @override_waffle_flag(ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN, active=False)
+    @ddt.data("signin_user", "register_user")
+    def test_enterprise_customer_flag_disabled_no_mfe_redirect(self, url_name, mock_get_ec):
+        """
+        Test that Enterprise customers are NOT redirected to MFE when flag is disabled.
+        """
+        mock_get_ec.return_value = {
+            'name': 'Test Enterprise',
+            'uuid': 'test-uuid-123'
+        }
+
+        response = self.client.get(reverse(url_name))
+        # Should render legacy page, not redirect
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'initial_mode')
+
+    @mock.patch('openedx.core.djangoapps.user_authn.views.login_form.enterprise_customer_for_request')
+    @override_settings(FEATURES=FEATURES_WITH_AUTHN_MFE_ENABLED)
+    @override_waffle_flag(ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN, active=True)
+    @ddt.data(
+        ("signin_user", "/login"),
+        ("register_user", "/register"),
+    )
+    @ddt.unpack
+    def test_enterprise_customer_flag_enabled_mfe_redirect(self, url_name, expected_path, mock_get_ec):
+        """
+        Test that Enterprise customers ARE redirected to MFE when flag is enabled.
+        """
+        mock_get_ec.return_value = {
+            'name': 'Test Enterprise',
+            'uuid': 'test-uuid-123'
+        }
+
+        response = self.client.get(reverse(url_name))
+        self.assertRedirects(
+            response,
+            settings.AUTHN_MICROFRONTEND_URL + expected_path,
+            fetch_redirect_response=False
+        )
+
+    @mock.patch('openedx.core.djangoapps.user_authn.views.login_form.enterprise_customer_for_request')
+    @override_settings(FEATURES=FEATURES_WITH_AUTHN_MFE_ENABLED)
+    @override_waffle_flag(ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN, active=True)
+    @ddt.data("signin_user", "register_user")
+    def test_enterprise_customer_flag_enabled_saml_no_redirect(self, url_name, mock_get_ec):
+        """
+        Test that Enterprise customers with SAML provider are NOT redirected to MFE
+        even when flag is enabled (external provider hard stop).
+        """
+        mock_get_ec.return_value = {
+            'name': 'Test Enterprise',
+            'uuid': 'test-uuid-123'
+        }
+
+        # Simulate SAML provider in pipeline
+        pipeline_target = "openedx.core.djangoapps.user_authn.views.login_form.third_party_auth.pipeline"
+        with simulate_running_pipeline(pipeline_target, 'tpa-saml', {'backend': 'tpa-saml', 'kwargs': {}}):
+            response = self.client.get(reverse(url_name))
+            # Should render legacy page, not redirect
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, 'initial_mode')
+
+    @mock.patch('openedx.core.djangoapps.user_authn.views.login_form.enterprise_customer_for_request')
+    @override_settings(FEATURES=FEATURES_WITH_AUTHN_MFE_ENABLED)
+    @override_waffle_flag(ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN, active=True)
+    def test_enterprise_customer_flag_enabled_tpa_hint_no_redirect(self, mock_get_ec):
+        """
+        Test that Enterprise customers with TPA hint are NOT redirected to MFE
+        even when flag is enabled (external provider hard stop).
+        """
+        mock_get_ec.return_value = {
+            'name': 'Test Enterprise',
+            'uuid': 'test-uuid-123'
+        }
+
+        # Add TPA hint to query params
+        response = self.client.get(
+            reverse("signin_user"),
+            {'tpa_hint': 'oa2-google-oauth2'}
+        )
+        # Should render legacy page, not redirect
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'initial_mode')
 
     def test_login_registration_xframe_protected(self):
         resp = self.client.get(
