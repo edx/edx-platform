@@ -251,7 +251,7 @@ class LoginAndRegistrationTest(ThirdPartyAuthTestMixin, UrlResetMixin, ModuleSto
             email = 'test@test.com'
         enterprise_customer_mock.return_value = expected_ec
 
-        # Simulate a running pipeline
+        # Simulate a running pipelines
         if current_backend is not None:
             pipeline_target = "openedx.core.djangoapps.user_authn.views.login_form.third_party_auth.pipeline"
             with simulate_running_pipeline(pipeline_target, current_backend, email=email):
