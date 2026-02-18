@@ -355,8 +355,8 @@ class LmsApi(BaseApiClient):
     def bulk_cleanup_retirements(self, usernames, redacted_username=None,
                                  redacted_email=None, redacted_name=None):
         """
-        Redacts the retirements for all given usernames.
-        Optionally pass caller-defined redacted values for each PII field.
+        Redacts and then deletes the retirements for all given usernames.
+        Optionally pass caller-defined redacted values for each PII field before deletion.
         """
         data = {'usernames': usernames}
         if redacted_username is not None:
