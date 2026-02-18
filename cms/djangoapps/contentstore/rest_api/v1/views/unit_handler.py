@@ -3,14 +3,13 @@
 import logging
 
 import edx_api_doc_tools as apidocs
-from django.http import HttpResponseBadRequest, HttpResponseForbidden
+from django.http import HttpResponseBadRequest
 from opaque_keys.edx.keys import UsageKey
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from cms.djangoapps.contentstore.rest_api.v1.mixins import ContainerHandlerMixin
-from cms.djangoapps.contentstore.toggles import enable_unit_expanded_view
 from openedx.core.lib.api.view_utils import view_auth_classes
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
@@ -94,11 +93,6 @@ class UnitComponentsView(APIView, ContainerHandlerMixin):
             if unit_xblock.category != "vertical":
                 return HttpResponseBadRequest(
                     "The provided usage key is not a unit (vertical)"
-                )
-
-            if not enable_unit_expanded_view(unit_xblock.location.course_key):
-                return HttpResponseForbidden(
-                    "Unit expanded view is disabled for this course"
                 )
 
             components = []
