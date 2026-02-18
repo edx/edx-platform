@@ -209,7 +209,7 @@ def login_and_registration_form(request, initial_mode="login"):
     # Determine eligibility based on segment
     if enterprise_customer:
         # Enterprise/B2B: Requires the specific rollout waffle flag
-        is_segment_eligible = ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN.is_enabled(request)
+        is_segment_eligible = ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN.is_enabled()
     else:
         # B2C: Eligible by default
         is_segment_eligible = True
