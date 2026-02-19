@@ -743,6 +743,7 @@ class VideosHandlerTestCase(
         response = json.loads(response.content.decode('utf-8'))
         self.assertEqual(response['error'], 'The file name for %s must contain only ASCII characters.' % file_name)
 
+    # NOTE: This test will be removed with the removal of the toggle.
     @override_waffle_switch(UPLOAD_VIA_BOTO3, False)
     @override_settings(AWS_ACCESS_KEY_ID='test_key_id', AWS_SECRET_ACCESS_KEY='test_secret', AWS_SECURITY_TOKEN='token')
     @patch('boto.s3.key.Key')

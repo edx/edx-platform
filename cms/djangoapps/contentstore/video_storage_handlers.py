@@ -87,7 +87,9 @@ WAFFLE_STUDIO_FLAG_NAMESPACE = 'studio'
 # .. toggle_default: False
 # .. toggle_description: Use boto3 for upload rather than boto. Intended for
 #   use during rollout, after which toggle will be removed and only boto3
-#   will be supported.
+#   will be supported. (This may break uploading from devstack, and the
+#   ENABLE_DEVSTACK_VIDEO_UPLOADS toggle will be removed when this toggle
+#   is made permanent.)
 # .. toggle_use_cases: temporary
 # .. toggle_creation_date: 2026-02-17
 # .. toggle_target_removal_date: 2026-03-01
