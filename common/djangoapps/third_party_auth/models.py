@@ -803,7 +803,10 @@ class SAMLProviderConfig(ProviderConfig):
 
     def is_active_for_pipeline(self, pipeline):
         """ Is this provider being used for the specified pipeline? """
-        return self.backend_name == pipeline['backend'] and self.slug == pipeline['kwargs']['response']['idp_name']
+        try:
+            return self.backend_name == pipeline['backend'] and self.slug == pipeline['kwargs']['response']['idp_name']
+        except KeyError:
+            return False
 
     def match_social_auth(self, social_auth):
         """ Is this provider being used for this UserSocialAuth entry? """

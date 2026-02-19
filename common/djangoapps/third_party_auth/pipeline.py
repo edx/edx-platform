@@ -615,13 +615,35 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
 
     if not user:
         # Use only email for user existence check in case of saml provider
-        if is_provider_saml():
+        _is_saml = is_provider_saml()
+        _provider_obj = provider.Registry.get_from_pipeline({'backend': current_partial.backend, 'kwargs': kwargs})
+        logger.info(
+            '[THIRD_PARTY_AUTH] ensure_user_information: auth_entry=%s backend=%s is_provider_saml=%s '
+            'current_provider=%s skip_email_verification=%s send_to_registration_first=%s '
+            'email=%s kwargs_response_keys=%s',
+            auth_entry,
+            current_partial.backend,
+            _is_saml,
+            _provider_obj.provider_id if _provider_obj else None,
+            _provider_obj.skip_email_verification if _provider_obj else None,
+            _provider_obj.send_to_registration_first if _provider_obj else None,
+            details.get('email') if details else None,
+            list((kwargs.get('response') or {}).keys()),
+        )
+        if _is_saml:
             user_details = {'email': details.get('email')} if details else None
         else:
             user_details = details
-        if user_exists(user_details or {}):
+        _user_exists = user_exists(user_details or {})
+        logger.info(
+            '[THIRD_PARTY_AUTH] ensure_user_information: user_exists=%s user_details_email=%s',
+            _user_exists,
+            (user_details or {}).get('email'),
+        )
+        if _user_exists:
             # User has not already authenticated and the details sent over from
             # identity provider belong to an existing user.
+            logger.info('[THIRD_PARTY_AUTH] ensure_user_information: dispatching to login (user exists)')
             return dispatch_to_login()
 
         if is_api(auth_entry):
@@ -629,8 +651,14 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
         elif auth_entry == AUTH_ENTRY_LOGIN:
             # User has authenticated with the third party provider but we don't know which edX
             # account corresponds to them yet, if any.
-            if should_force_account_creation():
+            _force = should_force_account_creation()
+            logger.info(
+                '[THIRD_PARTY_AUTH] ensure_user_information: AUTH_ENTRY_LOGIN should_force_account_creation=%s',
+                _force,
+            )
+            if _force:
                 return dispatch_to_register()
+            logger.info('[THIRD_PARTY_AUTH] ensure_user_information: dispatching to login (no force create)')
             return dispatch_to_login()
         elif auth_entry == AUTH_ENTRY_REGISTER:
             # User has authenticated with the third party provider and now wants to finish

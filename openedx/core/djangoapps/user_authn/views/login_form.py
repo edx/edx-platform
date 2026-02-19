@@ -23,6 +23,7 @@ from openedx.core.djangoapps.user_api.accounts.utils import (
 )
 from openedx.core.djangoapps.user_api.helpers import FormDescription
 from openedx.core.djangoapps.user_authn.cookies import set_logged_in_cookies
+from openedx.core.djangoapps.user_authn.config.waffle import ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN
 from openedx.core.djangoapps.user_authn.toggles import should_redirect_to_authn_microfrontend
 from openedx.core.djangoapps.user_authn.views.password_reset import get_password_reset_form
 from openedx.core.djangoapps.user_authn.views.registration_form import RegistrationFormFactory
@@ -196,16 +197,36 @@ def login_and_registration_form(request, initial_mode="login"):
     saml_provider = False
     running_pipeline = pipeline.get(request)
     if running_pipeline:
-        saml_provider, __ = third_party_auth.utils.is_saml_provider(
-            running_pipeline.get('backend'), running_pipeline.get('kwargs')
-        )
+        backend_name = running_pipeline.get('backend')
+        if backend_name == 'tpa-saml':
+            # Directly detect SAML backend to avoid registry lookup failures
+            # (e.g. when pipeline kwargs lack response['idp_name'] at this point).
+            saml_provider = True
+        else:
+            saml_provider, __ = third_party_auth.utils.is_saml_provider(
+                backend_name, running_pipeline.get('kwargs')
+            )
 
     enterprise_customer = enterprise_customer_for_request(request)
 
+    # Check for external providers (SAML/TPA) which must NEVER redirect to MFE
+    has_external_provider = bool(tpa_hint_provider or saml_provider)
+
+    # Determine eligibility based on segment
+    if enterprise_customer:
+        # Enterprise/B2B: Requires the specific rollout waffle flag
+        is_segment_eligible = ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN.is_enabled()
+    else:
+        # B2C: Eligible by default
+        is_segment_eligible = True
+
+    # Redirect to authn MFE if all conditions are met:
+    # 1. MFE is globally enabled (should_redirect_to_authn_microfrontend)
+    # 2. User segment is eligible (B2C by default, or Enterprise with flag enabled)
+    # 3. No external auth provider is present (SAML/TPA must use legacy flow)
     if should_redirect_to_authn_microfrontend() and \
-            not enterprise_customer and \
-            not tpa_hint_provider and \
-            not saml_provider:
+            is_segment_eligible and \
+            not has_external_provider:
 
         # This is to handle a case where a logged-in cookie is not present but the user is authenticated.
         # Note: If we don't handle this learner is redirected to authn MFE and then back to dashboard

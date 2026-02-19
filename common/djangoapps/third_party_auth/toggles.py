@@ -65,3 +65,33 @@ def is_tpa_next_url_on_dispatch_enabled():
     when dispatching to login/register pages.
     """
     return TPA_NEXT_URL_ON_DISPATCH_FLAG.is_enabled()
+
+
+# .. toggle_name: third_party_auth.saml_provider_site_fallback
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, Registry.get_from_pipeline() will fall back to a
+#    site-independent SAMLProviderConfig lookup when the site-filtered registry returns no
+#    match for a running SAML pipeline. This handles cases where the SAMLProviderConfig or
+#    SAMLConfiguration is associated with a different Django site than the one currently
+#    serving the request, while SAML auth itself already completed (SAMLAuthBackend.get_idp()
+#    has no site check). Without this flag, pipeline steps such as should_force_account_creation()
+#    cannot read provider flags (e.g. send_to_registration_first), causing new users to land on
+#    the login page instead of registration.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-02-19
+# .. toggle_target_removal_date: 2026-06-01
+# .. toggle_warning: The underlying site configuration mismatch should still be fixed in Django
+#    admin (SAMLConfiguration and SAMLProviderConfig must reference the correct site). This flag
+#    is a temporary workaround until that is resolved.
+SAML_PROVIDER_SITE_FALLBACK_FLAG = WaffleFlag(
+    f'{THIRD_PARTY_AUTH_NAMESPACE}.saml_provider_site_fallback', __name__
+)
+
+
+def is_saml_provider_site_fallback_enabled():
+    """
+    Returns True if get_from_pipeline() should fall back to a site-independent
+    SAMLProviderConfig lookup when the site-filtered registry finds no match.
+    """
+    return SAML_PROVIDER_SITE_FALLBACK_FLAG.is_enabled()
