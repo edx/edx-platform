@@ -195,7 +195,7 @@ def get_auto_generated_username(data):
     username_suffix = f"{current_year}{current_month}_{random_string}"
 
     # We generate the username regardless of whether the name is empty or invalid. We do this
-    # because the name validations occur later, ensuring that users cannot create an account without a valid name.
+    # because the name validations occur later, ensuring that users cannot create an account without a valid name
     return f"{username_prefix}_{username_suffix}" if username_prefix else username_suffix
 
 
