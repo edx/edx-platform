@@ -38,6 +38,7 @@ MFE_CONTEXT_WITH_TPA_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
+        'enterpriseBranding': None,
         'pipeline_user_details': {
             'username': 'test123',
             'email': 'test123@edx.com',
@@ -61,6 +62,7 @@ SERIALIZED_MFE_CONTEXT_WITH_TPA_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
+        'enterpriseBranding': None,
         'pipelineUserDetails': {
             'username': 'test123',
             'email': 'test123@edx.com',
@@ -88,6 +90,7 @@ MFE_CONTEXT_WITHOUT_TPA_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
+        'enterpriseBranding': None,
         'pipeline_user_details': {}
     }
 }
@@ -105,6 +108,7 @@ SERIALIZED_MFE_CONTEXT_WITHOUT_TPA_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
+        'enterpriseBranding': None,
         'pipelineUserDetails': {}
     },
     'registrationFields': {},
