@@ -65,6 +65,10 @@ class ContextDataSerializer(serializers.Serializer):
     countryCode = serializers.CharField(allow_null=True)
     welcomePageRedirectUrl = serializers.CharField(allow_null=True)
     pipelineUserDetails = serializers.SerializerMethodField()
+    enterpriseBranding = EnterpriseBrandingSerializer(
+        allow_null=True,
+        required=False,
+    )
 
     def get_pipelineUserDetails(self, obj):
         if obj.get('pipeline_user_details'):
