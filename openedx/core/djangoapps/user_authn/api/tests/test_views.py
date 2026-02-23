@@ -409,6 +409,11 @@ class MFEContextViewTest(ThirdPartyAuthTestMixin, APITestCase):
         assert list(response.data['optionalFields']['fields'].keys()) == ['specialty', 'goals']
         assert list(response.data['optionalFields']['extended_profile']) == ['specialty']
         assert response.data['contextData']['welcomePageRedirectUrl'] == redirect_url
+        # Verify that context from get_mfe_context is preserved
+        assert 'countryCode' in response.data['contextData']
+        assert 'platformName' in response.data['contextData']
+        assert response.data['contextData']['enterpriseBranding'] is None
+        assert 'providers' in response.data['contextData']
 
     @override_settings(
         ENABLE_DYNAMIC_REGISTRATION_FIELDS=True,
@@ -425,6 +430,11 @@ class MFEContextViewTest(ThirdPartyAuthTestMixin, APITestCase):
         assert response.data['optionalFields']['fields'] == {}
         assert response.data['optionalFields']['extended_profile'] == []
         assert response.data['contextData']['welcomePageRedirectUrl'] == redirect_url
+        # Verify that context from get_mfe_context is preserved even when no optional fields
+        assert 'countryCode' in response.data['contextData']
+        assert 'platformName' in response.data['contextData']
+        assert response.data['contextData']['enterpriseBranding'] is None
+        assert 'providers' in response.data['contextData']
 
 
 @skip_unless_lms

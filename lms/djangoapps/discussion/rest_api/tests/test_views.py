@@ -2182,10 +2182,10 @@ class CourseActivityStatsTest(
     @mock.patch("lms.djangoapps.discussion.rest_api.api.get_course_user_stats")
     def test_sorting(
         self,
-        mock_get_course_user_stats,
         username,
         ordering_requested,
         ordering_performed,
+        mock_get_course_user_stats,
     ):
         """
         Test valid sorting options and defaults
