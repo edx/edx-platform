@@ -2202,8 +2202,8 @@ class CourseActivityStatsTest(
             params = {"order_by": ordering_requested}
         self.client.get(self.url, params)
 
-        _, call_kwargs = mock_get_course_user_stats.call_args
-        called_params = call_kwargs.get("params") if "params" in call_kwargs else mock_get_course_user_stats.call_args.args[1]
+        call_args, call_kwargs = mock_get_course_user_stats.call_args
+        called_params = call_kwargs.get("params") or call_args[1]
         assert called_params.get("sort_key") == ordering_performed
 
     @ddt.data("flagged", "xyz")

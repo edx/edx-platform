@@ -410,6 +410,22 @@ class MFEContextViewTest(ThirdPartyAuthTestMixin, APITestCase):
         assert list(response.data['optionalFields']['extended_profile']) == ['specialty']
         assert response.data['contextData']['welcomePageRedirectUrl'] == redirect_url
 
+    @override_settings(
+        ENABLE_DYNAMIC_REGISTRATION_FIELDS=True,
+        REGISTRATION_EXTRA_FIELDS={},
+        LOGIN_REDIRECT_WHITELIST=['openedx.service'],
+    )
+    def test_welcome_page_context_without_optional_fields(self):
+        """Test welcome page response shape when no optional fields are configured."""
+        redirect_url = 'https://openedx.service/coolpage'
+        self.query_params.update({'is_welcome_page': True, 'next': redirect_url})
+        response = self.client.get(self.url, self.query_params, HTTP_ACCEPT='*/*')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['registrationFields']['fields'] == {}
+        assert response.data['optionalFields']['fields'] == {}
+        assert response.data['optionalFields']['extended_profile'] == []
+        assert response.data['contextData']['welcomePageRedirectUrl'] == redirect_url
+
 
 @skip_unless_lms
 class SendAccountActivationEmail(UserAPITestCase):

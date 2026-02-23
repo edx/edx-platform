@@ -116,3 +116,51 @@ SERIALIZED_MFE_CONTEXT_WITHOUT_TPA_DATA = {
         'extended_profile': []
     }
 }
+
+ENTERPRISE_BRANDING_DATA = {
+    'enterpriseName': 'Acme Corp',
+    'enterpriseLogoUrl': 'https://example.com/acme-logo.png',
+    'enterpriseBrandedWelcomeString': 'Welcome, Acme learners!',
+    'platformWelcomeString': 'Welcome to edX',
+    'enterpriseSlug': 'acme-corp',
+}
+
+MFE_CONTEXT_WITH_ENTERPRISE_BRANDING_DATA = {
+    'context_data': {
+        'currentProvider': None,
+        'platformName': 'edX',
+        'providers': [],
+        'secondaryProviders': [],
+        'finishAuthUrl': None,
+        'errorMessage': None,
+        'registerFormSubmitButtonText': 'Create Account',
+        'autoSubmitRegForm': False,
+        'syncLearnerProfileData': False,
+        'countryCode': '',
+        'welcomePageRedirectUrl': '',
+        'enterpriseBranding': ENTERPRISE_BRANDING_DATA,
+        'pipeline_user_details': {},
+    },
+}
+
+SERIALIZED_MFE_CONTEXT_WITH_ENTERPRISE_BRANDING_DATA = {
+    'contextData': {
+        'currentProvider': None,
+        'platformName': 'edX',
+        'providers': [],
+        'secondaryProviders': [],
+        'finishAuthUrl': None,
+        'errorMessage': None,
+        'registerFormSubmitButtonText': 'Create Account',
+        'autoSubmitRegForm': False,
+        'syncLearnerProfileData': False,
+        'countryCode': '',
+        'welcomePageRedirectUrl': '',
+        'enterpriseBranding': ENTERPRISE_BRANDING_DATA,
+        'pipelineUserDetails': {},
+    },
+    'registrationFields': {},
+    'optionalFields': {
+        'extended_profile': [],
+    },
+}
