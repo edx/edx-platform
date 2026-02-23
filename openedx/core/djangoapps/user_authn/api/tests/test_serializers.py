@@ -123,4 +123,3 @@ class TestMFEContextSerializer(TestCase):
         serialized = ContextDataSerializer(context_data).data
 
         self.assertNotIn('enterpriseBranding', serialized)
-
