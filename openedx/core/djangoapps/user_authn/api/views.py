@@ -88,12 +88,18 @@ class MFEContextView(APIView):
                     'context_data': {
                         'welcomePageRedirectUrl': redirect_to if redirect_to == request_params.get('next') else None,
                     },
-                    'optional_fields': optional_fields,
+                    'registration_fields': {
+                        'fields': {},
+                    },
+                    'optional_fields': optional_fields if optional_fields else {
+                        'fields': {},
+                        'extended_profile': [],
+                    },
                 }
                 return Response(
                     status=status.HTTP_200_OK,
                     data=MFEContextSerializer(
-                        context if optional_fields else {}
+                        context
                     ).data
                 )
 

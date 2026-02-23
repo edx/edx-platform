@@ -118,6 +118,7 @@ class MFEContextViewTest(ThirdPartyAuthTestMixin, APITestCase):
                 'syncLearnerProfileData': False,
                 'countryCode': self.country_code,
                 'welcomePageRedirectUrl': None,
+                'enterpriseBranding': None,
                 'pipelineUserDetails': self.pipeline_user_details,
             },
             'registrationFields': {
