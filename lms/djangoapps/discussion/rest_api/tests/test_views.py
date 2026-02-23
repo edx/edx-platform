@@ -2179,26 +2179,32 @@ class CourseActivityStatsTest(
     @mock.patch.dict(
         "django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True}
     )
-    def test_sorting(self, username, ordering_requested, ordering_performed):
+    @mock.patch("lms.djangoapps.discussion.rest_api.api.get_course_user_stats")
+    def test_sorting(
+        self,
+        mock_get_course_user_stats,
+        username,
+        ordering_requested,
+        ordering_performed,
+    ):
         """
         Test valid sorting options and defaults
         """
+        mock_get_course_user_stats.return_value = {
+            "user_stats": [],
+            "page": 1,
+            "num_pages": 1,
+            "count": 0,
+        }
         self.client.login(username=username, password=self.TEST_PASSWORD)
         params = {}
         if ordering_requested:
             params = {"order_by": ordering_requested}
         self.client.get(self.url, params)
-        assert (
-            urlparse(
-                httpretty.last_request().path  # lint-amnesty, pylint: disable=no-member
-            ).path
-            == f"/api/v1/users/{self.course_key}/stats"
-        )
-        assert parse_qs(
-            urlparse(
-                httpretty.last_request().path
-            ).query  # lint-amnesty, pylint: disable=no-member
-        ).get("sort_key", None) == [ordering_performed]
+
+        _, call_kwargs = mock_get_course_user_stats.call_args
+        called_params = call_kwargs.get("params") if "params" in call_kwargs else mock_get_course_user_stats.call_args.args[1]
+        assert called_params.get("sort_key") == ordering_performed
 
     @ddt.data("flagged", "xyz")
     @mock.patch.dict(
