@@ -115,25 +115,14 @@ class NotificationListAPIView(generics.ListAPIView):
 
             if app_name:
                 params['app_name'] = app_name
-<<<<<<< HEAD
-            queryset = Notification.objects.filter(**params).order_by('-created')
-<<<<<<< HEAD
+            queryset = Notification.objects.filter(
+                **params
+            ).order_by('-created')
             logger.info(
-                f'Successfully retrieved notifications for user '
-                f'{self.request.user.id} with app_name={app_name}'
+                'Retrieved notifications for user %s with app_name=%s',
+                self.request.user.id,
+                app_name,
             )
-=======
-            logger.info(f'Successfully retrieved notifications for user {self.request.user.id} with app_name={app_name}')
->>>>>>> afbb7ec (notification_loggers)
-=======
-            queryset = Notification.objects.filter(**params).order_by(
-                '-created'
-            )
-            logger.info(
-                f'Retrieved notifications for user {self.request.user.id} '
-                f'with app_name={app_name}'
-            )
->>>>>>> 6488a2d (feat: add notification loggers functionality)
             return queryset
         except Notification.DoesNotExist as exc:
             logger.error(
@@ -206,33 +195,16 @@ class NotificationCountView(APIView):
                 "count_by_app_name": count_by_app_name_dict,
                 "notification_expiry_days": settings.NOTIFICATIONS_EXPIRY,
             })
-<<<<<<< HEAD
-<<<<<<< HEAD
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error(
-                f'Failed to retrieve notification count for user '
-                f'{request.user.id}: {str(e)}'
-            )
-
-=======
         except (Notification.DoesNotExist, AttributeError) as exc:
             logger.error(
-                f'Failed to retrieve notification count for user '
-                f'{request.user.id}: {str(exc)}'
+                'Failed to retrieve notification count for user %s: %s',
+                request.user.id,
+                str(exc),
             )
->>>>>>> 6488a2d (feat: add notification loggers functionality)
             return Response(
                 {'error': 'Failed to retrieve notification count'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-<<<<<<< HEAD
-=======
-        except Exception as e:
-            logger.error(f'Failed to retrieve notification count for user {request.user.id}: {str(e)}')
-            return Response({'error': 'Failed to retrieve notification count'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
->>>>>>> afbb7ec (notification_loggers)
-=======
->>>>>>> 6488a2d (feat: add notification loggers functionality)
 
 
 @allow_any_authenticated_user()
@@ -695,6 +667,7 @@ class NotificationPreferencesView(APIView):
             'show_preferences': get_show_notifications_tray(
                 self.request.user
             ),
+        
             'data': {
                 'updated_value': updated_value,
                 'notification_type': validated_data['notification_type'],
