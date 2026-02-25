@@ -7,9 +7,56 @@ Structured to allow future integration with:
 - Subscription Catalog API
 - Subscriber entitlement service
 """
-
+import requests 
+from django.conf import settings
 from common.djangoapps.student.models import CourseEnrollment
 
+
+def get_segment_traits(user_id):
+    """
+    Fetch Segment profile traits for given LMS user_id.
+    """
+    # Safety check — prevents crashes if settings are not configured
+    if not getattr(settings, "SEGMENT_SPACE_ID", None) or not getattr(settings, "SEGMENT_PROFILE_API_TOKEN", None):
+        print("Segment configuration missing. Skipping API call.")
+        return {}
+    url = (
+        f"https://profiles.segment.com/v1/spaces/"
+        f"{settings.SEGMENT_SPACE_ID}/collections/users/"
+        f"profiles/user_id:{user_id}/traits"
+    )
+
+    try:
+        response = requests.get(
+            url,
+            auth=(settings.SEGMENT_PROFILE_API_TOKEN, ""),
+            timeout=5,
+        )
+
+        if response.status_code != 200:
+            print("Segment API non-200:", response.status_code)
+            return {}
+
+        data = response.json()
+        return data.get("traits", {})
+
+    except Exception as e:
+        print("Segment API error:", e)
+        return {}
+
+def get_segment_profile_data(user):
+    print("get_segment_profile_data called------")
+
+    traits = get_segment_traits(user.id)
+    print("traits-----", traits)
+
+    return {
+        "email": traits.get("email"),
+        "username": traits.get("username"),
+        "is_disabled": traits.get("is_disabled"),
+        "disabled_users": traits.get("disabled_users"),
+        "last_enrollment": traits.get("last_enrollment"),
+    }
 
 # TODO: Replace this with Subscription Catalog API call
 def get_subscription_catalog_course_ids():
@@ -81,9 +128,17 @@ def get_categorized_courses(user):
         # Course not part of subscription catalog
         else:
             non_upgradeable_courses.append(course_id)
+            
+    # Fetch Segment Profile Data
+    segment_profile = get_segment_profile_data(user)
+
+    # Example personalization flag derived from Segment
+    account_disabled = segment_profile.get("is_disabled")
 
     return {
         "subscription_courses": subscription_courses,
         "upgradeable_courses": upgradeable_courses,
         "non_upgradeable_courses": non_upgradeable_courses,
+        "segment_profile": segment_profile,
+        "account_disabled_from_segment": account_disabled,
     }
