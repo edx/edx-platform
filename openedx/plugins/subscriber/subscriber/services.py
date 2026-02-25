@@ -18,7 +18,6 @@ def get_segment_traits(user_id):
     """
     # Safety check — prevents crashes if settings are not configured
     if not getattr(settings, "SEGMENT_SPACE_ID", None) or not getattr(settings, "SEGMENT_PROFILE_API_TOKEN", None):
-        print("Segment configuration missing. Skipping API call.")
         return {}
     url = (
         f"https://profiles.segment.com/v1/spaces/"
@@ -34,21 +33,16 @@ def get_segment_traits(user_id):
         )
 
         if response.status_code != 200:
-            print("Segment API non-200:", response.status_code)
             return {}
 
         data = response.json()
         return data.get("traits", {})
 
     except Exception as e:
-        print("Segment API error:", e)
         return {}
 
 def get_segment_profile_data(user):
-    print("get_segment_profile_data called------")
-
     traits = get_segment_traits(user.id)
-    print("traits-----", traits)
 
     return {
         "email": traits.get("email"),
