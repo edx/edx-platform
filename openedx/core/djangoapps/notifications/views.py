@@ -1,6 +1,7 @@
 """
 Views for the notifications API.
 """
+import logging
 from datetime import datetime, timedelta
 
 from django.conf import settings
@@ -15,12 +16,21 @@ from rest_framework.generics import UpdateAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from openedx.core.djangoapps.notifications.email.utils import update_user_preferences_from_patch, username_from_hash
+from openedx.core.djangoapps.notifications.email.utils import (
+    update_user_preferences_from_patch,
+    username_from_hash
+)
 from openedx.core.djangoapps.notifications.models import NotificationPreference
-from openedx.core.djangoapps.notifications.permissions import allow_any_authenticated_user
+from openedx.core.djangoapps.notifications.permissions import (
+    allow_any_authenticated_user
+)
 
-from .base_notification import COURSE_NOTIFICATION_APPS, NotificationAppManager, COURSE_NOTIFICATION_TYPES, \
+from .base_notification import (
+    COURSE_NOTIFICATION_APPS,
+    NotificationAppManager,
+    COURSE_NOTIFICATION_TYPES,
     NotificationTypeManager
+)
 from .events import (
     notification_preference_update_event,
     notification_read_event,
@@ -39,6 +49,8 @@ from .utils import (
     get_show_notifications_tray,
     exclude_inaccessible_preferences
 )
+
+logger = logging.getLogger(__name__)
 
 
 @allow_any_authenticated_user()
@@ -80,21 +92,30 @@ class NotificationListAPIView(generics.ListAPIView):
         """
         Override the get_queryset method to filter the queryset by app name, request.user and created
         """
-        expiry_date = datetime.now(UTC) - timedelta(days=settings.NOTIFICATIONS_EXPIRY)
-        app_name = self.request.query_params.get('app_name')
+        try:
+            expiry_date = datetime.now(UTC) - timedelta(days=settings.NOTIFICATIONS_EXPIRY)
+            app_name = self.request.query_params.get('app_name')
 
-        if self.request.query_params.get('tray_opened'):
-            unseen_count = Notification.objects.filter(user_id=self.request.user, last_seen__isnull=True).count()
-            notification_tray_opened_event(self.request.user, unseen_count)
-        params = {
-            'user': self.request.user,
-            'created__gte': expiry_date,
-            'web': True
-        }
+            if self.request.query_params.get('tray_opened'):
+                unseen_count = Notification.objects.filter(user_id=self.request.user, last_seen__isnull=True).count()
+                notification_tray_opened_event(self.request.user, unseen_count)
+            params = {
+                'user': self.request.user,
+                'created__gte': expiry_date,
+                'web': True
+            }
 
-        if app_name:
-            params['app_name'] = app_name
-        return Notification.objects.filter(**params).order_by('-created')
+            if app_name:
+                params['app_name'] = app_name
+            queryset = Notification.objects.filter(**params).order_by('-created')
+            logger.info(
+                f'Successfully retrieved notifications for user '
+                f'{self.request.user.id} with app_name={app_name}'
+            )
+            return queryset
+        except Exception as e:
+            logger.error(f'Failed to retrieve notifications for user {self.request.user.id}: {str(e)}')
+            raise
 
 
 @allow_any_authenticated_user()
@@ -123,32 +144,44 @@ class NotificationCountView(APIView):
         **Response Error Codes**:
         - 403: The requester cannot access resource.
         """
-        # Get the unseen notifications count for each app name.
-        count_by_app_name = (
-            Notification.objects
-            .filter(user_id=request.user, last_seen__isnull=True, web=True)
-            .values('app_name')
-            .annotate(count=Count('*'))
-        )
-        count_total = 0
-        show_notifications_tray = get_show_notifications_tray(self.request.user)
-        count_by_app_name_dict = {
-            app_name: 0
-            for app_name in COURSE_NOTIFICATION_APPS
-        }
+        try:
+            # Get the unseen notifications count for each app name.
+            count_by_app_name = (
+                Notification.objects
+                .filter(user_id=request.user, last_seen__isnull=True, web=True)
+                .values('app_name')
+                .annotate(count=Count('*'))
+            )
+            count_total = 0
+            show_notifications_tray = get_show_notifications_tray(self.request.user)
+            count_by_app_name_dict = {
+                app_name: 0
+                for app_name in COURSE_NOTIFICATION_APPS
+            }
 
-        for item in count_by_app_name:
-            app_name = item['app_name']
-            count = item['count']
-            count_total += count
-            count_by_app_name_dict[app_name] = count
+            for item in count_by_app_name:
+                app_name = item['app_name']
+                count = item['count']
+                count_total += count
+                count_by_app_name_dict[app_name] = count
 
-        return Response({
-            "show_notifications_tray": show_notifications_tray,
-            "count": count_total,
-            "count_by_app_name": count_by_app_name_dict,
-            "notification_expiry_days": settings.NOTIFICATIONS_EXPIRY,
-        })
+            logger.info(f'Successfully retrieved notification count for user {request.user.id}: total={count_total}')
+            return Response({
+                "show_notifications_tray": show_notifications_tray,
+                "count": count_total,
+                "count_by_app_name": count_by_app_name_dict,
+                "notification_expiry_days": settings.NOTIFICATIONS_EXPIRY,
+            })
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error(
+                f'Failed to retrieve notification count for user '
+                f'{request.user.id}: {str(e)}'
+            )
+
+            return Response(
+                {'error': 'Failed to retrieve notification count'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 @allow_any_authenticated_user()
@@ -168,20 +201,36 @@ class MarkNotificationsSeenAPIView(UpdateAPIView):
         **Response Error Codes**:
         - 400: Bad Request status code if the app name is invalid.
         """
-        app_name = self.kwargs.get('app_name')
+        try:
+            app_name = self.kwargs.get('app_name')
 
-        if not app_name:
-            return Response({'error': _('Invalid app name.')}, status=400)
+            if not app_name:
+                logger.warning(f'Invalid app_name provided by user {request.user.id}')
+                return Response({'error': _('Invalid app name.')}, status=400)
 
-        notifications = Notification.objects.filter(
-            user=request.user,
-            app_name=app_name,
-            last_seen__isnull=True,
-        )
+            notifications = Notification.objects.filter(
+                user=request.user,
+                app_name=app_name,
+                last_seen__isnull=True,
+            )
 
-        notifications.update(last_seen=datetime.now())
+            update_count = notifications.update(last_seen=datetime.now())
+            logger.info(
+                f'Successfully marked {update_count} notifications as seen '
+                f'for user {request.user.id} with app_name={app_name}'
+            )
 
-        return Response({'message': _('Notifications marked as seen.')}, status=200)
+            return Response({'message': _('Notifications marked as seen.')}, status=200)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error(
+                f'Failed to mark notifications as seen for user '
+                f'{request.user.id}: {str(e)}'
+            )
+
+            return Response(
+                {'error': _('Failed to mark notifications as seen.')},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 @allow_any_authenticated_user()
@@ -211,30 +260,62 @@ class NotificationReadAPIView(APIView):
         - 403: Forbidden status code if the user is not authenticated.
         - 404: Not Found status code if the notification was not found.
         """
-        notification_id = request.data.get('notification_id', None)
-        read_at = datetime.now(UTC)
+        try:
+            notification_id = request.data.get('notification_id', None)
+            read_at = datetime.now(UTC)
 
-        if notification_id:
-            notification = get_object_or_404(Notification, pk=notification_id, user=request.user)
-            first_time_read = notification.last_read is None
-            notification.last_read = read_at
-            notification.save()
-            notification_read_event(request.user, notification, first_time_read)
-            return Response({'message': _('Notification marked read.')}, status=status.HTTP_200_OK)
+            if notification_id:
+                try:
+                    notification = get_object_or_404(Notification, pk=notification_id, user=request.user)
+                except:
+                    logger.warning(f'Notification {notification_id} not found for user {request.user.id}')
+                    raise
+                first_time_read = notification.last_read is None
+                notification.last_read = read_at
+                notification.save()
+                notification_read_event(request.user, notification, first_time_read)
+                logger.info(f'Successfully marked notification {notification_id} as read for user {request.user.id}')
+                return Response({'message': _('Notification marked read.')}, status=status.HTTP_200_OK)
 
-        app_name = request.data.get('app_name', '')
+            app_name = request.data.get('app_name', '')
 
-        if app_name in COURSE_NOTIFICATION_APPS:
-            notifications = Notification.objects.filter(
-                user=request.user,
-                app_name=app_name,
-                last_read__isnull=True,
+            if app_name in COURSE_NOTIFICATION_APPS:
+                notifications = Notification.objects.filter(
+                    user=request.user,
+                    app_name=app_name,
+                    last_read__isnull=True,
+                )
+                update_count = notifications.update(last_read=read_at)
+                notifications_app_all_read_event(request.user, app_name)
+                logger.info(
+                    'Successfully marked %d notifications as read for user %s '
+                    'with app_name=%s',
+                    update_count,
+                    request.user.id,
+                    app_name,
+                )
+                return Response(
+                    {'message': _('Notifications marked read.')},
+                    status=status.HTTP_200_OK,
+                )
+
+            logger.warning(
+                f'Invalid app_name ({app_name}) or '
+                f'notification_id ({notification_id}) provided by user '
+                f'{request.user.id}'
             )
-            notifications.update(last_read=read_at)
-            notifications_app_all_read_event(request.user, app_name)
-            return Response({'message': _('Notifications marked read.')}, status=status.HTTP_200_OK)
 
-        return Response({'error': _('Invalid app_name or notification_id.')}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {
+                    'error': _(
+                        'Failed to mark notification as read.'
+                    )
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error(f'Failed to mark notification as read for user {request.user.id}: {str(e)}')
+            return Response({'error': _('Failed to mark notification as read.')}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET', 'POST'])
@@ -243,13 +324,19 @@ def preference_update_from_encrypted_username_view(request, username, patch=""):
     View to update user preferences from encrypted username and patch.
     username and patch must be string
     """
-    if is_ratelimited(
-        request=request, group="unsubscribe", key=username_from_hash,
-        rate=settings.ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT, increment=True,
-    ):
-        return Response({"error": "Too many requests"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
-    update_user_preferences_from_patch(username)
-    return Response({"result": "success"}, status=status.HTTP_200_OK)
+    try:
+        if is_ratelimited(
+            request=request, group="unsubscribe", key=username_from_hash,
+            rate=settings.ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT, increment=True,
+        ):
+            logger.warning(f'Rate limit exceeded for username: {username}')
+            return Response({"error": "Too many requests"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        update_user_preferences_from_patch(username)
+        logger.info(f'Successfully updated preferences for username: {username}')
+        return Response({"result": "success"}, status=status.HTTP_200_OK)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error(f'Failed to update preferences for username {username}: {str(e)}')
+        return Response({"error": "Failed to update preferences"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @allow_any_authenticated_user()
@@ -272,67 +359,77 @@ class NotificationPreferencesView(APIView):
             Response: A DRF Response object containing the structured
                       notification preferences or an error message.
         """
-        user_preferences_qs = NotificationPreference.objects.filter(user=request.user)
-        user_preferences_map = {pref.type: pref for pref in user_preferences_qs}
+        try:
+            user_preferences_qs = NotificationPreference.objects.filter(user=request.user)
+            user_preferences_map = {pref.type: pref for pref in user_preferences_qs}
 
-        # Ensure all notification types are present in the user's preferences.
-        # If any are missing, create them with default values.
-        diff = set(COURSE_NOTIFICATION_TYPES.keys()) - set(user_preferences_map.keys())
-        missing_types = []
-        for missing_type in diff:
-            new_pref = create_notification_preference(
-                user_id=request.user.id,
-                notification_type=missing_type,
+            # Ensure all notification types are present in the user's preferences.
+            # If any are missing, create them with default values.
+            diff = set(COURSE_NOTIFICATION_TYPES.keys()) - set(user_preferences_map.keys())
+            missing_types = []
+            for missing_type in diff:
+                new_pref = create_notification_preference(
+                    user_id=request.user.id,
+                    notification_type=missing_type,
 
+                )
+                missing_types.append(new_pref)
+                user_preferences_map[missing_type] = new_pref
+            if missing_types:
+                NotificationPreference.objects.bulk_create(missing_types)
+                logger.info(f'Created {len(missing_types)} missing notification preferences for user {request.user.id}')
+
+            # If no user preferences are found, return an error response.
+            if not user_preferences_map:
+                logger.warning(f'No active notification preferences found for user {request.user.id}')
+                return Response({
+                    'status': 'error',
+                    'message': 'No active notification preferences found for this user.'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Get the structured preferences from the NotificationAppManager.
+            # This will include all apps and their notification types.
+            structured_preferences = NotificationAppManager().get_notification_app_preferences()
+
+            for app_name, app_settings in structured_preferences.items():
+                notification_types = app_settings.get('notification_types', {})
+
+                # Process all notification types (core and non-core) in a single loop.
+                for type_name, type_details in notification_types.items():
+                    if type_name == 'core':
+                        if structured_preferences[app_name]['core_notification_types']:
+                            # If the app has core notification types, use the first one as the type name.
+                            # This assumes that the first core notification type is representative of the core settings.
+                            notification_type = structured_preferences[app_name]['core_notification_types'][0]
+                        else:
+                            notification_type = 'core'
+                        user_pref = user_preferences_map.get(notification_type)
+                    else:
+                        user_pref = user_preferences_map.get(type_name)
+                    if user_pref:
+                        # If a preference exists, update the dictionary for this type.
+                        # This directly modifies the 'type_details' dictionary.
+                        type_details['web'] = user_pref.web
+                        type_details['email'] = user_pref.email
+                        type_details['push'] = user_pref.push
+                        type_details['email_cadence'] = user_pref.email_cadence
+            exclude_inaccessible_preferences(structured_preferences, request.user)
+            structured_preferences = add_non_editable_in_preference(
+                add_info_to_notification_config(structured_preferences)
             )
-            missing_types.append(new_pref)
-            user_preferences_map[missing_type] = new_pref
-        if missing_types:
-            NotificationPreference.objects.bulk_create(missing_types)
-
-        # If no user preferences are found, return an error response.
-        if not user_preferences_map:
+            logger.info(f'Successfully retrieved notification preferences for user {request.user.id}')
+            return Response({
+                'status': 'success',
+                'message': 'Notification preferences retrieved successfully.',
+                'show_preferences': get_show_notifications_tray(self.request.user),
+                'data': structured_preferences
+            }, status=status.HTTP_200_OK)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error(f'Failed to retrieve notification preferences for user {request.user.id}: {str(e)}')
             return Response({
                 'status': 'error',
-                'message': 'No active notification preferences found for this user.'
-            }, status=status.HTTP_404_NOT_FOUND)
-
-        # Get the structured preferences from the NotificationAppManager.
-        # This will include all apps and their notification types.
-        structured_preferences = NotificationAppManager().get_notification_app_preferences()
-
-        for app_name, app_settings in structured_preferences.items():
-            notification_types = app_settings.get('notification_types', {})
-
-            # Process all notification types (core and non-core) in a single loop.
-            for type_name, type_details in notification_types.items():
-                if type_name == 'core':
-                    if structured_preferences[app_name]['core_notification_types']:
-                        # If the app has core notification types, use the first one as the type name.
-                        # This assumes that the first core notification type is representative of the core settings.
-                        notification_type = structured_preferences[app_name]['core_notification_types'][0]
-                    else:
-                        notification_type = 'core'
-                    user_pref = user_preferences_map.get(notification_type)
-                else:
-                    user_pref = user_preferences_map.get(type_name)
-                if user_pref:
-                    # If a preference exists, update the dictionary for this type.
-                    # This directly modifies the 'type_details' dictionary.
-                    type_details['web'] = user_pref.web
-                    type_details['email'] = user_pref.email
-                    type_details['push'] = user_pref.push
-                    type_details['email_cadence'] = user_pref.email_cadence
-        exclude_inaccessible_preferences(structured_preferences, request.user)
-        structured_preferences = add_non_editable_in_preference(
-            add_info_to_notification_config(structured_preferences)
-        )
-        return Response({
-            'status': 'success',
-            'message': 'Notification preferences retrieved successfully.',
-            'show_preferences': get_show_notifications_tray(self.request.user),
-            'data': structured_preferences
-        }, status=status.HTTP_200_OK)
+                'message': 'Failed to retrieve notification preferences.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def put(self, request):
         """
@@ -345,42 +442,55 @@ class NotificationPreferencesView(APIView):
         Returns:
             Response: A DRF Response object indicating success or failure.
         """
-        # Validate incoming data
-        serializer = UserNotificationPreferenceUpdateAllSerializer(data=request.data)
-        if not serializer.is_valid():
+        try:
+            # Validate incoming data
+            serializer = UserNotificationPreferenceUpdateAllSerializer(data=request.data)
+            if not serializer.is_valid():
+                logger.warning(f'Invalid serializer data for user {request.user.id}: {serializer.errors}')
+                return Response({
+                    'status': 'error',
+                    'message': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Get validated data for easier access
+            validated_data = serializer.validated_data
+
+            # Build query set based on notification type
+            query_set = NotificationPreference.objects.filter(user_id=request.user.id)
+
+            if validated_data['notification_type'] == 'core':
+                # Get core notification types for the app
+                __, core_types = NotificationTypeManager().get_notification_app_preference(
+                    notification_app=validated_data['notification_app']
+                )
+                query_set = query_set.filter(type__in=core_types)
+            else:
+                # Filter by single notification type
+                query_set = query_set.filter(type=validated_data['notification_type'])
+
+            # Prepare update data based on channel type
+            updated_data = self._prepare_update_data(validated_data)
+
+            # Update preferences
+            update_count = query_set.update(**updated_data)
+
+            # Log the event
+            self._log_preference_update_event(request.user, validated_data)
+
+            logger.info(
+                f'Successfully updated {update_count} notification '
+                f'preferences for user {request.user.id} with '
+                f'app={validated_data["notification_app"]}'
+            )
+            # Prepare and return response
+            response_data = self._prepare_response_data(validated_data)
+            return Response(response_data, status=status.HTTP_200_OK)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error(f'Failed to update notification preferences for user {request.user.id}: {str(e)}')
             return Response({
                 'status': 'error',
-                'message': serializer.errors
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        # Get validated data for easier access
-        validated_data = serializer.validated_data
-
-        # Build query set based on notification type
-        query_set = NotificationPreference.objects.filter(user_id=request.user.id)
-
-        if validated_data['notification_type'] == 'core':
-            # Get core notification types for the app
-            __, core_types = NotificationTypeManager().get_notification_app_preference(
-                notification_app=validated_data['notification_app']
-            )
-            query_set = query_set.filter(type__in=core_types)
-        else:
-            # Filter by single notification type
-            query_set = query_set.filter(type=validated_data['notification_type'])
-
-        # Prepare update data based on channel type
-        updated_data = self._prepare_update_data(validated_data)
-
-        # Update preferences
-        query_set.update(**updated_data)
-
-        # Log the event
-        self._log_preference_update_event(request.user, validated_data)
-
-        # Prepare and return response
-        response_data = self._prepare_response_data(validated_data)
-        return Response(response_data, status=status.HTTP_200_OK)
+                'message': 'Failed to update notification preferences.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _prepare_update_data(self, validated_data):
         """
@@ -392,12 +502,18 @@ class NotificationPreferencesView(APIView):
         Returns:
             dict: Dictionary with update data
         """
-        channel = validated_data['notification_channel']
+        try:
+            channel = validated_data['notification_channel']
 
-        if channel == 'email_cadence':
-            return {channel: validated_data['email_cadence']}
-        else:
-            return {channel: validated_data['value']}
+            if channel == 'email_cadence':
+                result = {channel: validated_data['email_cadence']}
+            else:
+                result = {channel: validated_data['value']}
+            logger.debug(f'Prepared update data for channel {channel}: {result}')
+            return result
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error(f'Failed to prepare update data: {str(e)}')
+            raise
 
     def _log_preference_update_event(self, user, validated_data):
         """
@@ -407,14 +523,18 @@ class NotificationPreferencesView(APIView):
             user: The user making the update
             validated_data (dict): Validated serializer data
         """
-        event_data = {
-            'notification_app': validated_data['notification_app'],
-            'notification_type': validated_data['notification_type'],
-            'notification_channel': validated_data['notification_channel'],
-            'value': validated_data.get('value'),
-            'email_cadence': validated_data.get('email_cadence'),
-        }
-        notification_preference_update_event(user, [], event_data)
+        try:
+            event_data = {
+                'notification_app': validated_data['notification_app'],
+                'notification_type': validated_data['notification_type'],
+                'notification_channel': validated_data['notification_channel'],
+                'value': validated_data.get('value'),
+                'email_cadence': validated_data.get('email_cadence'),
+            }
+            notification_preference_update_event(user, [], event_data)
+            logger.debug(f'Successfully logged preference update event for user {user.id}')
+        except Exception as e:
+            logger.error(f'Failed to log preference update event for user {user.id}: {str(e)}')
 
     def _prepare_response_data(self, validated_data):
         """
