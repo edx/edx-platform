@@ -286,98 +286,124 @@ class NotificationReadAPIView(APIView):
 
         Returns:
         - 200: OK if notification marked read.
-        - 400: Bad Request if app name is invalid.
+        - 400: Bad Request if app name or notification id is invalid.
         - 403: Forbidden if user not authenticated.
         - 404: Not Found if notification not found.
         """
-        try:
-            notification_id = request.data.get('notification_id', None)
-            read_at = datetime.now(UTC)
+        notification_id = request.data.get('notification_id')
+        app_name = request.data.get('app_name')
 
+        # Require at least one identifier.
+        if not notification_id and not app_name:
+            logger.warning(
+                'Invalid app_name (%s) or notification_id (%s) from user %s',
+                app_name,
+                notification_id,
+                request.user.id,
+            )
+            return Response(
+                {'error': _('Invalid app_name or notification_id.')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        read_at = datetime.now(UTC)
+
+        try:
+            # If notification_id is provided, it takes precedence
+            # over app_name.
             if notification_id:
-                try:
-                    notification = get_object_or_404(
-                        Notification,
-                        pk=notification_id,
-                        user=request.user
-                    )
-                except Notification.DoesNotExist as exc:
-                    logger.warning(
-                        f'Notification {notification_id} not found for user '
-                        f'{request.user.id}: {str(exc)}'
-                    )
-                    raise
+                notification = get_object_or_404(
+                    Notification,
+                    pk=notification_id,
+                    user=request.user,
+                )
                 first_time_read = notification.last_read is None
                 notification.last_read = read_at
                 notification.save()
                 notification_read_event(
                     request.user,
                     notification,
-                    first_time_read
+                    first_time_read,
                 )
                 logger.info(
-                    f'Marked notification {notification_id} as read for '
-                    f'user {request.user.id}'
+                    'Marked notification %s as read for user %s',
+                    notification_id,
+                    request.user.id,
                 )
                 return Response(
                     {'message': _('Notification marked read.')},
-                    status=status.HTTP_200_OK
+                    status=status.HTTP_200_OK,
                 )
 
-            app_name = request.data.get('app_name', '')
-
+            # If app_name is provided, mark all unread notifications for that app.
             if app_name in COURSE_NOTIFICATION_APPS:
                 notifications = Notification.objects.filter(
                     user=request.user,
-                    app_name = request.data.get('app_name', '')
+                    app_name=app_name,
+                    last_read__isnull=True,
+                )
+                update_count = notifications.update(last_read=read_at)
+                notifications_app_all_read_event(request.user, app_name)
+                logger.info(
+                    'Marked %d notifications as read for user %s with app_name=%s',
+                    update_count,
+                    request.user.id,
+                    app_name,
+                )
+                return Response(
+                    {'message': _('Notifications marked read.')},
+                    status=status.HTTP_200_OK,
+                )
 
-                    if app_name in COURSE_NOTIFICATION_APPS:
-                        notifications = Notification.objects.filter(
-                            user=request.user,
-                            app_name=app_name,
-                            last_read__isnull=True,
-                        )
-                        update_count = notifications.update(last_read=read_at)
-                        notifications_app_all_read_event(request.user, app_name)
-                        logger.info(
-                            'Marked %d notifications as read for user %s with app_name=%s',
-                            update_count,
-                            request.user.id,
-                            app_name,
-                        )
-                        return Response(
-                            {'message': _('Notifications marked read.')},
-                            status=status.HTTP_200_OK,
-                        )
+            logger.warning(
+                'Invalid app_name (%s) or notification_id (%s) from user %s',
+                app_name,
+                notification_id,
+                request.user.id,
+            )
+            return Response(
+                {'error': _('Invalid app_name or notification_id.')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except (Notification.DoesNotExist, AttributeError, TypeError) as exc:
+            logger.error(
+                'Failed to mark notification as read for user %s: %s',
+                request.user.id,
+                str(exc),
+            )
+            return Response(
+                {'error': _('Failed to mark notification as read.')},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-                    logger.warning(
-                        'Invalid app_name (%s) or notification_id (%s) from user %s',
-                        app_name,
-                        notification_id,
-                        request.user.id,
-                    )
-                    return Response(
-                        {'error': _('Invalid app_name or notification_id.')},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                except (Notification.DoesNotExist, AttributeError, TypeError) as exc:
-                    logger.error(
-                        'Failed to mark notification as read for user %s: %s',
-                        request.user.id,
-                        str(exc),
-                    )
-                    return Response(
-                        {'error': _('Failed to mark notification as read.')},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
+
+@api_view(["GET", "POST"])
+def preference_update_from_encrypted_username_view(request, username, patch=None):
+    """Update notification preferences using an encrypted username.
+
+    This view is used by one-click unsubscribe links. It is rate-limited
+    using the ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT setting.
+    """
+    try:
+        username = username_from_hash(username)
+
+        if is_ratelimited(
+            request,
+            group="preference-update",
+            key="user_or_ip",
+            rate=settings.ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT,
+            method=["GET", "POST"],
+            increment=True,
         ):
             logger.warning(
-                f'Rate limit exceeded for username: {username}'
+                'Rate limit exceeded for username: %s',
+                username,
             )
             return Response(
                 {"error": "Too many requests"},
-                status=status.HTTP_429_TOO_MANY_REQUESTS
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
+
         update_user_preferences_from_patch(username)
         logger.info(
             'Updated preferences for username: %s',
