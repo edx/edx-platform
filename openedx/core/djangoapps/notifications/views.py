@@ -378,41 +378,38 @@ class NotificationReadAPIView(APIView):
 
 
 @api_view(["GET", "POST"])
-def preference_update_from_encrypted_username_view(request, username, patch=None):
-    """Update notification preferences using an encrypted username.
+def preference_update_from_encrypted_username_view(request, username, patch=""):
+    """Update notification preferences from an encrypted username.
 
-    This view is used by one-click unsubscribe links. It is rate-limited
-    using the ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT setting.
+    Used by one-click unsubscribe links. Rate limited using
+    ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT.
     """
+    if is_ratelimited(
+        request=request,
+        group="unsubscribe",
+        key=username_from_hash,
+        rate=settings.ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT,
+        increment=True,
+    ):
+        logger.warning(
+            "Rate limit exceeded for username hash: %s",
+            username,
+        )
+        return Response(
+            {"error": "Too many requests"},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
     try:
-        username = username_from_hash(username)
-
-        if is_ratelimited(
-            request,
-            group="preference-update",
-            key="user_or_ip",
-            rate=settings.ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT,
-            method=["GET", "POST"],
-            increment=True,
-        ):
-            logger.warning(
-                'Rate limit exceeded for username: %s',
-                username,
-            )
-            return Response(
-                {"error": "Too many requests"},
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
-
         update_user_preferences_from_patch(username)
         logger.info(
-            'Updated preferences for username: %s',
+            "Updated preferences for encrypted username: %s",
             username,
         )
         return Response({"result": "success"}, status=status.HTTP_200_OK)
     except ValueError as exc:
         logger.error(
-            'Failed to update preferences for username %s: %s',
+            "Failed to update preferences for encrypted username %s: %s",
             username,
             str(exc),
         )
@@ -693,7 +690,6 @@ class NotificationPreferencesView(APIView):
             'show_preferences': get_show_notifications_tray(
                 self.request.user
             ),
-        
             'data': {
                 'updated_value': updated_value,
                 'notification_type': validated_data['notification_type'],
@@ -701,4 +697,3 @@ class NotificationPreferencesView(APIView):
                 'app': validated_data['notification_app'],
             }
         }
-        

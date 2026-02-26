@@ -385,10 +385,29 @@ def decrypt_string(string):
     return UsernameCipher.decrypt(string).decode()
 
 
-def username_from_hash(group, request):
+def username_from_hash(*args, **kwargs):
+    """Return username from URL hash for django-ratelimit key.
+
+    The django-ratelimit library may call the key function with either
+    ``(request,)`` or ``(group, request)`` depending on its version. This
+    helper accepts a flexible signature and extracts the ``request`` object
+    from positional or keyword arguments to avoid TypeError while keeping
+    behaviour consistent.
     """
-    Django ratelimit key to return username from hash
-    """
+    request = kwargs.get("request")
+
+    # Handle positional invocations from different django-ratelimit versions.
+    if request is None and args:
+        if len(args) == 1:
+            # Called as key(request)
+            request = args[0]
+        elif len(args) >= 2:
+            # Called as key(group, request, ...)
+            request = args[1]
+
+    if request is None:
+        return None
+
     username = request.resolver_match.kwargs.get("username")
     if username:
         try:
