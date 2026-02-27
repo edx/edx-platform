@@ -119,12 +119,13 @@ from openedx.core.release import RELEASE_LINE
             function (XBlockInfo, EditXBlockModal) {
                 var decodedActionName = '${action_name|n, decode.utf8}';
                 var encodedXBlockDetails = ${xblock_info | n, dump_js_escaped_json};
+                var returnTo = '${return_to or "" | n, js_escaped_string}';
 
                 if (decodedActionName === 'edit') {
                     var editXBlockModal = new EditXBlockModal();
                     var xblockInfoInstance = new XBlockInfo(encodedXBlockDetails);
 
-                    editXBlockModal.edit([], xblockInfoInstance, {});
+                    editXBlockModal.edit([], xblockInfoInstance, {returnTo: returnTo || null});
                 }
             });
         </%static:webpack>
