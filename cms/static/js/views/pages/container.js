@@ -1185,7 +1185,8 @@ function($, _, Backbone, gettext, BasePage,
             if(!data.hasOwnProperty('upstreamRef') && ((useNewTextEditor === 'True' && blockType.includes('html'))
                     || (useNewVideoEditor === 'True' && blockType.includes('video'))
                     || (useNewProblemEditor === 'True' && blockType.includes('problem'))
-                    || blockType.includes('games'))
+                    || blockType.includes('games')
+                    || blockType.includes('invideoquiz'))
             ){
                 if (this.options.isIframeEmbed && (this.isSplitTestContentPage || this.isVerticalContentPage)) {
                     return this.postMessageToParent({
