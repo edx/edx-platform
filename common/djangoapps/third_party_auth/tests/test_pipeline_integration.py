@@ -159,6 +159,15 @@ class UrlFormationTestCase(TestCase):
         with pytest.raises(ValueError):
             pipeline.get_complete_url(provider_name)
 
+    def test_complete_url_does_not_raise_for_tpa_saml_with_no_enabled_providers(self):
+        # tpa-saml is allowed to proceed even when no providers are visible in the
+        # site-filtered registry, because the SAML handshake may have completed via
+        # a site-independent lookup.
+        with mock.patch.object(provider.Registry, 'get_enabled_by_backend_name', return_value=iter([])):
+            url = pipeline.get_complete_url('tpa-saml')
+        assert url.startswith('/auth/complete')
+        assert 'tpa-saml' in url
+
     def test_complete_url_returns_expected_format(self):
         complete_url = pipeline.get_complete_url(self.enabled_provider.backend_name)
 
@@ -361,22 +370,19 @@ class EnsureUserInformationTestCase(TestCase):
         )
         with mock.patch('common.djangoapps.third_party_auth.pipeline.provider.Registry.get_from_pipeline') as get_from_pipeline:  # lint-amnesty, pylint: disable=line-too-long
             get_from_pipeline.return_value = saml_provider
-            with mock.patch(
-                'common.djangoapps.third_party_auth.pipeline.provider.Registry.get_enabled_by_backend_name'
-            ) as enabled_saml_providers:
-                enabled_saml_providers.return_value = [saml_provider, ] if is_saml else []
-                with mock.patch('social_core.pipeline.partial.partial_prepare') as partial_prepare:
-                    partial_prepare.return_value = mock.MagicMock(token='')
-                    strategy = mock.MagicMock()
-                    response = pipeline.ensure_user_information(
-                        strategy=strategy,
-                        backend=None,
-                        auth_entry=pipeline.AUTH_ENTRY_LOGIN,
-                        pipeline_index=0,
-                        details={'username': self.user.username, 'email': email}
-                    )
-                    assert response.status_code == 302
-                    assert response.url == expected_redirect_url
+            with mock.patch('social_core.pipeline.partial.partial_prepare') as partial_prepare:
+                backend = 'tpa-saml' if is_saml else 'oa2-google-oauth2'
+                partial_prepare.return_value = mock.MagicMock(token='', backend=backend)
+                strategy = mock.MagicMock()
+                response = pipeline.ensure_user_information(
+                    strategy=strategy,
+                    backend=None,
+                    auth_entry=pipeline.AUTH_ENTRY_LOGIN,
+                    pipeline_index=0,
+                    details={'username': self.user.username, 'email': email}
+                )
+                assert response.status_code == 302
+                assert response.url == expected_redirect_url
 
 
 @ddt.ddt

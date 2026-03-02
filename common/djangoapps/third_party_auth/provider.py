@@ -16,7 +16,6 @@ from common.djangoapps.third_party_auth.models import (
     SAMLConfiguration,
     SAMLProviderConfig
 )
-from common.djangoapps.third_party_auth.toggles import is_saml_provider_site_fallback_enabled
 
 
 class Registry:
@@ -104,7 +103,7 @@ class Registry:
         # won't yield it — but the SAML handshake already completed. Look up the provider
         # directly by idp_name so that pipeline steps like should_force_account_creation()
         # can still read provider flags.
-        if is_saml_provider_site_fallback_enabled() and running_pipeline.get('backend') == 'tpa-saml':
+        if running_pipeline.get('backend') == 'tpa-saml':
             try:
                 idp_name = running_pipeline['kwargs']['response']['idp_name']
                 return SAMLProviderConfig.current(idp_name)

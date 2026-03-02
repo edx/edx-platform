@@ -102,10 +102,7 @@ from common.djangoapps.third_party_auth.utils import (
     is_saml_provider,
     user_exists,
 )
-from common.djangoapps.third_party_auth.toggles import (
-    is_saml_provider_site_fallback_enabled,
-    is_tpa_next_url_on_dispatch_enabled,
-)
+from common.djangoapps.third_party_auth.toggles import is_tpa_next_url_on_dispatch_enabled
 from common.djangoapps.track import segment
 from common.djangoapps.util.json_request import JsonResponse
 
@@ -363,10 +360,10 @@ def get_complete_url(backend_name):
         ValueError: if no provider is enabled with the given backend_name.
     """
     if not any(provider.Registry.get_enabled_by_backend_name(backend_name)):
-        # When the SAML site-fallback flag is on, the provider may not be visible to the
-        # site-filtered registry even though SAML auth already completed via a
-        # site-independent lookup. Allow get_complete_url to proceed in that case.
-        if not (is_saml_provider_site_fallback_enabled() and backend_name == 'tpa-saml'):
+        # For tpa-saml, the provider may not be visible to the site-filtered registry
+        # even though SAML auth already completed via a site-independent lookup.
+        # Allow get_complete_url to proceed in that case.
+        if backend_name != 'tpa-saml':
             raise ValueError('Provider with backend %s not enabled' % backend_name)
 
     return _get_url('social:complete', backend_name)
@@ -621,33 +618,14 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
         strategy.storage.partial.store(current_partial)
 
     if not user:
-        # Use only email for user existence check in case of saml provider
-        _is_saml = is_provider_saml()
-        _provider_obj = provider.Registry.get_from_pipeline({'backend': current_partial.backend, 'kwargs': kwargs})
-        logger.info(
-            '[THIRD_PARTY_AUTH] ensure_user_information: auth_entry=%s backend=%s is_provider_saml=%s '
-            'current_provider=%s skip_email_verification=%s send_to_registration_first=%s '
-            'email=%s kwargs_response_keys=%s',
-            auth_entry,
-            current_partial.backend,
-            _is_saml,
-            _provider_obj.provider_id if _provider_obj else None,
-            _provider_obj.skip_email_verification if _provider_obj else None,
-            _provider_obj.send_to_registration_first if _provider_obj else None,
-            details.get('email') if details else None,
-            list((kwargs.get('response') or {}).keys()),
-        )
-        if _is_saml:
+        # Use only email for user existence check in case of saml provider.
+        # Check the backend name directly rather than the site-filtered registry,
+        # since the provider may only be visible via the site-independent fallback.
+        if current_partial.backend == 'tpa-saml':
             user_details = {'email': details.get('email')} if details else None
         else:
             user_details = details
-        _user_exists = user_exists(user_details or {})
-        logger.info(
-            '[THIRD_PARTY_AUTH] ensure_user_information: user_exists=%s user_details_email=%s',
-            _user_exists,
-            (user_details or {}).get('email'),
-        )
-        if _user_exists:
+        if user_exists(user_details or {}):
             # User has not already authenticated and the details sent over from
             # identity provider belong to an existing user.
             logger.info('[THIRD_PARTY_AUTH] ensure_user_information: dispatching to login (user exists)')
@@ -658,12 +636,7 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
         elif auth_entry == AUTH_ENTRY_LOGIN:
             # User has authenticated with the third party provider but we don't know which edX
             # account corresponds to them yet, if any.
-            _force = should_force_account_creation()
-            logger.info(
-                '[THIRD_PARTY_AUTH] ensure_user_information: AUTH_ENTRY_LOGIN should_force_account_creation=%s',
-                _force,
-            )
-            if _force:
+            if should_force_account_creation():
                 return dispatch_to_register()
             logger.info('[THIRD_PARTY_AUTH] ensure_user_information: dispatching to login (no force create)')
             return dispatch_to_login()
