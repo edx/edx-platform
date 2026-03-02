@@ -336,5 +336,8 @@ function($, _, Backbone, gettext, BaseModal, ViewUtils, XBlockViewUtils, XBlockE
 
     });
 
+    // Expose for unit testing.
+    EditXBlockModal.isSafeReturnTo = isSafeReturnTo;
+
     return EditXBlockModal;
 });

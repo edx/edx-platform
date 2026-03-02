@@ -185,6 +185,68 @@ describe('EditXBlockModal', function() {
         });
     });
 
+    describe('isSafeReturnTo', function() {
+        var isSafeReturnTo = EditXBlockModal.isSafeReturnTo;
+
+        // -- valid inputs ---------------------------------------------------
+
+        it('accepts a root-relative path', function() {
+            expect(isSafeReturnTo('/course/123')).toBe(true);
+        });
+
+        it('accepts the root path', function() {
+            expect(isSafeReturnTo('/')).toBe(true);
+        });
+
+        it('accepts a root-relative path with query string', function() {
+            expect(isSafeReturnTo('/course/123?tab=outline')).toBe(true);
+        });
+
+        it('accepts an absolute URL with the same origin', function() {
+            expect(isSafeReturnTo(window.location.origin + '/course/123')).toBe(true);
+        });
+
+        // -- empty / missing values -----------------------------------------
+
+        it('rejects an empty string', function() {
+            expect(isSafeReturnTo('')).toBe(false);
+        });
+
+        it('rejects null', function() {
+            expect(isSafeReturnTo(null)).toBe(false);
+        });
+
+        it('rejects undefined', function() {
+            expect(isSafeReturnTo(undefined)).toBe(false);
+        });
+
+        it('rejects a non-string value', function() {
+            expect(isSafeReturnTo(42)).toBe(false);
+        });
+
+        // -- protocol-relative / different origin ---------------------------
+
+        it('rejects protocol-relative URLs', function() {
+            expect(isSafeReturnTo('//evil.com/path')).toBe(false);
+        });
+
+        it('rejects an absolute URL with a different origin', function() {
+            expect(isSafeReturnTo('https://evil.com/steal')).toBe(false);
+        });
+
+        // -- relative paths without leading / -------------------------------
+
+        it('rejects a bare relative path', function() {
+            expect(isSafeReturnTo('course/123')).toBe(false);
+        });
+
+        // -- javascript: scheme ---------------------------------------------
+
+        it('rejects javascript: scheme', function() {
+            expect(isSafeReturnTo('javascript:alert(1)')).toBe(false);  // eslint-disable-line no-script-url
+        });
+    });
+
     describe('XModule Editor (settings only)', function() {
         var mockXModuleEditorHtml;
 
