@@ -31,7 +31,7 @@ from .base_notification import (
     COURSE_NOTIFICATION_TYPES,
     NotificationTypeManager
 )
-from .events import (
+from .event import (
     notification_preference_update_event,
     notification_read_event,
     notification_tray_opened_event,
