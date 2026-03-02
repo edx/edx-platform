@@ -703,4 +703,3 @@ class NotificationPreferencesView(APIView):
                 'app': validated_data['notification_app'],
             }
         }
-    
