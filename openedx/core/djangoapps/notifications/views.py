@@ -663,7 +663,7 @@ class NotificationPreferencesView(APIView):
             )
         except (KeyError, AttributeError, TypeError, ValueError) as exc:
             logger.error(
-                'Failed to log preference update event for user %s: %s',
+                'Failed to log preference update events for user %s: %s',
                 user.id,
                 str(exc)
             )
