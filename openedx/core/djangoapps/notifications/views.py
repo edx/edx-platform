@@ -658,7 +658,7 @@ class NotificationPreferencesView(APIView):
             }
             notification_preference_update_event(user, [], event_data)
             logger.debug(
-                'Logged preference update event for user %s',
+                'Logged preference update events for user %s',
                 user.id
             )
         except (KeyError, AttributeError, TypeError, ValueError) as exc:
