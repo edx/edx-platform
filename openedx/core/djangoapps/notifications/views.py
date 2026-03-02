@@ -126,8 +126,9 @@ class NotificationListAPIView(generics.ListAPIView):
             return queryset
         except Notification.DoesNotExist as exc:
             logger.error(
-                f'Failed to retrieve notifications for user '
-                f'{self.request.user.id}: {str(exc)}'
+                'Failed to retrieve notifications for user %s: %s',
+                self.request.user.id,
+                str(exc)
             )
             raise
 
@@ -186,8 +187,9 @@ class NotificationCountView(APIView):
                 count_by_app_name_dict[app_name] = count
 
             logger.info(
-                f'Retrieved notification count for user '
-                f'{request.user.id}: total={count_total}'
+                'Retrieved notification count for user %s: total=%d',
+                request.user.id,
+                count_total
             )
             return Response({
                 "show_notifications_tray": show_notifications_tray,
@@ -378,7 +380,7 @@ class NotificationReadAPIView(APIView):
 
 
 @api_view(["GET", "POST"])
-def preference_update_from_encrypted_username_view(request, username, patch=""):
+def preference_update_from_encrypted_username_view(request, username, patch=""):  # pylint: disable=unused-argument
     """Update notification preferences from an encrypted username.
 
     Used by one-click unsubscribe links. Rate limited using
@@ -455,15 +457,16 @@ class NotificationPreferencesView(APIView):
             if missing_types:
                 NotificationPreference.objects.bulk_create(missing_types)
                 logger.info(
-                    f'Created {len(missing_types)} missing notification '
-                    f'preferences for user {request.user.id}'
+                    'Created %d missing notification preferences for user %s',
+                    len(missing_types),
+                    request.user.id
                 )
 
             # If no user preferences found, return error response.
             if not user_preferences_map:
                 logger.warning(
-                    f'No active notification preferences for user '
-                    f'{request.user.id}'
+                    'No active notification preferences for user %s',
+                    request.user.id
                 )
                 return Response({
                     'status': 'error',
@@ -550,8 +553,9 @@ class NotificationPreferencesView(APIView):
             )
             if not serializer.is_valid():
                 logger.warning(
-                    f'Invalid serializer data for user {request.user.id}: '
-                    f'{serializer.errors}'
+                    'Invalid serializer data for user %s: %s',
+                    request.user.id,
+                    serializer.errors
                 )
                 return Response({
                     'status': 'error',
@@ -654,12 +658,14 @@ class NotificationPreferencesView(APIView):
             }
             notification_preference_update_event(user, [], event_data)
             logger.debug(
-                f'Logged preference update event for user {user.id}'
+                'Logged preference update event for user %s',
+                user.id
             )
         except (KeyError, AttributeError, TypeError, ValueError) as exc:
             logger.error(
-                f'Failed to log preference update event for user {user.id}: '
-                f'{str(exc)}'
+                'Failed to log preference update event for user %s: %s',
+                user.id,
+                str(exc)
             )
 
     def _prepare_response_data(self, validated_data):
