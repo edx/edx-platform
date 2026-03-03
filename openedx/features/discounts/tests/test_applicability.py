@@ -3,6 +3,7 @@
 
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
+from zoneinfo import ZoneInfo
 
 import ddt
 import pytest
@@ -10,7 +11,6 @@ import pytz
 from django.contrib.sites.models import Site
 from django.utils.timezone import now
 from edx_toggles.toggles.testutils import override_waffle_flag
-from enterprise.models import EnterpriseCustomer, EnterpriseCustomerUser
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
@@ -20,7 +20,8 @@ from lms.djangoapps.experiments.models import ExperimentData
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.features.discounts.models import DiscountRestrictionConfig
 from openedx.features.discounts.utils import REV1008_EXPERIMENT_ID
-from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
+from xmodule.modulestore.tests.django_utils import \
+    ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.tests.factories import CourseFactory  # lint-amnesty, pylint: disable=wrong-import-order
 
 from ..applicability import DISCOUNT_APPLICABILITY_FLAG, _is_in_holdback_and_bucket, can_receive_discount
@@ -49,6 +50,14 @@ class TestApplicability(ModuleStoreTestCase):
         )
         self.mock_holdback = holdback_patcher.start()
         self.addCleanup(holdback_patcher.stop)
+
+        # By default, the filter passes eligibility through unchanged.
+        discount_filter_patcher = patch(
+            'openedx.features.discounts.applicability.DiscountEligibilityCheckRequested.run_filter',
+            side_effect=lambda user, course_key, is_eligible: (user, course_key, is_eligible),
+        )
+        self.mock_discount_filter = discount_filter_patcher.start()
+        self.addCleanup(discount_filter_patcher.stop)
 
     def test_can_receive_discount(self):
         # Right now, no one should be able to receive the discount
@@ -134,17 +143,13 @@ class TestApplicability(ModuleStoreTestCase):
         assert applicability == (entitlement_mode is None)
 
     @override_waffle_flag(DISCOUNT_APPLICABILITY_FLAG, active=True)
-    def test_can_receive_discount_false_enterprise(self):
+    def test_can_receive_discount_false_when_filter_marks_ineligible(self):
         """
-        Ensure that enterprise users do not receive the discount.
+        Ensure that when the eligibility filter marks the user as ineligible,
+        no discount is received.
         """
-        enterprise_customer = EnterpriseCustomer.objects.create(
-            name='Test EnterpriseCustomer',
-            site=self.site
-        )
-        EnterpriseCustomerUser.objects.create(
-            user_id=self.user.id,
-            enterprise_customer=enterprise_customer
+        self.mock_discount_filter.side_effect = lambda user, course_key, is_eligible: (
+            user, course_key, False
         )
 
         applicability = can_receive_discount(user=self.user, course=self.course)
