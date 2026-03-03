@@ -5,12 +5,16 @@ Tests for the Python APIs exposed by the Progress API of the Course Home API app
 from unittest.mock import patch
 
 from django.test import TestCase
+from xblock.scorable import ShowCorrectness
 
 from lms.djangoapps.course_home_api.progress.api import (
     calculate_progress_for_learner_in_course,
     aggregate_assignment_type_grade_summary,
 )
+<<<<<<< HEAD
 from xmodule.graders import ShowCorrectness
+=======
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -109,7 +113,7 @@ class ProgressApiTests(TestCase):
         }
 
         results = calculate_progress_for_learner_in_course("some_course", "some_user")
-        assert mock_get_summary.called_once_with("some_course", "some_user")
+        mock_get_summary.assert_called_once_with("some_course", "some_user")
         assert results == expected_data
 
     @patch("lms.djangoapps.course_home_api.progress.api.get_course_blocks_completion_summary")
@@ -134,7 +138,7 @@ class ProgressApiTests(TestCase):
         }
 
         results = calculate_progress_for_learner_in_course("some_course", "some_user")
-        assert mock_get_summary.called_once_with("some_course", "some_user")
+        mock_get_summary.assert_called_once_with("some_course", "some_user")
         assert results == expected_data
 
     @patch("lms.djangoapps.course_home_api.progress.api.get_course_blocks_completion_summary")

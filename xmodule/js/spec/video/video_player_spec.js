@@ -1,5 +1,6 @@
 /* global YT */
 
+<<<<<<< HEAD
 // eslint-disable-next-line no-shadow-restricted-names
 (function() {
     'use strict';
@@ -7,6 +8,15 @@
     require(
         ['video/03_video_player.js', 'hls', 'underscore'],
         function(VideoPlayer, Hls, _) {
+=======
+import VideoPlayer from "../../../assets/video/public/js/03_video_player.js";
+import HLS from 'hls';
+import _ from 'underscore';
+
+(function() {
+    'use strict';
+
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
             describe('VideoPlayer', function() {
                 var STATUS = window.STATUS,
                     state,
@@ -1097,5 +1107,5 @@
                     });
                 });
             });
-        });
-}(require, define));
+    
+}).call(this);

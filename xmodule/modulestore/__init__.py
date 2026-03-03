@@ -12,10 +12,11 @@ from abc import ABCMeta, abstractmethod
 from collections import defaultdict
 from contextlib import contextmanager
 from operator import itemgetter
+from zoneinfo import ZoneInfo
 
+from django.db import transaction
 from opaque_keys.edx.keys import AssetKey, CourseKey
 from opaque_keys.edx.locations import Location  # For import backwards compatibility
-from pytz import UTC
 from sortedcontainers import SortedKeyList
 from xblock.core import XBlock
 from xblock.plugin import default_select
@@ -322,6 +323,10 @@ class BulkOperationsMixin:
         """
         Call some callback when the currently active bulk operation has saved
         """
+        # If we're in a MySQL transaction, so the new version will only be committed to the
+        # SplitModulestoreCourseIndex table after the MySQL transaction is closed.
+        def wrapped_fn():
+            transaction.on_commit(fn)
         # Check if a bulk op is active. If so, defer fn(); otherwise call it immediately.
         # Note: calling _get_bulk_ops_record() here and then checking .active can have side-effects in some cases
         # because it creates an entry in the defaultdict if none exists, so we check if the record is active using
@@ -329,9 +334,9 @@ class BulkOperationsMixin:
         # so we check it this way:
         if course_key and course_key.for_branch(None) in self._active_bulk_ops.records:
             bulk_ops_record = self._active_bulk_ops.records[course_key.for_branch(None)]
-            bulk_ops_record.defer_until_commit(fn)
+            bulk_ops_record.defer_until_commit(wrapped_fn)
         else:
-            fn()  # There is no active bulk operation - call fn() now.
+            wrapped_fn()  # There is no active bulk operation - call wrapped_fn() now.
 
     def _is_in_bulk_operation(self, course_key, ignore_case=False):
         """
@@ -372,7 +377,7 @@ class EditInfo:
     def __init__(self, **kwargs):
         self.from_storable(kwargs)
 
-        # For details, see caching_descriptor_system.py get_subtree_edited_by/on.
+        # For details, see runtime.py get_subtree_edited_by/on.
         self._subtree_edited_on = kwargs.get('_subtree_edited_on', None)
         self._subtree_edited_by = kwargs.get('_subtree_edited_by', None)
 
@@ -714,7 +719,7 @@ class ModuleStoreAssetWriteInterface(ModuleStoreAssetBase):
                 ))
                 continue
             if not import_only:
-                asset_md.update({'edited_by': user_id, 'edited_on': datetime.datetime.now(UTC)})
+                asset_md.update({'edited_by': user_id, 'edited_on': datetime.datetime.now(ZoneInfo("UTC"))})
             asset_type = asset_md.asset_id.asset_type
             all_assets = assets_by_type[asset_type]
             all_assets.insert_or_update(asset_md)
@@ -857,7 +862,7 @@ class ModuleStoreRead(ModuleStoreAssetBase, metaclass=ABCMeta):
         For substring matching:
             pass a regex object.
         For arbitrary function comparison such as date time comparison:
-            pass the function as in start=lambda x: x < datetime.datetime(2014, 1, 1, 0, tzinfo=pytz.UTC)
+            pass the function as in start=lambda x: x < datetime.datetime(2014, 1, 1, 0, tzinfo=ZoneInfo("UTC"))
 
         Args:
             block (dict, XBlock, or BlockData): either the BlockData (transformed from the db) -or-

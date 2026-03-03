@@ -7,7 +7,11 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from opaque_keys.edx.keys import CourseKey
 from openedx.core.lib.grade_utils import round_away_from_zero
+<<<<<<< HEAD
 from xmodule.graders import ShowCorrectness
+=======
+from xblock.scorable import ShowCorrectness
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 from datetime import datetime, timezone
 
 from lms.djangoapps.courseware.courses import get_course_blocks_completion_summary

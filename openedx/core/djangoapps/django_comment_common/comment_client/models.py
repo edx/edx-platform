@@ -2,8 +2,8 @@
 
 
 import logging
-import typing as t
 
+<<<<<<< HEAD
 from forum import api as forum_api
 from openedx.core.djangoapps.discussions.config.waffle import (
     is_forum_v2_disabled_globally,
@@ -11,6 +11,10 @@ from openedx.core.djangoapps.discussions.config.waffle import (
 )
 
 from .utils import CommentClientRequestError, extract, get_course_key, perform_request
+=======
+from .utils import CommentClientRequestError, extract, get_course_key
+from forum import api as forum_api
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 
 log = logging.getLogger(__name__)
 
@@ -81,12 +85,18 @@ class Model:
     def _retrieve(self, *args, **kwargs):
         course_id = self.attributes.get("course_id") or kwargs.get("course_key")
         if not course_id:
-            _, course_id = is_forum_v2_enabled_for_comment(self.id)
+            course_id = forum_api.get_course_id_by_comment(self.id)
+        response = None
         if self.type == "comment":
+<<<<<<< HEAD
             response = forum_api.get_parent_comment(
                 comment_id=self.attributes["id"], course_id=course_id
             )
         else:
+=======
+            response = forum_api.get_parent_comment(comment_id=self.attributes["id"], course_id=course_id)
+        if response is None:
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
             raise CommentClientRequestError("Forum v2 API call is missing")
         self._update_from_response(response)
 
@@ -111,6 +121,7 @@ class Model:
     def find(cls, id):  # pylint: disable=redefined-builtin
         return cls(id=id)
 
+<<<<<<< HEAD
     @classmethod
     def retrieve_all(cls, params=None):
         """
@@ -130,6 +141,8 @@ class Model:
             metric_action="model.retrieve_all",
         )
 
+=======
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
     def _update_from_response(self, response_data):
         for k, v in response_data.items():
             if k in self.accessible_fields:
@@ -230,18 +243,15 @@ class Model:
             request_params.update(params)
         course_id = self.attributes.get("course_id") or request_params.get("course_id")
         course_key = get_course_key(course_id)
-        if is_forum_v2_enabled(course_key):
-            response = None
-            if self.type == "comment":
-                response = self.handle_update_comment(request_params, str(course_key))
-            elif self.type == "thread":
-                response = self.handle_update_thread(request_params, str(course_key))
-            elif self.type == "user":
-                response = self.handle_update_user(request_params, str(course_key))
-            if response is None:
-                raise CommentClientRequestError("Forum v2 API call is missing")
-        else:
-            response = self.perform_http_put_request(request_params)
+        response = None
+        if self.type == "comment":
+            response = self.handle_update_comment(request_params, str(course_key))
+        elif self.type == "thread":
+            response = self.handle_update_thread(request_params, str(course_key))
+        elif self.type == "user":
+            response = self.handle_update_user(request_params, str(course_key))
+        if response is None:
+            raise CommentClientRequestError("Forum v2 API call is missing")
         return response
 
     def handle_update_user(self, request_params, course_id):
@@ -298,28 +308,6 @@ class Model:
         response = forum_api.update_thread(**request_data)
         return response
 
-    def perform_http_put_request(self, request_params):
-        url = self.url(action="put", params=self.attributes)
-        response = perform_request(
-            "put",
-            url,
-            request_params,
-            metric_tags=self._metric_tags,
-            metric_action="model.update",
-        )
-        return response
-
-    def perform_http_post_request(self):
-        url = self.url(action="post", params=self.attributes)
-        response = perform_request(
-            "post",
-            url,
-            self.initializable_attributes(),
-            metric_tags=self._metric_tags,
-            metric_action="model.insert",
-        )
-        return response
-
     def handle_create(self, params=None):
         course_id = self.attributes.get("course_id") or params.get("course_id")
         course_key = str(get_course_key(course_id))
@@ -372,22 +360,3 @@ class Model:
 
         response = forum_api.create_thread(**params)
         return response
-
-
-def is_forum_v2_enabled_for_comment(comment_id: str) -> tuple[bool, t.Optional[str]]:
-    """
-    Figure out whether we use forum v2 for a given comment.
-
-    See is_forum_v2_enabled_for_thread.
-
-    Return:
-
-        enabled (bool)
-        course_id (str or None)
-    """
-    if is_forum_v2_disabled_globally():
-        return False, None
-
-    course_id = forum_api.get_course_id_by_comment(comment_id)
-    course_key = get_course_key(course_id)
-    return is_forum_v2_enabled(course_key), course_id

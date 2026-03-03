@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from functools import total_ordering
 from importlib import import_module
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import crum
 from config_models.models import ConfigurationModel
@@ -456,7 +457,7 @@ class UserProfile(models.Model):
     location = models.CharField(blank=True, max_length=255, db_index=True)
 
     # Optional demographic data we started capturing from Fall 2012
-    this_year = datetime.now(UTC).year
+    this_year = datetime.now(ZoneInfo("UTC")).year
     VALID_YEARS = list(range(this_year, this_year - 120, -1))
     year_of_birth = models.IntegerField(blank=True, null=True, db_index=True)
     GENDER_CHOICES = (
@@ -572,7 +573,7 @@ class UserProfile(models.Model):
     def age(self):
         """ Convenience method that returns the age given a year_of_birth. """
         year_of_birth = self.year_of_birth
-        year = datetime.now(UTC).year
+        year = datetime.now(ZoneInfo("UTC")).year
         if year_of_birth is not None:
             return self._calculate_age(year, year_of_birth)
 
@@ -798,7 +799,7 @@ def user_post_save_callback(sender, **kwargs):
                 'username': user.username,
                 'name': profile.name,
                 'age': profile.age or -1,
-                'yearOfBirth': profile.year_of_birth or datetime.now(UTC).year,
+                'yearOfBirth': profile.year_of_birth or datetime.now(ZoneInfo("UTC")).year,
                 'education': profile.level_of_education_display,
                 'address': profile.mailing_address,
                 'gender': profile.gender_display,
@@ -982,7 +983,7 @@ class LoginFailures(models.Model):
             if not record.lockout_until:
                 return False
 
-            now = datetime.now(UTC)
+            now = datetime.now(ZoneInfo("UTC"))
             until = record.lockout_until
             is_locked_out = until and now < until
 
@@ -1003,7 +1004,7 @@ class LoginFailures(models.Model):
         if record.failure_count >= max_failures_allowed:
             # yes, then store when this account is locked out until
             lockout_period_secs = settings.MAX_FAILED_LOGIN_ATTEMPTS_LOCKOUT_PERIOD_SECS
-            record.lockout_until = datetime.now(UTC) + timedelta(seconds=lockout_period_secs)
+            record.lockout_until = datetime.now(ZoneInfo("UTC")) + timedelta(seconds=lockout_period_secs)
 
         record.save()
 
@@ -1375,21 +1376,37 @@ class LinkedInAddToProfileConfiguration(ConfigurationModel):
         ),
     )
 
+    @property
+    def share_settings(self):
+        """
+        Initialize share_settings once for reuse across methods
+        """
+        if self._share_settings is None:
+            self._share_settings = configuration_helpers.get_value(
+                'SOCIAL_SHARING_SETTINGS',
+                settings.SOCIAL_SHARING_SETTINGS
+            )
+        return self._share_settings
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._share_settings = None
+
     def is_enabled(self, *key_fields):  # pylint: disable=arguments-differ
         """
         Checks both the model itself and share_settings to see if LinkedIn Add to Profile is enabled
         """
         enabled = super().is_enabled(*key_fields)
-        share_settings = configuration_helpers.get_value('SOCIAL_SHARING_SETTINGS', settings.SOCIAL_SHARING_SETTINGS)
-        return share_settings.get('CERTIFICATE_LINKEDIN', enabled)
+        return self.share_settings.get('CERTIFICATE_LINKEDIN', enabled)
 
-    def add_to_profile_url(self, course_name, cert_mode, cert_url, certificate=None):
+    def add_to_profile_url(self, course, cert_mode, cert_url, certificate=None):
+
         """
         Construct the URL for the "add to profile" button. This will autofill the form based on
         the params provided.
 
         Arguments:
-            course_name (str): The display name of the course.
+            course (CourseOverview): Course/CourseOverview Object.
             cert_mode (str): The course mode of the user's certificate (e.g. "verified", "honor", "professional")
             cert_url (str): The URL for the certificate.
 
@@ -1398,11 +1415,11 @@ class LinkedInAddToProfileConfiguration(ConfigurationModel):
                 If provided, this function will also autofill the certId and issue date for the cert.
         """
         params = {
-            'name': self._cert_name(course_name, cert_mode),
+            'name': self._cert_name(course.display_name, cert_mode),
             'certUrl': cert_url,
         }
 
-        params.update(self._organization_information())
+        params.update(self._organization_information(course))
 
         if certificate:
             params.update({
@@ -1426,28 +1443,45 @@ class LinkedInAddToProfileConfiguration(ConfigurationModel):
         Returns:
             str: The formatted string to display for the name field on the LinkedIn Add to Profile dialog.
         """
-        default_cert_name = self.MODE_TO_CERT_NAME.get(cert_mode, _('{platform_name} Certificate for {course_name}'))
+        default_cert_name = self.MODE_TO_CERT_NAME.get(
+            cert_mode, _('{platform_name} Certificate for {course_name}')
+        )
         # Look for an override of the certificate name in the SOCIAL_SHARING_SETTINGS setting
-        share_settings = configuration_helpers.get_value('SOCIAL_SHARING_SETTINGS', settings.SOCIAL_SHARING_SETTINGS)
-        cert_name = share_settings.get('CERTIFICATE_LINKEDIN_MODE_TO_CERT_NAME', {}).get(cert_mode, default_cert_name)
+        cert_name = self.share_settings.get(
+            'CERTIFICATE_LINKEDIN_MODE_TO_CERT_NAME', {}
+        ).get(cert_mode, default_cert_name)
 
         return cert_name.format(
             platform_name=configuration_helpers.get_value('platform_name', settings.PLATFORM_NAME),
             course_name=course_name
         )
 
-    def _organization_information(self):
+    def _organization_information(self, course=None):
         """
-        Returns organization information for use in the URL parameters for add to profile.
+        Returns organization information for use in the URL parameters for add to
+        profile. By default when sharing to LinkedIn, Platform Name and/or Platform
+        LINKEDIN_COMPANY_ID will be used. If Course specific Organization Name is
+        prefered when sharing Certificate to linkedIn the flag for that
+        CERTIFICATE_LINKEDIN_DEFAULTS_TO_COURSE_ORGANIZATION_NAME should be set
+        to True alongside other LinkedIn settings
 
         Returns:
-            dict: Either the organization ID on LinkedIn or the organization's name
+            dict: Either the organization ID on LinkedIn, the organization's name or
+                organization name associated to a specific course
                 Will be used to prefill the organization on the add to profile action.
         """
-        org_id = configuration_helpers.get_value('LINKEDIN_COMPANY_ID', self.company_identifier)
+        prefer_course_organization_name = self.share_settings.get(
+            'CERTIFICATE_LINKEDIN_DEFAULTS_TO_COURSE_ORGANIZATION_NAME', False
+        )
+        if (prefer_course_organization_name and course):
+            return {"organizationName": course.display_organization}
+
+        org_id = configuration_helpers.get_value(
+            "LINKEDIN_COMPANY_ID", self.company_identifier
+        )
         # Prefer organization ID per documentation at https://addtoprofile.linkedin.com/
         if org_id:
-            return {'organizationId': org_id}
+            return {"organizationId": org_id}
         return {'organizationName': configuration_helpers.get_value('platform_name', settings.PLATFORM_NAME)}
 
 

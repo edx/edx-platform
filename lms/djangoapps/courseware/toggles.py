@@ -2,7 +2,11 @@
 Toggles for courseware in-course experience.
 """
 
+<<<<<<< HEAD
 from edx_toggles.toggles import SettingToggle, WaffleSwitch, WaffleFlag
+=======
+from edx_toggles.toggles import SettingToggle, WaffleFlag, WaffleSwitch
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 
@@ -175,8 +179,13 @@ ENABLE_COURSE_DISCOVERY_DEFAULT_LANGUAGE_FILTER = WaffleSwitch(
 # .. toggle_use_cases: opt_in
 # .. toggle_creation_date: 2026-01-08
 # .. toggle_target_removal_date: None
+<<<<<<< HEAD
 # .. toggle_warning: None.
 # .. toggle_tickets: https://github.com/edx/edx-platform/pull/81
+=======
+# .. toggle_warning: n/a
+# .. toggle_tickets: https://github.com/openedx/edx-platform/pull/37854
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE = WaffleFlag(
     f'{WAFFLE_FLAG_NAMESPACE}.unify_site_and_translation_language', __name__
 )

@@ -1,6 +1,7 @@
 """
 This file contains celery tasks for notifications.
 """
+import uuid
 from datetime import datetime, timedelta
 from typing import List
 
@@ -10,7 +11,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from edx_django_utils.monitoring import set_code_owner_attribute
 from opaque_keys.edx.keys import CourseKey
-from pytz import UTC
+from zoneinfo import ZoneInfo
 
 from openedx.core.djangoapps.notifications.audience_filters import NotificationFilter
 from openedx.core.djangoapps.notifications.base_notification import (
@@ -75,7 +76,7 @@ def delete_expired_notifications():
     This task deletes all expired notifications
     """
     batch_size = settings.EXPIRED_NOTIFICATIONS_DELETE_BATCH_SIZE
-    expiry_date = datetime.now(UTC) - timedelta(days=settings.NOTIFICATIONS_EXPIRY)
+    expiry_date = datetime.now(ZoneInfo("UTC")) - timedelta(days=settings.NOTIFICATIONS_EXPIRY)
     start_time = datetime.now()
     total_deleted = 0
     delete_count = None
@@ -104,7 +105,7 @@ def send_notifications(user_ids, course_key: str, app_name, notification_type, c
     """
     # pylint: disable=too-many-statements
     course_key = CourseKey.from_string(course_key)
-    if not ENABLE_NOTIFICATIONS.is_enabled(course_key):
+    if not ENABLE_NOTIFICATIONS.is_enabled():
         return
 
     if not is_notification_valid(notification_type, context):
@@ -122,7 +123,7 @@ def send_notifications(user_ids, course_key: str, app_name, notification_type, c
     email_notification_mapping = {}
     push_notification_audience = []
     is_push_notification_enabled = ENABLE_PUSH_NOTIFICATIONS.is_enabled(course_key)
-
+    task_id = str(uuid.uuid4())
     for batch_user_ids in get_list_in_batches(user_ids, batch_size):
         logger.debug(f'Sending notifications to {len(batch_user_ids)} users in {course_key}')
         batch_user_ids = NotificationFilter().apply_filters(batch_user_ids, course_key, notification_type)
@@ -151,6 +152,7 @@ def send_notifications(user_ids, course_key: str, app_name, notification_type, c
             continue
 
         notifications = []
+        email_notification_user_ids = []
         for preference in preferences:
             user_id = preference.user_id
 
@@ -166,16 +168,17 @@ def send_notifications(user_ids, course_key: str, app_name, notification_type, c
                     user_id=user_id,
                     app_name=app_name,
                     notification_type=notification_type,
-                    content_context=context,
+                    content_context={**context, 'uuid': task_id},
                     content_url=content_url,
                     course_id=course_key,
                     web='web' in notification_preferences,
                     email=email_enabled,
                     push=push_notification,
                     group_by_id=group_by_id,
+                    email_scheduled=False
                 )
                 if email_enabled and (email_cadence == EmailCadence.IMMEDIATELY):
-                    email_notification_mapping[user_id] = new_notification
+                    email_notification_user_ids.append(user_id)
 
                 if push_notification:
                     push_notification_audience.append(user_id)
@@ -193,7 +196,22 @@ def send_notifications(user_ids, course_key: str, app_name, notification_type, c
         # send notification to users but use bulk_create
         Notification.objects.bulk_create(notifications)
 
+        # Get fresh records with pk so it can be used in email sending because there is a need to
+        # update the records further down the line.
+        if email_notification_user_ids:
+            email_notification_mapping = {
+                notif.user_id: notif
+                for notif in Notification.objects.filter(
+                    user_id__in=email_notification_user_ids,
+                    content_context__uuid=task_id,
+                )
+            }
     if email_notification_mapping:
+        logger.info(
+            f"Email Buffered Digest: Sending immediate email notifications to "
+            f"users {list(email_notification_mapping.keys())} "
+            f"for notification {notification_type}",
+        )
         send_immediate_cadence_email(email_notification_mapping, course_key)
 
     if generated_notification:

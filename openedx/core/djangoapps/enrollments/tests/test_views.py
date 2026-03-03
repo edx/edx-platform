@@ -12,7 +12,7 @@ from urllib.parse import quote
 import ddt
 import httpretty
 import pytest
-import pytz
+from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
@@ -40,7 +40,6 @@ from openedx.core.djangoapps.enrollments import api, data
 from openedx.core.djangoapps.enrollments.errors import CourseEnrollmentError
 from openedx.core.djangoapps.enrollments.views import EnrollmentUserThrottle
 from openedx.core.djangoapps.notifications.config.waffle import ENABLE_NOTIFICATIONS
-from openedx.core.djangoapps.notifications.models import CourseNotificationPreference
 from openedx.core.djangoapps.oauth_dispatch.jwt import create_jwt_for_user
 from openedx.core.djangoapps.user_api.models import RetirementState, UserOrgTag, UserRetirementStatus
 from openedx.core.djangolib.testing.utils import skip_unless_lms
@@ -56,20 +55,20 @@ class EnrollmentTestMixin:
     API_KEY = "i am a key"
 
     def assert_enrollment_status(
-            self,
-            course_id=None,
-            username=None,
-            expected_status=status.HTTP_200_OK,
-            email_opt_in=None,
-            as_server=False,
-            mode=CourseMode.DEFAULT_MODE_SLUG,
-            is_active=None,
-            enrollment_attributes=None,
-            min_mongo_calls=0,
-            max_mongo_calls=0,
-            linked_enterprise_customer=None,
-            cohort=None,
-            force_enrollment=False,
+        self,
+        course_id=None,
+        username=None,
+        expected_status=status.HTTP_200_OK,
+        email_opt_in=None,
+        as_server=False,
+        mode=CourseMode.DEFAULT_MODE_SLUG,
+        is_active=None,
+        enrollment_attributes=None,
+        min_mongo_calls=0,
+        max_mongo_calls=0,
+        linked_enterprise_customer=None,
+        cohort=None,
+        force_enrollment=False,
     ):
         """
         Enroll in the course and verify the response's status code. If the expected status is 200, also validates
@@ -199,10 +198,6 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
             password=self.PASSWORD,
         )
         self.client.login(username=self.USERNAME, password=self.PASSWORD)
-        CourseNotificationPreference.objects.create(
-            user=self.user,
-            course_id=self.course.id,
-        )
 
     @ddt.data(
         # Default (no course modes in the database)
@@ -356,8 +351,8 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
     @ddt.unpack
     def test_force_enrollment(self, course_modes, enrollment_mode, force_enrollment):
         # Create the course modes (if any) required for this test case
-        start_date = datetime.datetime(2021, 12, 1, 5, 0, 0, tzinfo=pytz.UTC)
-        end_date = datetime.datetime(2022, 12, 1, 5, 0, 0, tzinfo=pytz.UTC)
+        start_date = datetime.datetime(2021, 12, 1, 5, 0, 0, tzinfo=ZoneInfo("UTC"))
+        end_date = datetime.datetime(2022, 12, 1, 5, 0, 0, tzinfo=ZoneInfo("UTC"))
         self.course = CourseFactory.create(
             emit_signals=True,
             start=start_date,
@@ -658,11 +653,11 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
         # enforced at the data layer, so we need to handle the case
         # in which no dates are specified.
         (None, None, None, None),
-        (datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=pytz.UTC), None, "2015-01-02T03:04:05Z", None),
-        (None, datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=pytz.UTC), None, "2015-01-02T03:04:05Z"),
+        (datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=ZoneInfo("UTC")), None, "2015-01-02T03:04:05Z", None),
+        (None, datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=ZoneInfo("UTC")), None, "2015-01-02T03:04:05Z"),
         (
-            datetime.datetime(2014, 6, 7, 8, 9, 10, tzinfo=pytz.UTC),
-            datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=pytz.UTC),
+            datetime.datetime(2014, 6, 7, 8, 9, 10, tzinfo=ZoneInfo("UTC")),
+            datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=ZoneInfo("UTC")),
             "2014-06-07T08:09:10Z",
             "2015-01-02T03:04:05Z",
         ),
@@ -982,11 +977,11 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
         assert course_mode == CourseMode.DEFAULT_MODE_SLUG
 
     @ddt.data(
-        ((CourseMode.DEFAULT_MODE_SLUG, ), CourseMode.DEFAULT_MODE_SLUG),
+        ((CourseMode.DEFAULT_MODE_SLUG,), CourseMode.DEFAULT_MODE_SLUG),
         ((CourseMode.DEFAULT_MODE_SLUG, CourseMode.VERIFIED), CourseMode.DEFAULT_MODE_SLUG),
         ((CourseMode.DEFAULT_MODE_SLUG, CourseMode.VERIFIED), CourseMode.VERIFIED),
-        ((CourseMode.PROFESSIONAL, ), CourseMode.PROFESSIONAL),
-        ((CourseMode.NO_ID_PROFESSIONAL_MODE, ), CourseMode.NO_ID_PROFESSIONAL_MODE),
+        ((CourseMode.PROFESSIONAL,), CourseMode.PROFESSIONAL),
+        ((CourseMode.NO_ID_PROFESSIONAL_MODE,), CourseMode.NO_ID_PROFESSIONAL_MODE),
         ((CourseMode.VERIFIED, CourseMode.CREDIT_MODE), CourseMode.VERIFIED),
         ((CourseMode.VERIFIED, CourseMode.CREDIT_MODE), CourseMode.CREDIT_MODE),
     )
@@ -1078,7 +1073,7 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
 
         # Change verified mode expiration.
         mode = CourseMode.objects.get(course_id=self.course.id, mode_slug=CourseMode.VERIFIED)
-        mode.expiration_datetime = datetime.datetime(year=1970, month=1, day=1, tzinfo=pytz.utc)
+        mode.expiration_datetime = datetime.datetime(year=1970, month=1, day=1, tzinfo=ZoneInfo("UTC"))
         mode.save()
 
         # Deactivate enrollment.
@@ -1198,7 +1193,7 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
 
         # Change verified mode expiration.
         mode = CourseMode.objects.get(course_id=self.course.id, mode_slug=CourseMode.VERIFIED)
-        mode.expiration_datetime = datetime.datetime(year=1970, month=1, day=1, tzinfo=pytz.utc)
+        mode.expiration_datetime = datetime.datetime(year=1970, month=1, day=1, tzinfo=ZoneInfo("UTC"))
         mode.save()
         self.assert_enrollment_status(
             as_server=using_api_key,
@@ -1274,7 +1269,7 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
             username='enterprise_worker',
             linked_enterprise_customer='this-is-a-real-uuid',
         )
-        assert httpretty.last_request().path == '/consent/api/v1/data_sharing_consent'    # pylint: disable=no-member
+        assert httpretty.last_request().path == '/consent/api/v1/data_sharing_consent'  # pylint: disable=no-member
         assert httpretty.last_request().method == httpretty.POST
 
     def test_enrollment_attributes_always_written(self):
@@ -1784,7 +1779,7 @@ class CourseEnrollmentsApiListTest(APITestCase, ModuleStoreTestCase):
     """
     Test the course enrollments list API.
     """
-    CREATED_DATA = datetime.datetime(2018, 1, 1, 0, 0, 1, tzinfo=pytz.UTC)
+    CREATED_DATA = datetime.datetime(2018, 1, 1, 0, 0, 1, tzinfo=ZoneInfo("UTC"))
 
     def setUp(self):
         super().setUp()
@@ -1907,15 +1902,15 @@ class CourseEnrollmentsApiListTest(APITestCase, ModuleStoreTestCase):
 
     @ddt.data(
         # Non-existent user
-        ({'username': 'nobody'}, ),
-        ({'username': 'nobody', 'course_id': 'e/d/X'}, ),
+        ({'username': 'nobody'},),
+        ({'username': 'nobody', 'course_id': 'e/d/X'},),
 
         # Non-existent course
-        ({'course_id': 'a/b/c'}, ),
-        ({'course_id': 'a/b/c', 'username': 'student1'}, ),
+        ({'course_id': 'a/b/c'},),
+        ({'course_id': 'a/b/c', 'username': 'student1'},),
 
         # Non-existent course and user
-        ({'course_id': 'a/b/c', 'username': 'dummy'}, )
+        ({'course_id': 'a/b/c', 'username': 'dummy'},)
     )
     @ddt.unpack
     def test_non_existent_course_user(self, query_params):

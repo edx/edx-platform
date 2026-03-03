@@ -3,22 +3,16 @@ Tests for Discussion API views
 """
 
 import json
-import random
 from datetime import datetime
 from unittest import mock
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode
 
 import ddt
-import httpretty
-from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import override_settings
 from django.urls import reverse
-from edx_toggles.toggles.testutils import override_waffle_flag
-from opaque_keys.edx.keys import CourseKey
 from pytz import UTC
 from rest_framework import status
-from rest_framework.test import APIClient, APITestCase
 
+<<<<<<< HEAD
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.student.models import (
@@ -30,23 +24,28 @@ from common.djangoapps.student.roles import (
     CourseStaffRole,
     GlobalStaff,
 )
+=======
+from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
+from xmodule.modulestore.tests.factories import CourseFactory
+
+from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole, GlobalStaff
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 from common.djangoapps.student.tests.factories import (
-    AdminFactory,
     CourseEnrollmentFactory,
+<<<<<<< HEAD
     SuperuserFactory,
     UserFactory,
+=======
+    UserFactory
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 )
 from common.djangoapps.util.testing import UrlResetMixin
-from lms.djangoapps.discussion.django_comment_client.tests.utils import (
-    ForumsEnableMixin,
-    config_course_discussions,
-    topic_name_to_id,
-)
 from lms.djangoapps.discussion.rest_api.tests.utils import (
-    CommentsServiceMockMixin,
+    ForumMockUtilsMixin,
     make_minimal_cs_comment,
     make_minimal_cs_thread,
 )
+<<<<<<< HEAD
 from lms.djangoapps.discussion.rest_api.utils import get_usernames_from_search_string
 from lms.djangoapps.discussion.toggles import ENABLE_DISCUSSIONS_MFE
 from openedx.core.djangoapps.course_groups.tests.helpers import config_course_cohorts
@@ -342,14 +341,14 @@ class UploadFileViewTest(
         self.enroll_user_in_course()
         response = self.client.post(self.url, data={})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+=======
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 
 
 @ddt.ddt
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
-@mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_FORUM_V2": False})
 class CommentViewSetListByUserTest(
-    ForumsEnableMixin,
-    CommentsServiceMockMixin,
+    ForumMockUtilsMixin,
     UrlResetMixin,
     ModuleStoreTestCase,
 ):
@@ -357,6 +356,7 @@ class CommentViewSetListByUserTest(
     Common test cases for views retrieving user-published content.
     """
 
+<<<<<<< HEAD
     @mock.patch.dict(
         "django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True}
     )
@@ -374,6 +374,22 @@ class CommentViewSetListByUserTest(
         patcher.start()
         self.addCleanup(patcher.stop)
 
+=======
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        super().setUpClassAndForumMock()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        super().disposeForumMocks()
+
+    @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
+    def setUp(self):
+        super().setUp()
+
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
         self.user = UserFactory.create(password=self.TEST_PASSWORD)
         self.register_get_user_response(self.user)
 
@@ -389,7 +405,7 @@ class CommentViewSetListByUserTest(
 
     def register_mock_endpoints(self):
         """
-        Register cs_comments_service mocks for sample threads and comments.
+        Register forum service mocks for sample threads and comments.
         """
         self.register_get_threads_response(
             threads=[
@@ -569,6 +585,7 @@ class CommentViewSetListByUserTest(
         url = self.build_url(self.user.username, self.course.id, page=2)
         response = self.client.get(url)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+<<<<<<< HEAD
 
 
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
@@ -2276,3 +2293,5 @@ class CourseActivityStatsTest(
             self.course_key, username_search_string, 1, 1
         )
         assert response == (username_search_string.lower(), 1, 1)
+=======
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724

@@ -4,14 +4,13 @@ Grading tests
 
 
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytest
 import ddt
-from pytz import UTC
 
 from lms.djangoapps.grades.scores import compute_percent
 from xmodule import graders
-from xmodule.graders import AggregatedScore, ProblemScore, ShowCorrectness, aggregate_scores
+from xmodule.graders import AggregatedScore, ProblemScore, aggregate_scores
 
 
 class GradesheetTest(unittest.TestCase):
@@ -415,6 +414,7 @@ class GraderTest(unittest.TestCase):
 
         for i, section_breakdown in enumerate(graded['section_breakdown']):
             assert expected_sequential_ids[i] == section_breakdown.get('sequential_id')
+<<<<<<< HEAD
 
 
 @ddt.ddt
@@ -501,3 +501,5 @@ class ShowCorrectnessTest(unittest.TestCase):
         """
         assert not ShowCorrectness.correctness_available(show_correctness=ShowCorrectness.NEVER_BUT_INCLUDE_GRADE,
                                                          has_staff_access=has_staff_access)
+=======
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724

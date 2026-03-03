@@ -6,6 +6,7 @@ import unittest
 from datetime import datetime, timedelta
 import sys
 from unittest.mock import Mock, patch
+from zoneinfo import ZoneInfo
 
 import ddt
 from dateutil import parser
@@ -14,22 +15,21 @@ from django.test import override_settings
 from fs.memoryfs import MemoryFS
 from opaque_keys.edx.keys import CourseKey
 import pytest
-from pytz import utc
 from xblock.runtime import DictKeyValueStore, KvsFieldData
 
 from openedx.core.lib.teams_config import TeamsConfig, DEFAULT_COURSE_RUN_MAX_TEAM_SIZE
 import xmodule.course_block
 from xmodule.course_metadata_utils import DEFAULT_START_DATE
 from xmodule.data import CertificatesDisplayBehaviors
-from xmodule.modulestore.xml import ImportSystem, XMLModuleStore
+from xmodule.modulestore.xml import XMLImportingModuleStoreRuntime, XMLModuleStore
 from xmodule.modulestore.exceptions import InvalidProctoringProvider
 
 ORG = 'test_org'
 COURSE = 'test_course'
 
-NOW = datetime.strptime('2013-01-01T01:00:00', '%Y-%m-%dT%H:%M:00').replace(tzinfo=utc)
+NOW = datetime.strptime('2013-01-01T01:00:00', '%Y-%m-%dT%H:%M:00').replace(tzinfo=ZoneInfo("UTC"))
 
-_TODAY = datetime.now(utc)
+_TODAY = datetime.now(ZoneInfo("UTC"))
 _LAST_WEEK = _TODAY - timedelta(days=7)
 _NEXT_WEEK = _TODAY + timedelta(days=7)
 
@@ -52,7 +52,10 @@ class CourseFieldsTestCase(unittest.TestCase):  # lint-amnesty, pylint: disable=
             assert xmodule.course_block.CourseFields.enrollment_start.default == expected
 
 
-class DummySystem(ImportSystem):  # lint-amnesty, pylint: disable=abstract-method, missing-class-docstring
+class DummyModuleStoreRuntime(XMLImportingModuleStoreRuntime):  # pylint: disable=abstract-method
+    """
+    Minimal modulestore runtime for tests.
+    """
     @patch('xmodule.modulestore.xml.OSFS', lambda dir: MemoryFS())
     def __init__(self, load_error_blocks, course_id=None):
 
@@ -83,7 +86,7 @@ def get_dummy_course(
 ):
     """Get a dummy course"""
 
-    system = DummySystem(load_error_blocks=True)
+    system = DummyModuleStoreRuntime(load_error_blocks=True)
 
     def to_attrb(n, v):
         return '' if v is None else f'{n}="{v}"'.lower()
@@ -126,7 +129,7 @@ class HasEndedMayCertifyTestCase(unittest.TestCase):
     def setUp(self):
         super().setUp()
 
-        system = DummySystem(load_error_blocks=True)  # lint-amnesty, pylint: disable=unused-variable
+        system = DummyModuleStoreRuntime(load_error_blocks=True)  # lint-amnesty, pylint: disable=unused-variable
 
         past_end = (datetime.now() - timedelta(days=12)).strftime("%Y-%m-%dT%H:%M:00")
         future_end = (datetime.now() + timedelta(days=12)).strftime("%Y-%m-%dT%H:%M:00")

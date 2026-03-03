@@ -9,9 +9,7 @@ import logging
 import random
 import sys
 from collections import OrderedDict
-from datetime import datetime
 
-from pytz import UTC
 from django.utils.translation import gettext_lazy as _
 
 from xmodule.util.misc import get_short_labeler
@@ -471,6 +469,7 @@ def _min_or_none(itr):
         return min(itr)
     except ValueError:
         return None
+<<<<<<< HEAD
 
 
 class ShowCorrectness:
@@ -505,3 +504,5 @@ class ShowCorrectness:
 
         # else: show_correctness == cls.ALWAYS
         return True
+=======
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724

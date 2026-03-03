@@ -92,12 +92,14 @@ from xmodule.modulestore.exceptions import DuplicateCourseError, InvalidProctori
 from xmodule.modulestore.xml_exporter import export_course_to_xml, export_library_to_xml
 from xmodule.modulestore.xml_importer import CourseImportException, import_course_from_xml, import_library_from_xml
 from xmodule.tabs import StaticTab
+from xmodule.util.keys import BlockKey
 
 from .models import ComponentLink, ContainerLink, LearningContextLinksStatus, LearningContextLinksStatusChoices
 from .outlines import update_outline_from_modulestore
 from .outlines_regenerate import CourseOutlineRegenerate
 from .toggles import bypass_olx_failure_enabled
 from .utils import course_import_olx_validation_is_enabled
+from .api import get_ready_to_migrate_legacy_library_content_blocks
 
 User = get_user_model()
 
@@ -944,17 +946,6 @@ def copy_v1_user_roles_into_v2_library(v2_library_key, v1_library_key):
             v2contentlib_api.set_library_user_permissions(v2_library_key, user, access_level)
 
 
-def _create_copy_content_task(v2_library_key, v1_library_key):
-    """
-    spin up a celery task to import the V1 Library's content into the V2 library.
-    This utilizes the fact that course and v1 library content is stored almost identically.
-    """
-    return v2contentlib_api.import_blocks_create_task(
-        v2_library_key, v1_library_key,
-        use_course_key_as_block_id_suffix=False
-    )
-
-
 @shared_task(time_limit=30)
 @set_code_owner_attribute
 def delete_v1_library(v1_library_key_string):
@@ -1649,10 +1640,11 @@ def handle_create_xblock_upstream_link(usage_key):
     if not xblock.upstream or not xblock.upstream_version:
         return
     if xblock.top_level_downstream_parent_key is not None:
+        block_key = BlockKey.from_string(xblock.top_level_downstream_parent_key)
         top_level_parent_usage_key = BlockUsageLocator(
             xblock.course_id,
-            xblock.top_level_downstream_parent_key.get('type'),
-            xblock.top_level_downstream_parent_key.get('id'),
+            block_key.type,
+            block_key.id,
         )
         try:
             ContainerLink.get_by_downstream_usage_key(top_level_parent_usage_key)
@@ -1675,7 +1667,7 @@ def handle_update_xblock_upstream_link(usage_key):
     except (ItemNotFoundError, InvalidKeyError):
         LOGGER.exception(f'Could not find item for given usage_key: {usage_key}')
         return
-    if not xblock.upstream or not xblock.upstream_version:
+    if not xblock.upstream or xblock.upstream_version is None:
         return
     create_or_update_xblock_upstream_link(xblock)
 
@@ -2297,3 +2289,71 @@ def _update_result_applies_to_block(result_entry, block_id):
         return block_category == result_type
     except Exception:  # pylint: disable=broad-except
         return False
+
+
+class LegacyLibraryContentToItemBank(UserTask):  # pylint: disable=abstract-method
+    """
+    Base class for course and library export tasks.
+    """
+
+    @classmethod
+    def generate_name(cls, arguments_dict):
+        """
+        Create a name for this particular import task instance.
+
+        Arguments:
+            arguments_dict (dict): The arguments given to the task function
+
+        Returns:
+            str: The generated name
+        """
+        key = arguments_dict['course_key']
+        return f'Updating legacy library content blocks references of {key}'
+
+
+def _cancel_old_tasks(course_key: str, user: User, ignore_task_ids: list[str]):
+    """
+    Cancel all old instances of this particular migration task.
+    """
+    task_name = LegacyLibraryContentToItemBank.generate_name({'course_key': course_key})
+    tasks_to_cancel = UserTaskStatus.objects.filter(
+        user=user,
+        name=task_name,
+    ).exclude(
+        # (excluding that aren't running)
+        state__in=(UserTaskStatus.CANCELED, UserTaskStatus.FAILED, UserTaskStatus.SUCCEEDED)
+    ).exclude(
+        task_id__in=ignore_task_ids
+    )
+    for task in tasks_to_cancel:
+        task.cancel()
+
+
+@shared_task(base=LegacyLibraryContentToItemBank, bind=True)
+def migrate_course_legacy_library_blocks_to_item_bank(self, user_id: int, course_key: str):
+    """
+    Migrate legacy course library blocks to Item Bank.
+
+    Depending on the number of blocks and its children blocks this operation can take a significant
+    amount of time and this is why it is run as a celery task.
+    """
+    ensure_cms("Legacy library content references may only be executed in CMS")
+    set_code_owner_attribute_from_module(__name__)
+    _cancel_old_tasks(course_key, self.status.user, [self.status.task_id])
+    try:
+        key = CourseKey.from_string(course_key)
+    except InvalidKeyError as exc:
+        LOGGER.exception(f'Invalid course key: {course_key}')
+        self.status.fail(str(exc))
+        return
+    self.status.set_state(UserTaskStatus.IN_PROGRESS)
+    blocks = get_ready_to_migrate_legacy_library_content_blocks(key)
+    store = modulestore()
+    try:
+        with store.bulk_operations(key):
+            for block in blocks:
+                self.status.set_state(f'Migrating block: {block.usage_key}')
+                block.v2_update_children_upstream_version(user_id)
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception(f'Error while migrating blocks: {exc}')
+        self.status.fail(str(exc))

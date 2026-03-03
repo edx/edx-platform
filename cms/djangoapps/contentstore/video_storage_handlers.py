@@ -13,6 +13,7 @@ import requests
 import shutil
 import pathlib
 import zipfile
+<<<<<<< HEAD
 from contextlib import closing
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -20,6 +21,13 @@ from uuid import uuid4
 import boto3
 from boto.s3.connection import S3Connection
 from boto import s3
+=======
+import boto3
+
+from contextlib import closing
+from datetime import datetime, timedelta
+from uuid import uuid4
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 from django.conf import settings
 from django.contrib.staticfiles.storage import staticfiles_storage
 from django.http import FileResponse, HttpResponseNotFound, StreamingHttpResponse
@@ -844,8 +852,12 @@ def videos_post(course, request):
             return {'error': error_msg}, 400
 
         edx_video_id = str(uuid4())
+<<<<<<< HEAD
         if not UPLOAD_VIA_BOTO3.is_enabled():
             key = storage_service_key(bucket, file_name=edx_video_id)
+=======
+        key_name = storage_service_key(bucket, file_name=edx_video_id)
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 
         metadata_list = [
             ('client_video_id', file_name),
@@ -865,6 +877,7 @@ def videos_post(course, request):
             if transcript_preferences is not None:
                 metadata_list.append(('transcript_preferences', json.dumps(transcript_preferences)))
 
+<<<<<<< HEAD
         if UPLOAD_VIA_BOTO3.is_enabled():
             upload_url = s3_client.generate_presigned_url(
                 ClientMethod='put_object',
@@ -884,6 +897,23 @@ def videos_post(course, request):
                 'PUT',
                 headers={'Content-Type': req_file['content_type']}
             )
+=======
+        # Prepare metadata for presigned URL
+        metadata = dict(metadata_list)
+
+        # Generate presigned URL using boto3
+        s3_client = bucket.meta.client
+        upload_url = s3_client.generate_presigned_url(
+            'put_object',
+            Params={
+                'Bucket': bucket.name,
+                'Key': key_name,
+                'ContentType': req_file['content_type'],
+                'Metadata': metadata
+            },
+            ExpiresIn=KEY_EXPIRATION_IN_SECONDS
+        )
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 
         # persist edx_video_id in VAL
         create_video({
@@ -926,8 +956,9 @@ def storage_service_bucket():
             'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY
         }
 
-    conn = S3Connection(**params)
+    conn = boto3.resource("s3", **params)
 
+<<<<<<< HEAD
     # We don't need to validate our bucket, it requires a very permissive IAM permission
     # set since behind the scenes it fires a HEAD request that is equivalent to get_all_keys()
     # meaning it would need ListObjects on the whole bucket, not just the path used in each
@@ -943,16 +974,28 @@ def storage_service_key_name(file_name):
         settings.VIDEO_UPLOAD_PIPELINE.get("ROOT_PATH", ""),
         file_name
     )
+=======
+    return conn.Bucket(settings.VIDEO_UPLOAD_PIPELINE['VEM_S3_BUCKET'])
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 
 
 def storage_service_key(bucket, file_name):
     """
+<<<<<<< HEAD
     Returns an S3 key to the given file in the given bucket.
 
     This is used in the deprecated boto v1 pathway. See `UPLOAD_VIA_BOTO3`.
     """
     key_name = storage_service_key_name(file_name)
     return s3.key.Key(bucket, key_name)
+=======
+    Returns an S3 key name for the given file in the given bucket.
+    """
+    return "{}/{}".format(
+        settings.VIDEO_UPLOAD_PIPELINE.get("ROOT_PATH", ""),
+        file_name
+    )
+>>>>>>> 328b3ee3fa00c507e25aec72b0e8a34195d54724
 
 
 def send_video_status_update(updates):
