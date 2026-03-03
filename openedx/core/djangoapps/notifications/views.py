@@ -5,7 +5,9 @@ import logging
 from datetime import datetime, timedelta
 
 from django.conf import settings
+from django.core.exceptions import BadRequest
 from django.db.models import Count
+from django.http import Http404
 from django_ratelimit.core import is_ratelimited
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
@@ -16,6 +18,7 @@ from rest_framework.generics import UpdateAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from lms.djangoapps.discussion.notification_prefs.views import UsernameDecryptionException
 from openedx.core.djangoapps.notifications.email.utils import (
     update_user_preferences_from_patch,
     username_from_hash
@@ -394,8 +397,7 @@ def preference_update_from_encrypted_username_view(request, username, patch=""):
         increment=True,
     ):
         logger.warning(
-            "Rate limit exceeded for username hash: %s",
-            username,
+            "Rate limit exceeded for one-click unsubscribe request"
         )
         return Response(
             {"error": "Too many requests"},
@@ -405,19 +407,33 @@ def preference_update_from_encrypted_username_view(request, username, patch=""):
     try:
         update_user_preferences_from_patch(username)
         logger.info(
-            "Updated preferences for encrypted username: %s",
-            username,
+            "Updated preferences from one-click unsubscribe request"
         )
         return Response({"result": "success"}, status=status.HTTP_200_OK)
-    except ValueError as exc:
-        logger.error(
-            "Failed to update preferences for encrypted username %s: %s",
-            username,
+    except UsernameDecryptionException:
+        logger.warning(
+            "Invalid encrypted username token in one-click unsubscribe request"
+        )
+        return Response(
+            {"error": "Invalid token"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except Http404:
+        logger.warning(
+            "User not found for one-click unsubscribe request"
+        )
+        return Response(
+            {"error": "User not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    except BadRequest as exc:
+        logger.warning(
+            "Bad request in one-click unsubscribe: %s",
             str(exc),
         )
         return Response(
-            {"error": "Failed to update preferences"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            {"error": "Bad request"},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
 
