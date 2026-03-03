@@ -389,13 +389,24 @@ def preference_update_from_encrypted_username_view(request, username, patch=""):
     Used by one-click unsubscribe links. Rate limited using
     ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT.
     """
-    if is_ratelimited(
-        request=request,
-        group="unsubscribe",
-        key=username_from_hash,
-        rate=settings.ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT,
-        increment=True,
-    ):
+    try:
+        is_rate_limited = is_ratelimited(
+            request=request,
+            group="unsubscribe",
+            key=username_from_hash,
+            rate=settings.ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT,
+            increment=True,
+        )
+    except BadRequest:
+        logger.warning(
+            "Invalid encrypted username token in one-click unsubscribe request"
+        )
+        return Response(
+            {"error": "Invalid token"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if is_rate_limited:
         logger.warning(
             "Rate limit exceeded for one-click unsubscribe request"
         )
