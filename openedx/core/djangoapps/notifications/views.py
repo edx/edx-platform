@@ -200,10 +200,10 @@ class NotificationCountView(APIView):
                 "count_by_app_name": count_by_app_name_dict,
                 "notification_expiry_days": settings.NOTIFICATIONS_EXPIRY,
             })
-        except (Notification.DoesNotExist, AttributeError) as exc:
+        except (AttributeError, TypeError) as exc:
             logger.error(
                 'Failed to retrieve notification count for user %s: %s',
-                request.user.id,
+                getattr(request.user, 'id', None),
                 str(exc),
             )
             return Response(
@@ -260,7 +260,7 @@ class MarkNotificationsSeenAPIView(UpdateAPIView):
         except (Notification.DoesNotExist, AttributeError, TypeError) as exc:
             logger.error(
                 'Failed to mark notifications seen for user %s: %s',
-                request.user.id,
+                getattr(request.user, 'id', None),
                 str(exc),
             )
             return Response(
@@ -370,10 +370,10 @@ class NotificationReadAPIView(APIView):
                 {'error': _('Invalid app_name or notification_id.')},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except (Notification.DoesNotExist, AttributeError, TypeError) as exc:
+        except (AttributeError, TypeError) as exc:
             logger.error(
                 'Failed to mark notification as read for user %s: %s',
-                request.user.id,
+                getattr(request.user, 'id', None),
                 str(exc),
             )
             return Response(
@@ -547,7 +547,7 @@ class NotificationPreferencesView(APIView):
         except (NotificationPreference.DoesNotExist, KeyError, AttributeError, TypeError) as exc:
             logger.error(
                 'Failed to retrieve notification preferences for user %s: %s',
-                request.user.id,
+                getattr(request.user, 'id', None),
                 str(exc),
             )
             return Response({
@@ -619,7 +619,7 @@ class NotificationPreferencesView(APIView):
         except (NotificationPreference.DoesNotExist, KeyError, AttributeError, TypeError) as exc:
             logger.error(
                 'Failed to update notification preferences for user %s: %s',
-                request.user.id,
+                getattr(request.user, 'id', None),
                 str(exc),
             )
             return Response({
