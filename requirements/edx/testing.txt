@@ -29,6 +29,8 @@ aniso8601==10.0.1
     #   -r requirements/edx/base.txt
     #   edx-tincan-py35
     #   tincan
+annotated-doc==0.0.4
+    # via fastapi
 annotated-types==0.7.0
     # via
     #   -r requirements/edx/base.txt

@@ -581,6 +581,8 @@ def get_user_learner_status(user, course_id):
     # Engagement-based learner type
     has_engagement = _check_user_engagement(user, course_id)
     return "regular" if has_engagement else "new"
+
+
 def send_signal_after_commit(signal_func: Callable):
     """
     Schedule a signal to be sent after the current database transaction commits.

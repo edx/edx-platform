@@ -8,7 +8,7 @@
 
 import _ from 'underscore';
 import HTML5Video from './02_html5_video.js';
-import HLS from 'hls';
+import HLS from 'hls.js';
 
 let HLSVideo = {};
 

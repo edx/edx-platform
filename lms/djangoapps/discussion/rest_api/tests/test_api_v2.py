@@ -17,6 +17,7 @@ import httpretty
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.test import override_settings
 from django.test.client import RequestFactory
 from opaque_keys.edx.locator import CourseLocator
 from pytz import UTC

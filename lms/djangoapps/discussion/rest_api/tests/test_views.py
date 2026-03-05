@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 
 import ddt
 from django.urls import reverse
+from django.test import override_settings
 from pytz import UTC
 from rest_framework import status
 
@@ -32,7 +33,7 @@ from common.djangoapps.student.tests.factories import (
     UserFactory,
 )
 from common.djangoapps.util.testing import UrlResetMixin
-from lms.djangoapps.discussion.rest_api.tests.utils import (
+from lms.djangoapps.discussion.django_comment_client.tests.utils import (\n    CommentsServiceMockMixin,\n    ForumsEnableMixin,\n)\nfrom lms.djangoapps.discussion.rest_api.tests.utils import (
     ForumMockUtilsMixin,
     make_minimal_cs_comment,
     make_minimal_cs_thread,
