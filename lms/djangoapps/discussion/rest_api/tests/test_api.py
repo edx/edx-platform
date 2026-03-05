@@ -27,7 +27,6 @@ from lms.djangoapps.discussion.rest_api.api import (
     create_comment,
     create_thread,
     get_course,
-    get_course_topics,
     get_user_comments,
 )
 from lms.djangoapps.discussion.rest_api.exceptions import (
@@ -38,8 +37,7 @@ from lms.djangoapps.discussion.rest_api.tests.utils import (
     ForumMockUtilsMixin,
     make_minimal_cs_comment,
 )
-from openedx.core.djangoapps.course_groups.models import CourseUserGroupPartitionGroup
-from openedx.core.djangoapps.course_groups.tests.helpers import CohortFactory
+
 from openedx.core.djangoapps.django_comment_common.models import (
     FORUM_ROLE_ADMINISTRATOR,
     FORUM_ROLE_COMMUNITY_TA,

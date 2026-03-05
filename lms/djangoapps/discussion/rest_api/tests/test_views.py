@@ -89,12 +89,10 @@ from openedx.core.djangoapps.django_comment_common.comment_client.utils import (
 from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.tests.django_utils import (
-    ModuleStoreTestCase,
     SharedModuleStoreTestCase,
 )
 from xmodule.modulestore.tests.factories import (
     BlockFactory,
-    CourseFactory,
     check_mongo_calls,
 )
 

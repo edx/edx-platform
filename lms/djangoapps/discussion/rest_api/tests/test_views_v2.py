@@ -30,8 +30,6 @@ from common.djangoapps.student.tests.factories import (
 )
 from common.djangoapps.util.testing import PatchMediaTypeMixin, UrlResetMixin
 from common.test.utils import disable_signal
-from forum.backends.mongodb.comments import Comment
-from forum.backends.mongodb.threads import CommentThread
 
 from lms.djangoapps.discussion.django_comment_client.tests.utils import (
     config_course_discussions,
@@ -47,10 +45,6 @@ from lms.djangoapps.discussion.rest_api.tests.utils import (
     make_minimal_cs_thread,
 )
 from openedx.core.djangoapps.django_comment_common.models import (
-    FORUM_ROLE_ADMINISTRATOR,
-    FORUM_ROLE_COMMUNITY_TA,
-    FORUM_ROLE_MODERATOR,
-    FORUM_ROLE_STUDENT,
     assign_role,
 )
 from openedx.core.djangoapps.user_api.accounts.image_helpers import (
@@ -67,14 +61,12 @@ from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.student.tests.factories import (
     AdminFactory,
-    CourseEnrollmentFactory,
-    SuperuserFactory,
-    UserFactory
+    BetaTesterFactory,
+    StaffFactory,
+    SuperuserFactory
 )
 from common.djangoapps.student.models import get_retired_username_by_username, CourseEnrollment
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole, GlobalStaff
-from common.djangoapps.util.testing import PatchMediaTypeMixin, UrlResetMixin
-from common.test.utils import disable_signal
 
 from openedx.core.djangoapps.course_groups.tests.helpers import config_course_cohorts
 from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration, DiscussionTopicLink, Provider
@@ -87,7 +79,7 @@ from openedx.core.djangoapps.django_comment_common.models import (
 )
 from openedx.core.djangoapps.django_comment_common.utils import seed_permissions_roles
 from openedx.core.djangoapps.discussions.config.waffle import ENABLE_NEW_STRUCTURE_DISCUSSIONS
-from openedx.core.djangoapps.user_api.accounts.image_helpers import get_profile_image_storage
+
 
 
 class DiscussionAPIViewTestMixin(ForumMockUtilsMixin, UrlResetMixin):
@@ -1161,7 +1153,7 @@ class ReplaceUsernamesViewTest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         thread_mock, comment_mock = self.mock_comment_and_thread_count(
             comment_count=1, thread_count=1
         )
-        assign_role(self.course.id, self.user, role)
+        assign_role(self.course.id, self.user, "Moderator")
         response = self.client.post(
             f"{self.url}?username={self.user2.username}",
             format="json",
