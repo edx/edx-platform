@@ -2,7 +2,7 @@
 import HTML5Video from './02_html5_video.js';
 import HTML5HLSVideo from './02_html5_hls_video.js';
 import Resizer from './00_resizer.js';
-import HLS from 'hls';
+import HLS from 'hls.js';
 import _ from 'underscore';
 import * as Time from './utils/time.js';
 

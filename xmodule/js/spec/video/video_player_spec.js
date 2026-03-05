@@ -1,7 +1,7 @@
 /* global YT */
 
 import VideoPlayer from "../../../assets/video/public/js/03_video_player.js";
-import HLS from 'hls';
+import Hls from 'hls.js';
 import _ from 'underscore';
 
 (function() {

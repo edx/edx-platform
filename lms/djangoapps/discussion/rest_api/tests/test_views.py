@@ -8,11 +8,13 @@ from unittest import mock
 from urllib.parse import urlencode
 
 import ddt
+import httpretty
 from django.urls import reverse
 from django.test import override_settings
+from edx_toggles.toggles.testutils import override_waffle_flag
 from pytz import UTC
 from rest_framework import status
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APITestCase
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
