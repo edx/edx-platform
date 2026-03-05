@@ -33,7 +33,9 @@ from common.djangoapps.student.tests.factories import (
     UserFactory,
 )
 from common.djangoapps.util.testing import UrlResetMixin
-from lms.djangoapps.discussion.django_comment_client.tests.utils import (\n    CommentsServiceMockMixin,\n    ForumsEnableMixin,\n)\nfrom lms.djangoapps.discussion.rest_api.tests.utils import (
+
+from lms.djangoapps.discussion.rest_api.tests.utils import (
+    CommentsServiceMockMixin,
     ForumMockUtilsMixin,
     make_minimal_cs_comment,
     make_minimal_cs_thread,
@@ -87,7 +89,7 @@ from xmodule.modulestore.tests.factories import (
 
 
 class DiscussionAPIViewTestMixin(
-    ForumsEnableMixin, CommentsServiceMockMixin, UrlResetMixin
+    CommentsServiceMockMixin, UrlResetMixin
 ):
     """
     Mixin for common code in tests of Discussion API views. This includes
@@ -182,7 +184,7 @@ class DiscussionAPIViewTestMixin(
 
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class UploadFileViewTest(
-    ForumsEnableMixin, CommentsServiceMockMixin, UrlResetMixin, ModuleStoreTestCase
+    CommentsServiceMockMixin, UrlResetMixin, ModuleStoreTestCase
 ):
     """
     Tests for UploadFileView.
@@ -2077,7 +2079,6 @@ class CourseDiscussionRolesAPIViewTest(APITestCase, UrlResetMixin, ModuleStoreTe
 @httpretty.activate
 @override_waffle_flag(ENABLE_DISCUSSIONS_MFE, True)
 class CourseActivityStatsTest(
-    ForumsEnableMixin,
     UrlResetMixin,
     CommentsServiceMockMixin,
     APITestCase,

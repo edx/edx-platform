@@ -32,9 +32,7 @@ from common.djangoapps.util.testing import PatchMediaTypeMixin, UrlResetMixin
 from common.test.utils import disable_signal
 from forum.backends.mongodb.comments import Comment
 from forum.backends.mongodb.threads import CommentThread
-from lms.djangoapps.discussion.django_comment_client.tests.utils import (
-    ForumsEnableMixin,
-)
+
 from lms.djangoapps.discussion.django_comment_client.tests.utils import (
     config_course_discussions,
     topic_name_to_id,

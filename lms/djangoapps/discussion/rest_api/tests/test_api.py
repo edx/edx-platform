@@ -19,7 +19,7 @@ from common.djangoapps.student.tests.factories import (
     UserFactory
 )
 from common.djangoapps.util.testing import UrlResetMixin
-from lms.djangoapps.discussion.django_comment_client.tests.utils import ForumsEnableMixin
+
 from lms.djangoapps.discussion.rest_api.api import (
     create_comment,
     create_thread,
@@ -93,7 +93,7 @@ def _assign_role_to_user(user, course_id, role):
 @override_settings(DISCUSSION_MODERATION_EDIT_REASON_CODES={"test-edit-reason": "Test Edit Reason"})
 @override_settings(DISCUSSION_MODERATION_CLOSE_REASON_CODES={"test-close-reason": "Test Close Reason"})
 @ddt.ddt
-class GetCourseTest(ForumsEnableMixin, UrlResetMixin, SharedModuleStoreTestCase):
+class GetCourseTest(UrlResetMixin, SharedModuleStoreTestCase):
     """Test for get_course"""
     @classmethod
     def setUpClass(cls):
