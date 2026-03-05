@@ -81,7 +81,6 @@ from openedx.core.djangoapps.django_comment_common.utils import seed_permissions
 from openedx.core.djangoapps.discussions.config.waffle import ENABLE_NEW_STRUCTURE_DISCUSSIONS
 
 
-
 class DiscussionAPIViewTestMixin(ForumMockUtilsMixin, UrlResetMixin):
     """
     Mixin for common code in tests of Discussion API views. This includes
