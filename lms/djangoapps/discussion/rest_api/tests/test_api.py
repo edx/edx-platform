@@ -11,11 +11,14 @@ from django.test import override_settings
 from django.contrib.auth import get_user_model
 from django.test.client import RequestFactory
 from opaque_keys.edx.keys import CourseKey
+from opaque_keys.edx.locator import CourseLocator
 
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
+from xmodule.modulestore.django import modulestore
 
 from common.djangoapps.student.tests.factories import (
+    CourseEnrollmentFactory,
     UserFactory
 )
 from common.djangoapps.util.testing import UrlResetMixin

@@ -3,15 +3,18 @@ Tests for Discussion API views
 """
 
 import json
+import random
 from datetime import datetime
 from unittest import mock
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
 
 import ddt
 import httpretty
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.test import override_settings
 from edx_toggles.toggles.testutils import override_waffle_flag
+from opaque_keys.edx.keys import CourseKey
 from pytz import UTC
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
@@ -31,12 +34,17 @@ from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
 
 from common.djangoapps.student.tests.factories import (
+    AdminFactory,
     CourseEnrollmentFactory,
     SuperuserFactory,
     UserFactory,
 )
 from common.djangoapps.util.testing import UrlResetMixin
 
+from lms.djangoapps.discussion.django_comment_client.tests.utils import (
+    config_course_discussions,
+    topic_name_to_id,
+)
 from lms.djangoapps.discussion.rest_api.tests.utils import (
     CommentsServiceMockMixin,
     ForumMockUtilsMixin,

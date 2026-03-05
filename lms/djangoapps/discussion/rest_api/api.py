@@ -147,7 +147,6 @@ from .utils import (
     send_signal_after_commit,
     set_attribute,
     is_posting_allowed,
-    set_attribute,
 )
 
 log = logging.getLogger(__name__)

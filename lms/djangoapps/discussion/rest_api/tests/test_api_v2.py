@@ -11,6 +11,7 @@ import itertools
 import random
 from datetime import datetime, timedelta
 from unittest import mock
+from urllib.parse import urlencode, urlunparse
 
 import ddt
 import httpretty
@@ -23,9 +24,13 @@ from opaque_keys.edx.locator import CourseLocator
 from pytz import UTC
 from rest_framework.exceptions import PermissionDenied
 
+from xmodule.partitions.partitions import Group, UserPartition
+
 from common.djangoapps.student.tests.factories import (
     AdminFactory,
+    BetaTesterFactory,
     CourseEnrollmentFactory,
+    StaffFactory,
     UserFactory,
 )
 from common.djangoapps.util.testing import UrlResetMixin
@@ -41,6 +46,8 @@ from lms.djangoapps.discussion.rest_api.api import (
     delete_comment,
     delete_thread,
     get_comment_list,
+    get_course,
+    get_course_topics,
     get_course_topics_v2,
     get_thread,
     get_thread_list,
@@ -58,10 +65,7 @@ from lms.djangoapps.discussion.rest_api.tests.utils import (
     ForumMockUtilsMixin,
     make_paginated_api_response,
 )
-from lms.djangoapps.discussion.tests.utils import (
-    make_minimal_cs_comment,
-    make_minimal_cs_thread,
-)
+from openedx.core.djangoapps.course_groups.models import CourseUserGroupPartitionGroup
 from openedx.core.djangoapps.course_groups.tests.helpers import CohortFactory
 from openedx.core.djangoapps.discussions.models import (
     DiscussionsConfiguration,

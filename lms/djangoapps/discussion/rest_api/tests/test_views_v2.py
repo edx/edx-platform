@@ -1078,23 +1078,6 @@ class BulkDeleteUserPostsTest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         """
         Authenticates the test client with the example user.
         """
-        thread_collection = mock.MagicMock()
-        thread_collection.count_documents.return_value = thread_count
-        patch_thread = mock.patch.object(
-            CommentThread,
-            "_collection",
-            new_callable=mock.PropertyMock,
-            return_value=thread_collection,
-        )
-
-        comment_collection = mock.MagicMock()
-        comment_collection.count_documents.return_value = comment_count
-        patch_comment = mock.patch.object(
-            Comment,
-            "_collection",
-            new_callable=mock.PropertyMock,
-            return_value=comment_collection,
-        )
         self.client.login(username=self.user.username, password=self.TEST_PASSWORD)
 
 
