@@ -3,7 +3,6 @@
 
 import logging
 import time
-import typing as t
 
 from django.core.exceptions import ObjectDoesNotExist
 from eventtracking import tracker
@@ -282,7 +281,7 @@ class Thread(models.Model):
     @classmethod
     def get_user_threads_count(cls, user_id, course_ids):
         """
-        Returns threads and responses count of user in the given course_ids.
+        Returns threads count of user in the given course_ids.
         TODO: Add support for MySQL backend as well
         """
         query_params = {
@@ -428,42 +427,18 @@ class Thread(models.Model):
         )
 
 
-def _url_for_flag_abuse_thread(thread_id):
-    return f"{settings.PREFIX}/threads/{thread_id}/abuse_flag"
-
-
-def _url_for_unflag_abuse_thread(thread_id):
-    return f"{settings.PREFIX}/threads/{thread_id}/abuse_unflag"
-
-
-def _url_for_pin_thread(thread_id):
-    return f"{settings.PREFIX}/threads/{thread_id}/pin"
-
-
-def _url_for_un_pin_thread(thread_id):
-    return f"{settings.PREFIX}/threads/{thread_id}/unpin"
-
-
-def is_forum_v2_enabled_for_thread(thread_id: str) -> tuple[bool, t.Optional[str]]:
-    """
-    Figure out whether we use forum v2 for a given thread.
-
-    This is a complex affair... First, we check the value of the DISABLE_FORUM_V2
-    setting, which overrides everything. If this setting does not exist, then we need to
-    find the course ID that corresponds to the thread ID. Then, we return the value of
-    the course waffle flag for this course ID.
-
-    Note that to fetch the course ID associated to a thread ID, we need to connect both
-    to mongodb and mysql. As a consequence, when forum v2 needs adequate connection
-    strings for both backends.
-
-    Return:
-
-        enabled (bool)
-        course_id (str or None)
-    """
-    if is_forum_v2_disabled_globally():
-        return False, None
-    course_id = forum_api.get_course_id_by_thread(thread_id)
-    course_key = utils.get_course_key(course_id)
-    return is_forum_v2_enabled(course_key), course_id
+def _clean_forum_params(params):
+    """Convert string booleans to actual booleans and remove None values from forum parameters."""
+    result = {}
+    for k, v in params.items():
+        if v is not None:
+            if isinstance(v, str):
+                if v.lower() == 'true':
+                    result[k] = True
+                elif v.lower() == 'false':
+                    result[k] = False
+                else:
+                    result[k] = v
+            else:
+                result[k] = v
+    return result
