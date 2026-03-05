@@ -3,13 +3,14 @@ Utils for discussion API.
 """
 import logging
 from datetime import datetime
-from typing import Dict, List
+from typing import Callable, Dict, List
 
 import requests
 from crum import get_current_request
 from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models.functions import Length
 from pytz import UTC
 
@@ -499,84 +500,22 @@ def get_captcha_site_key_by_platform(platform: str) -> str | None:
     return settings.RECAPTCHA_SITE_KEYS.get(platform, None)
 
 
-def _is_privileged_user(user, course_id):
+def send_signal_after_commit(signal_func: Callable):
     """
-    Check if a user has privileged roles (staff, moderator, TA, etc.) in the course.
+    Schedule a signal to be sent after the current database transaction commits.
 
-    This helper function checks both forum roles and course access roles to determine
-    if a user should be considered privileged.
+    This helper ensures that signals are only sent after the transaction commits,
+    preventing race conditions where async tasks (like Celery workers) may try to
+    access database records before they are visible (especially important for MySQL
+    backend with transaction isolation).
 
     Args:
-        user: User object to check
-        course_id: Course key to check roles in
+        signal_func: A callable that sends the signal. This will be executed
+                     after the transaction commits.
 
-    Returns:
-        bool: True if user has any privileged role, False otherwise
-    """
-    # Check forum-specific privileged roles
-    user_roles = get_user_role_names(user, course_id)
-    privileged_roles = {
-        FORUM_ROLE_ADMINISTRATOR,
-        FORUM_ROLE_MODERATOR,
-        FORUM_ROLE_COMMUNITY_TA,
-        FORUM_ROLE_GROUP_MODERATOR
-    }
-
-    if any(role in privileged_roles for role in user_roles):
-        return True
-
-    # Check for staff roles using CourseAccessRole
-    # Include limited_staff for consistency with is_only_student check
-    return CourseAccessRole.objects.filter(
-        user=user,
-        course_id=course_id,
-        role__in=['instructor', 'staff', 'limited_staff']
-    ).exists()
-
-
-def _check_user_engagement(user, course_id):
-    """
-    Returns True if the user shows meaningful engagement:
-      - Completed ≥ 2 blocks, or
-      - Completed at least 1 video or 1 problem.
-    """
-    try:
-        completed = BlockCompletion.objects.filter(
-            user=user, context_key=course_id, completion=1.0
+    Example:
+        send_signal_after_commit(
+            lambda: thread_created.send(sender=None, user=user, post=thread, notify_all_learners=False)
         )
-        return (
-            completed.count() >= 2
-            or completed.filter(block_type__in=["video", "problem"]).exists()
-        )
-    except (AttributeError, TypeError, ValueError):
-        return False
-
-
-def get_user_learner_status(user, course_id):
     """
-    Determine a user's learner status in the given course.
-
-    Possible return values:
-        - "anonymous"  → User not logged in
-        - "staff"      → Staff/moderator/TA
-        - "new"        → Enrolled but no engagement
-        - "regular"    → Enrolled and has engaged with course content
-
-    Args:
-        user (User): Django user object
-        course_id (CourseKey): Course key to check engagement in
-
-    Returns:
-        str: One of ["anonymous", "staff", "new", "regular"]
-    """
-    # Anonymous user
-    if not user or not user.is_authenticated:
-        return "anonymous"
-
-    # Privileged user (staff/moderator/TA)
-    if _is_privileged_user(user, course_id):
-        return "staff"
-
-    # Engagement-based learner type
-    has_engagement = _check_user_engagement(user, course_id)
-    return "regular" if has_engagement else "new"
+    transaction.on_commit(signal_func)

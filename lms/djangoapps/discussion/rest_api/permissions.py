@@ -20,7 +20,7 @@ from lms.djangoapps.discussion.django_comment_client.utils import (
 from openedx.core.djangoapps.django_comment_common.comment_client.comment import Comment
 from openedx.core.djangoapps.django_comment_common.comment_client.thread import Thread
 from openedx.core.djangoapps.django_comment_common.models import (
-    Role, FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_COMMUNITY_TA, FORUM_ROLE_MODERATOR
+    FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_COMMUNITY_TA, FORUM_ROLE_MODERATOR
 )
 
 
@@ -206,32 +206,7 @@ def can_take_action_on_spam(user, course_id):
     Returns:
         bool: True if user can take action on spam, False otherwise
     """
-    # Global staff have universal access
-    if GlobalStaff().has_user(user) or user.is_staff:
-        return True
-
-    if isinstance(course_id, str):
-        course_id = CourseKey.from_string(course_id)
-
-    # Check if user is Course Staff or Instructor for this specific course
-    if CourseStaffRole(course_id).has_user(user):
-        return True
-
-    if CourseInstructorRole(course_id).has_user(user):
-        return True
-
-    # Check forum moderator/administrator roles for this specific course
-    user_roles = set(
-        Role.objects.filter(
-            users=user,
-            course_id=course_id,
-        ).values_list('name', flat=True)
-    )
-
-    if user_roles & {FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR}:
-        return True
-
-    return False
+    return GlobalStaff().has_user(user)
 
 
 class IsAllowedToBulkDelete(permissions.BasePermission):
