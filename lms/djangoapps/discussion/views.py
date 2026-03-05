@@ -101,6 +101,25 @@ def make_course_settings(course, user, include_category_map=True):
     return course_setting
 
 
+def _filter_team_discussions(threads, course_key, user):
+    """
+    Filter team discussions - only include team discussions if user is a team member.
+    Privileged users (staff, moderators, etc.) can see all threads.
+    """
+    if is_privileged_user(course_key, user):
+        return threads
+
+    filtered_threads = []
+    for thread in threads:
+        thread_discussion_id = thread.get('commentable_id')
+        if thread_discussion_id:
+            team = team_api.get_team_by_discussion(thread_discussion_id)
+            if team and not team.users.filter(id=user.id).exists():
+                continue  # Skip team threads where user is not a member
+        filtered_threads.append(thread)
+    return filtered_threads
+
+
 def get_threads(request, course, user_info, discussion_id=None, per_page=THREADS_PER_PAGE):
     """
     This may raise an appropriate subclass of cc.utils.CommentClientError
@@ -189,10 +208,7 @@ def get_threads(request, course, user_info, discussion_id=None, per_page=THREADS
             thread['pinned'] = False
 
     # Filter team discussions - only team members can see team posts
-    if discussion_id is not None and not is_privileged_user(course.id, request.user):
-        team = team_api.get_team_by_discussion(discussion_id)
-        if team and not team.users.filter(id=request.user.id).exists():
-            threads = []
+    threads = _filter_team_discussions(threads, course.id, request.user)
 
     query_params['page'] = paginated_results.page
     query_params['num_pages'] = paginated_results.num_pages
@@ -608,6 +624,9 @@ def create_user_profile_context(request, course_key, user_id):
         user_info = cc.User.from_django_user(request.user).to_dict()
         annotated_content_info = utils.get_metadata_for_threads(course_key, threads, request.user, user_info)
 
+    # Filter team discussions - only include team discussions if user is a team member
+    threads = _filter_team_discussions(threads, course_key, request.user)
+
     is_staff = has_permission(request.user, 'openclose_thread', course.id)
     is_community_ta = utils.is_user_community_ta(request.user, course.id)
     threads = [utils.prepare_content(thread, course_key, is_staff, is_community_ta) for thread in threads]
@@ -729,6 +748,10 @@ def followed_threads(request, course_key, user_id):
                 paginated_results.collection,
                 request.user, user_info
             )
+
+        # Filter team discussions - only include team discussions if user is a team member
+        threads = _filter_team_discussions(paginated_results.collection, course_key, request.user)
+
         if request.headers.get('x-requested-with') == 'XMLHttpRequest':
             is_staff = has_permission(request.user, 'openclose_thread', course.id)
             is_community_ta = utils.is_user_community_ta(request.user, course.id)
@@ -737,7 +760,7 @@ def followed_threads(request, course_key, user_id):
                 'discussion_data': [
                     utils.prepare_content(
                         thread, course_key, is_staff, is_community_ta
-                    ) for thread in paginated_results.collection
+                    ) for thread in threads
                 ],
                 'page': query_params['page'],
                 'num_pages': query_params['num_pages'],
@@ -749,7 +772,7 @@ def followed_threads(request, course_key, user_id):
                 'user': request.user,
                 'django_user': User.objects.get(id=user_id),
                 'profiled_user': profiled_user.to_dict(),
-                'threads': paginated_results.collection,
+                'threads': threads,
                 'user_info': user_info,
                 'annotated_content_info': annotated_content_info,
                 #                'content': content,

@@ -41,7 +41,7 @@ from lms.djangoapps.discussion.toggles import (
     ENABLE_DISCUSSION_BAN,
     ONLY_VERIFIED_USERS_CAN_POST,
 )
-from lms.djangoapps.discussion.views import is_privileged_user
+from lms.djangoapps.discussion.views import is_privileged_user, _filter_team_discussions
 from openedx.core.djangoapps.discussions.models import (
     DiscussionsConfiguration,
     DiscussionTopicLink,
@@ -1482,6 +1482,9 @@ def get_learner_active_thread_list(request, course_key, query_params):
                 )
                 if not show_deleted:  # Fail safe: include thread for regular users
                     filtered_threads_with_deletion_status.append(thread)
+
+        # Apply team filtering - only include team discussions if user is a team member
+        filtered_threads = _filter_team_discussions(filtered_threads, course_key, request.user)
 
         results = _serialize_discussion_entities(
             request,
