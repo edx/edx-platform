@@ -4,10 +4,6 @@
 import logging
 
 from forum import api as forum_api
-from openedx.core.djangoapps.discussions.config.waffle import (
-    is_forum_v2_disabled_globally,
-    is_forum_v2_enabled,
-)
 
 from .utils import CommentClientRequestError, extract, get_course_key, perform_request
 

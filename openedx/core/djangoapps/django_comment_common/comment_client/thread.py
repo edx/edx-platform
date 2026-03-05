@@ -15,10 +15,6 @@ from forum.api.threads import (
 from forum.backend import get_backend  # pylint: disable=import-error
 from forum.backends.mongodb.threads import CommentThread  # pylint: disable=import-error
 from forum.utils import ForumV2RequestError  # pylint: disable=import-error
-from openedx.core.djangoapps.discussions.config.waffle import (
-    is_forum_v2_disabled_globally,
-    is_forum_v2_enabled,
-)
 
 from . import models, settings, utils
 
@@ -226,7 +222,7 @@ class Thread(models.Model):
         request_params = utils.clean_forum_params(request_params)
         course_id = kwargs.get("course_id")
         if not course_id:
-            _, course_id = is_forum_v2_enabled_for_thread(self.id)
+            course_id = forum_api.get_course_id_by_thread(self.id)
         if user_id := request_params.get("user_id"):
             request_params["user_id"] = str(user_id)
         response = forum_api.get_thread(
