@@ -12,6 +12,7 @@ from django.urls import reverse
 from django.test import override_settings
 from pytz import UTC
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
