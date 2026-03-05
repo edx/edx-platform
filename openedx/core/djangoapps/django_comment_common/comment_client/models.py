@@ -5,7 +5,7 @@ import logging
 
 from forum import api as forum_api
 
-from .utils import CommentClientRequestError, extract, get_course_key, perform_request
+from .utils import CommentClientRequestError, extract, get_course_key
 
 log = logging.getLogger(__name__)
 
