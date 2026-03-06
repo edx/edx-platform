@@ -577,7 +577,7 @@ class RegistrationView(APIView):
             HttpResponse: 403 operation not allowed
         """
         should_be_rate_limited = getattr(request, 'limited', False)
-        if should_be_rate_limited:
+        if should_be_rate_limited and not pipeline.running(request):
             return JsonResponse({'error_code': 'forbidden-request'}, status=403)
 
         if is_require_third_party_auth_enabled() and not pipeline.running(request):
@@ -875,7 +875,7 @@ class RegistrationValidationView(APIView):
     }
 
     @method_decorator(
-        ratelimit(key=REAL_IP_KEY, rate=settings.REGISTRATION_VALIDATION_RATELIMIT, method='POST', block=True)
+        ratelimit(key=REAL_IP_KEY, rate=settings.REGISTRATION_VALIDATION_RATELIMIT, method='POST', block=False)
     )
     def post(self, request):
         """
@@ -897,6 +897,9 @@ class RegistrationValidationView(APIView):
         can get extra verification checks if entered along with others,
         like when the password may not equal the username.
         """
+        if getattr(request, 'limited', False) and not pipeline.running(request):
+            return Response(status=403)
+
         field_key = request.data.get('form_field_key')
         validation_decisions = {}
 
