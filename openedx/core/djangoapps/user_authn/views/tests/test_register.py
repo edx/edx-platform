@@ -3100,7 +3100,8 @@ class RegistrationValidationViewTests(test_utils.ApiTestCase, OpenEdxEventsTestM
             'openedx.core.djangoapps.user_authn.views.register.pipeline', 'saml-idp'
         ):
             response = self.request_without_auth('post', self.path)
-        assert response.status_code != 403
+        self.assertHttpOK(response)
+        assert response.json().get('validation_decisions') == {}
 
     def test_single_field_validation(self):
         """
