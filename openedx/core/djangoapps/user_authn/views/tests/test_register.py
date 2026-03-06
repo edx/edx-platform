@@ -2068,6 +2068,40 @@ class RegistrationViewTestV1(
             "defaultValue": backend.name
         })
 
+    @mock.patch('django_ratelimit.decorators.is_ratelimited', return_value=True)
+    def test_rate_limiting_exempted_for_saml_pipeline(self, _mock_ratelimited):
+        """
+        Confirm that a registration POST with an active SAML/TPA pipeline is not
+        blocked by IP-based rate limiting, even after the limit is exhausted.
+
+        The decorator rate is baked in at import time so @override_settings cannot
+        change it. Instead we mock is_ratelimited to always return True, which is
+        equivalent to every request arriving after the limit is exhausted.
+        """
+        # With the limit exhausted and no SAML pipeline, the request is blocked
+        response = self.client.post(self.url, {
+            "email": self.EMAIL,
+            "name": self.NAME,
+            "username": self.USERNAME,
+            "password": self.PASSWORD,
+            "honor_code": "true",
+        })
+        assert response.status_code == 403
+        assert response.json().get('error_code') == 'forbidden-request'
+
+        # With an active SAML/TPA pipeline, the same IP is not blocked by rate limiting
+        with simulate_running_pipeline(
+            'openedx.core.djangoapps.user_authn.views.register.pipeline', 'tpa-saml'
+        ):
+            response = self.client.post(self.url, {
+                "email": self.EMAIL,
+                "name": self.NAME,
+                "username": self.USERNAME,
+                "password": self.PASSWORD,
+                "honor_code": "true",
+            })
+        assert response.json().get('error_code') != 'forbidden-request'
+
 
 @ddt.ddt
 class RegistrationViewTestV2(RegistrationViewTestV1):
@@ -3027,6 +3061,36 @@ class RegistrationValidationViewTests(test_utils.ApiTestCase, OpenEdxEventsTestM
             assert response.status_code != 403
         response = self.request_without_auth('post', self.path)
         assert response.status_code == 403
+
+    @override_settings(
+        CACHES={
+            'default': {
+                'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                'LOCATION': 'validation_ratelimit_tpa',
+            }
+        }
+    )
+    def test_rate_limiting_exempted_for_saml_pipeline(self):
+        """
+        Confirm that validation requests with an active SAML/TPA pipeline are not
+        blocked by IP-based rate limiting, even after the limit is exhausted.
+        """
+        # Exhaust the real rate limit. The rate is baked into the decorator at import
+        # time, so @override_settings cannot change it — we must read the live value.
+        for _ in range(int(settings.REGISTRATION_VALIDATION_RATELIMIT.split('/')[0])):
+            response = self.request_without_auth('post', self.path)
+            assert response.status_code != 403
+        # Without a pipeline, the next request from the same IP is rate limited
+        response = self.request_without_auth('post', self.path)
+        assert response.status_code == 403
+
+        # With an active SAML/TPA pipeline, the same IP is not blocked by rate limiting
+        with simulate_running_pipeline(
+            'openedx.core.djangoapps.user_authn.views.register.pipeline', 'tpa-saml'
+        ):
+            response = self.request_without_auth('post', self.path)
+        self.assertHttpOK(response)
+        assert response.json().get('validation_decisions') == {}
 
     def test_single_field_validation(self):
         """

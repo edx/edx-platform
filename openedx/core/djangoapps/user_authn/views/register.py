@@ -577,10 +577,13 @@ class RegistrationView(APIView):
             HttpResponse: 403 operation not allowed
         """
         should_be_rate_limited = getattr(request, 'limited', False)
-        if should_be_rate_limited:
+        pipeline_data = pipeline.get(request)
+        pipeline_running = pipeline_data is not None
+        pipeline_backend = pipeline_data.get('backend') if pipeline_data else None
+        if should_be_rate_limited and (not pipeline_running or pipeline_backend != 'tpa-saml'):
             return JsonResponse({'error_code': 'forbidden-request'}, status=403)
 
-        if is_require_third_party_auth_enabled() and not pipeline.running(request):
+        if is_require_third_party_auth_enabled() and not pipeline_running:
             # if request is not running a third-party auth pipeline
             return HttpResponseForbidden(
                 "Third party authentication is required to register. Username and password were received instead."
@@ -875,7 +878,7 @@ class RegistrationValidationView(APIView):
     }
 
     @method_decorator(
-        ratelimit(key=REAL_IP_KEY, rate=settings.REGISTRATION_VALIDATION_RATELIMIT, method='POST', block=True)
+        ratelimit(key=REAL_IP_KEY, rate=settings.REGISTRATION_VALIDATION_RATELIMIT, method='POST', block=False)
     )
     def post(self, request):
         """
@@ -897,6 +900,12 @@ class RegistrationValidationView(APIView):
         can get extra verification checks if entered along with others,
         like when the password may not equal the username.
         """
+        pipeline_data = pipeline.get(request)
+        if getattr(request, 'limited', False) and not (
+            pipeline_data and pipeline_data.get('backend') == 'tpa-saml'
+        ):
+            return Response(status=403)
+
         field_key = request.data.get('form_field_key')
         validation_decisions = {}
 
