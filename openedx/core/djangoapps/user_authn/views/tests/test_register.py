@@ -2103,7 +2103,7 @@ class RegistrationViewTestV1(
 
         # With an active SAML/TPA pipeline, the same IP is not blocked by rate limiting
         with simulate_running_pipeline(
-            'openedx.core.djangoapps.user_authn.views.register.pipeline', 'saml-idp'
+            'openedx.core.djangoapps.user_authn.views.register.pipeline', 'tpa-saml'
         ):
             response = self.client.post(self.url, {
                 "email": self.EMAIL,
