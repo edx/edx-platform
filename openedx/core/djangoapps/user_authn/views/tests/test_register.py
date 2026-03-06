@@ -2112,7 +2112,8 @@ class RegistrationViewTestV1(
                 "password": self.PASSWORD,
                 "honor_code": "true",
             })
-        assert response.status_code != 403 or response.json().get('error_code') != 'forbidden-request'
+        self.assertHttpOK(response)
+        self.assertNotEqual(response.json().get('error_code'), 'forbidden-request')
 
 
 @ddt.ddt
