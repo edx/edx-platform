@@ -1312,28 +1312,9 @@ def get_learner_active_thread_list(request, course_key, query_params):
         threads, page, num_pages = comment_client_user.active_threads(query_params)
         threads = set_attribute(threads, "pinned", False)
 
-        # This portion below is temporary until we migrate to forum v2
-        filtered_threads = []
-        for thread in threads:
-            try:
-                forum_thread = forum_api.get_thread(
-                    thread.get("id"), course_id=str(course_key)
-                )
-                is_deleted = forum_thread.get("is_deleted", False)
-
-                if show_deleted and is_deleted:
-                    thread["is_deleted"] = True
-                    thread["deleted_at"] = forum_thread.get("deleted_at")
-                    thread["deleted_by"] = forum_thread.get("deleted_by")
-                    filtered_threads.append(thread)
-                elif not show_deleted and not is_deleted:
-                    filtered_threads.append(thread)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                log.warning(
-                    "Failed to check thread %s deletion status: %s", thread.get("id"), e
-                )
-                if not show_deleted:  # Fail safe: include thread for regular users
-                    filtered_threads.append(thread)
+        filtered_threads = _filter_active_threads(
+            threads, course_key, count_flagged, show_deleted
+        )
 
         results = _serialize_discussion_entities(
             request,
@@ -1360,6 +1341,67 @@ def get_learner_active_thread_list(request, course_key, query_params):
                 "results": [],
             }
         )
+
+
+def _recalculate_abuse_flagged_count(thread, forum_thread, count_flagged):
+    """
+    Recalculate abuse_flagged_count for a thread, excluding soft-deleted comments.
+
+    Only recalculates if count_flagged is True and the thread has abuse_flagged_count field.
+    Updates the thread dict in-place with the new count.
+    """
+    if not (count_flagged and "abuse_flagged_count" in thread):
+        return
+
+    try:
+        abuse_count = 0
+        for response_type in ["endorsed_responses", "non_endorsed_responses", "children"]:
+            for child in forum_thread.get(response_type, []):
+                if child.get("abuse_flaggers", []) and not child.get("is_deleted", False):
+                    abuse_count += 1
+        thread["abuse_flagged_count"] = abuse_count
+    except (KeyError, TypeError):
+        pass  # Keep original count if structure is unexpected
+
+
+def _filter_active_threads(threads, course_key, count_flagged, show_deleted):
+    """
+    Filter active threads based on deletion status and recalculate abuse counts if needed.
+
+    Returns a list of threads filtered by deletion status. When show_deleted is True,
+    only deleted threads are returned with deletion metadata. When False, only
+    non-deleted threads are returned. Recalculates abuse_flagged_count for threads
+    when count_flagged is True.
+    """
+    filtered_threads = []
+    for thread in threads:
+        try:
+            # Fetch thread with responses if we need to recalculate abuse counts
+            params = {}
+            if count_flagged and "abuse_flagged_count" in thread:
+                params = {"with_responses": True, "recursive": False}
+
+            forum_thread = forum_api.get_thread(
+                thread.get("id"), params=params, course_id=str(course_key)
+            )
+            is_deleted = forum_thread.get("is_deleted", False)
+
+            if show_deleted and is_deleted:
+                thread["is_deleted"] = True
+                thread["deleted_at"] = forum_thread.get("deleted_at")
+                thread["deleted_by"] = forum_thread.get("deleted_by")
+                filtered_threads.append(thread)
+            elif not show_deleted and not is_deleted:
+                _recalculate_abuse_flagged_count(thread, forum_thread, count_flagged)
+                filtered_threads.append(thread)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            log.warning(
+                "Failed to check thread %s deletion status: %s", thread.get("id"), exc
+            )
+            if not show_deleted:
+                filtered_threads.append(thread)
+
+    return filtered_threads
 
 
 def get_comment_list(
