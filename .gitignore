@@ -157,3 +157,7 @@ pii_report
 
 # Pyenv Python version file
 .python-version
+
+## AI Tools
+.claude/
+CLAUDE.md
