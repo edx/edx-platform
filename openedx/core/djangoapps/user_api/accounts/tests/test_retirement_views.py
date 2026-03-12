@@ -8,7 +8,6 @@ from unittest import mock
 
 import ddt
 import pytz
-from zoneinfo import ZoneInfo
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.contrib.sites.models import Site
 from django.conf import settings
@@ -81,13 +80,6 @@ from .retirement_helpers import (  # pylint: disable=unused-import
     fake_completed_retirement,
     setup_retirement_states
 )
-
-# This is a temporary import path while we transition from integrated_channels to channel_integrations
-if getattr(settings, 'ENABLE_LEGACY_INTEGRATED_CHANNELS', True):
-    from integrated_channels.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
-else:
-    from channel_integrations.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
-
 
 def build_jwt_headers(user):
     """

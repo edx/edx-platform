@@ -10,7 +10,6 @@ import logging
 from functools import wraps
 
 import pytz
-from zoneinfo import ZoneInfo
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, logout
@@ -94,15 +93,6 @@ from .serializers import (
 )
 from .signals import USER_RETIRE_LMS_CRITICAL, USER_RETIRE_LMS_MISC, USER_RETIRE_MAILINGS
 from .utils import create_retirement_request_and_deactivate_account, username_suffix_generator
-
-# This is a temporary import path while we transition from integrated_channels to channel_integrations
-if getattr(settings, 'ENABLE_LEGACY_INTEGRATED_CHANNELS', True):
-    from integrated_channels.degreed.models import DegreedLearnerDataTransmissionAudit
-    from integrated_channels.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
-else:
-    from channel_integrations.degreed2.models import Degreed2LearnerDataTransmissionAudit \
-        as DegreedLearnerDataTransmissionAudit
-    from channel_integrations.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
 
 log = logging.getLogger(__name__)
 
