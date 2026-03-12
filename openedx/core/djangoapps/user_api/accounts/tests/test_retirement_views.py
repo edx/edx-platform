@@ -10,7 +10,6 @@ import ddt
 import pytz
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.contrib.sites.models import Site
-from django.conf import settings
 from django.core import mail
 from django.core.cache import cache
 from django.db import connection
@@ -80,6 +79,7 @@ from .retirement_helpers import (  # pylint: disable=unused-import
     fake_completed_retirement,
     setup_retirement_states
 )
+
 
 def build_jwt_headers(user):
     """
