@@ -1,7 +1,7 @@
 /* global YT */
 
 import VideoPlayer from "../../../assets/video/public/js/03_video_player.js";
-import Hls from 'hls.js';
+import HLS from 'hls';
 import _ from 'underscore';
 
 (function() {
@@ -982,7 +982,7 @@ import _ from 'underscore';
 
                     describe('on safari', function() {
                         beforeEach(function() {
-                            spyOn(Hls, 'isSupported').and.returnValue(false);
+                            spyOn(HLS, 'isSupported').and.returnValue(false);
                             state = jasmine.initializeHLSPlayer();
                             state.canPlayHLS = true;
                             state.browserIsSafari = true;
@@ -996,7 +996,7 @@ import _ from 'underscore';
 
                 describe('HLS Video Errors', function() {
                     beforeEach(function() {
-                        spyOn(Hls, 'isSupported').and.returnValue(false);
+                        spyOn(HLS, 'isSupported').and.returnValue(false);
                         state = jasmine.initializeHLSPlayer({sources: ['/base/fixtures/hls/hls.m3u8']});
                     });
 

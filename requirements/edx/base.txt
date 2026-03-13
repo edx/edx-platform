@@ -9,9 +9,7 @@ acid-xblock==0.4.1
 aiohappyeyeballs==2.6.1
     # via aiohttp
 aiohttp==3.13.2
-    # via
-    #   geoip2
-    #   openai
+    # via geoip2
 aiosignal==1.4.0
     # via aiohttp
 amqp==5.3.1
