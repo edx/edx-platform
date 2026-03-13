@@ -43,7 +43,6 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
-
 @allow_any_authenticated_user()
 class NotificationListAPIView(generics.ListAPIView):
     """
