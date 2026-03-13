@@ -152,7 +152,7 @@ class NotificationCountView(APIView):
             count_by_app_name_dict[app_name] = count
 
         logger.debug(
-            'Retrieved notification count for user %s: total=%d',
+            'Retrieved notifications count for user %s: total=%d',
             request.user.id,
             count_total
         )
