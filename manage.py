@@ -78,6 +78,26 @@ def parse_args():
     return edx_args, django_args
 
 
+def get_command_name(django_args):
+    """
+    Extract the Django management command name from parsed arguments.
+
+    Arguments:
+        django_args (list): Django command line arguments.
+
+    Returns:
+        str: Command name, or 'help' if no command is specified.
+    """
+    if not django_args:
+        return "help"
+
+    command_name = django_args[0]
+    if command_name.startswith("-"):
+        return "help"
+
+    return command_name
+
+
 if __name__ == "__main__":
     edx_args, django_args = parse_args()
 
@@ -96,4 +116,24 @@ if __name__ == "__main__":
         django_args.append('--help')
 
     from django.core.management import execute_from_command_line
-    execute_from_command_line([sys.argv[0]] + django_args)
+    from openedx.core.djangoapps.util.filters import ManagementCommandExecutionRequested
+
+    command_name = get_command_name(django_args)
+
+    def command_runner():
+        """Execute the Django management command."""
+        execute_from_command_line([sys.argv[0]] + django_args)
+
+    # Route management command execution through the filter pipeline.
+    # This allows edX and plugins to intercept and monitor command execution.
+    # Filter type: org.openedx.platform.management.command.execute.requested.v1
+    _, _, command_runner = ManagementCommandExecutionRequested.run_filter(
+        command_name=command_name,
+        service_variant=edx_args.service_variant,
+        command_runner=command_runner,
+    )
+
+    if not callable(command_runner):
+        raise TypeError("management command runner must be callable")
+
+    command_runner()

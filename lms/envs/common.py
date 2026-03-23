@@ -73,6 +73,34 @@ from openedx.core.lib.features_setting_proxy import FeaturesProxy
 # A proxy for feature flags stored in the settings namespace
 FEATURES = FeaturesProxy(globals())
 
+# .. setting_name: ENABLE_MANAGEMENT_COMMAND_MONITORING
+# .. setting_default: False
+# When True, enables APM monitoring of Django management command execution.
+# Monitoring emits custom Datadog attributes (name, service_variant, status, duration_seconds, etc.)
+# and traces to track command performance and failures. Set to True in production environments.
+ENABLE_MANAGEMENT_COMMAND_MONITORING = False
+
+# .. setting_name: MANAGEMENT_COMMAND_MONITORING_TRACE_NAME
+# .. setting_default: django.management.command
+# APM transaction name used when wrapping management command execution for tracing.
+# Customize this if your observability stack uses different naming conventions.
+MANAGEMENT_COMMAND_MONITORING_TRACE_NAME = 'django.management.command'
+
+# .. setting_name: OPEN_EDX_FILTERS_CONFIG
+# Register the default pipeline for management command execution monitoring.
+# edX can override this configuration to add custom monitoring or security pipeline steps
+# by modifying OPEN_EDX_FILTERS_CONFIG in environment-specific settings.
+OPEN_EDX_FILTERS_CONFIG = locals().get('OPEN_EDX_FILTERS_CONFIG', {})
+OPEN_EDX_FILTERS_CONFIG.setdefault(
+    'org.openedx.platform.management.command.execute.requested.v1',
+    {
+        'pipeline': [
+            'openedx.core.djangoapps.util.management_monitoring.ManagementCommandMonitoringPipelineStep',
+        ],
+        'fail_silently': True,
+    },
+)
+
 ################################### FEATURES ###################################
 
 CC_MERCHANT_NAME = Derived(lambda settings: settings.PLATFORM_NAME)
