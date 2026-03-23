@@ -16,7 +16,6 @@ from django.test import override_settings
 
 from openedx.core.djangoapps.util.filters import ManagementCommandExecutionRequested
 from openedx.core.djangoapps.util.management_monitoring import (
-    ManagementCommandMonitoringPipelineStep,
     monitor_django_management_command,
 )
 
@@ -28,7 +27,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
     Test Coverage:
     - Filter pipeline integration and command routing
     - Monitoring attribute collection (name, service_variant, status, duration, etc.)
-    - Monitoring toggle via ENABLE_MANAGEMENT_COMMAND_MONITORING setting
+    - Monitoring toggle via FEATURES['ENABLE_MANAGEMENT_COMMAND_MONITORING']
     - Custom pipeline step support for edX extensions
     """
 
@@ -76,7 +75,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
         - management_command.status: success/failure
         - management_command.duration_seconds: Execution time
         """
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with monitor_django_management_command('migrate', 'lms'):
                 pass
 
@@ -99,10 +98,10 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
         """
         Verify that monitoring has zero APM overhead when disabled.
 
-        When ENABLE_MANAGEMENT_COMMAND_MONITORING=False, no monitoring functions
+        When FEATURES['ENABLE_MANAGEMENT_COMMAND_MONITORING']=False, no monitoring functions
         should be called, ensuring production deployments incur no overhead.
         """
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=False):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': False}):
             with monitor_django_management_command('migrate', 'lms'):
                 pass
 
@@ -121,7 +120,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
         - LMS commands: lms.management.{command}
         - CMS commands: cms.management.{command}
         """
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with monitor_django_management_command('migrate', 'lms'):
                 pass
 
@@ -130,7 +129,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
 
         mock_txn.reset_mock()
 
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with monitor_django_management_command('shell', 'cms'):
                 pass
 
@@ -144,7 +143,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
         """
         Verify status is set to 'success' when command completes without exception.
         """
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with monitor_django_management_command('migrate', 'lms'):
                 pass
 
@@ -164,7 +163,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
 
         Exception information is essential for diagnosing management command issues.
         """
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with self.assertRaises(RuntimeError):
                 with monitor_django_management_command('migrate', 'lms'):
                     raise RuntimeError("Database connection failed")
@@ -191,7 +190,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
         SystemExit is a special case in management commands and the exit code
         provides important debugging information.
         """
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with self.assertRaises(SystemExit):
                 with monitor_django_management_command('migrate', 'lms'):
                     raise SystemExit(2)
@@ -242,7 +241,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
         mock_trace.return_value = nullcontext()
 
         with override_settings(
-            ENABLE_MANAGEMENT_COMMAND_MONITORING=True,
+            FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True},
             MANAGEMENT_COMMAND_MONITORING_TRACE_NAME='custom.trace.name',
         ):
             with monitor_django_management_command('migrate', 'lms'):
@@ -257,7 +256,7 @@ class ManagementCommandMonitoringAcceptanceTests(TestCase):
         """
         with patch('openedx.core.djangoapps.util.management_monitoring.set_monitoring_transaction_name'):
             with patch('openedx.core.djangoapps.util.management_monitoring.function_trace', return_value=nullcontext()):
-                with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+                with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
                     with monitor_django_management_command('migrate', 'lms'):
                         pass
 

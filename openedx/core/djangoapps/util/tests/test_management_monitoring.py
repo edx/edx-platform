@@ -25,7 +25,7 @@ class ManagementCommandMonitoringTests(TestCase):
     @patch("openedx.core.djangoapps.util.management_monitoring.set_custom_attribute")
     def test_monitoring_disabled(self, mock_set_custom_attribute, mock_set_transaction_name, mock_function_trace):
         """No monitoring calls should be made when disabled."""
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=False):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': False}):
             with monitor_django_management_command("migrate", "lms"):
                 pass
 
@@ -45,7 +45,7 @@ class ManagementCommandMonitoringTests(TestCase):
         """Expected monitoring metadata is set during successful execution."""
         mock_function_trace.return_value = nullcontext()
 
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with monitor_django_management_command("migrate", "lms"):
                 pass
 
@@ -71,7 +71,7 @@ class ManagementCommandMonitoringTests(TestCase):
         mock_function_trace.return_value = nullcontext()
 
         with override_settings(
-            ENABLE_MANAGEMENT_COMMAND_MONITORING=True,
+            FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True},
             MANAGEMENT_COMMAND_MONITORING_TRACE_NAME="custom.management.trace",
         ):
             with monitor_django_management_command("shell", "cms"):
@@ -93,7 +93,7 @@ class ManagementCommandMonitoringTests(TestCase):
         """Failure metadata should be set when command raises an exception."""
         mock_function_trace.return_value = nullcontext()
 
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with self.assertRaises(ValueError):
                 with monitor_django_management_command("migrate", "lms"):
                     raise ValueError("boom")
@@ -115,7 +115,7 @@ class ManagementCommandMonitoringTests(TestCase):
         """SystemExit failures should include exit code custom attribute."""
         mock_function_trace.return_value = nullcontext()
 
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with self.assertRaises(SystemExit):
                 with monitor_django_management_command("migrate", "lms"):
                     raise SystemExit(2)

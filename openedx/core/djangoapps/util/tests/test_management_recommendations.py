@@ -32,10 +32,10 @@ class ManagementCommandMonitoringBestPractices(TestCase):
         """
         Verify disabled monitoring adds minimal overhead.
 
-        When ENABLE_MANAGEMENT_COMMAND_MONITORING is False, the monitoring context
+        When FEATURES['ENABLE_MANAGEMENT_COMMAND_MONITORING'] is False, the monitoring context
         should be a no-op to avoid performance impact in production deployments.
         """
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=False):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': False}):
             with monitor_django_management_command('migrate', 'lms'):
                 pass
 
@@ -59,7 +59,7 @@ class ManagementCommandMonitoringBestPractices(TestCase):
         for variant in variants:
             mock_txn.reset_mock()
 
-            with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+            with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
                 with monitor_django_management_command('migrate', variant):
                     pass
 
@@ -76,7 +76,7 @@ class ManagementCommandMonitoringBestPractices(TestCase):
         KeyboardInterrupt should be treated as abnormal termination and marked as
         a failure in monitoring for proper alerting.
         """
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             with self.assertRaises(KeyboardInterrupt):
                 with monitor_django_management_command('migrate', 'lms'):
                     raise KeyboardInterrupt()
@@ -98,7 +98,7 @@ class ManagementCommandMonitoringBestPractices(TestCase):
         """
         mock_trace.return_value = nullcontext()
 
-        with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+        with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
             # Don't set MANAGEMENT_COMMAND_MONITORING_TRACE_NAME
             with monitor_django_management_command('migrate', 'lms'):
                 pass
@@ -142,7 +142,7 @@ class ManagementCommandMonitoringBestPractices(TestCase):
         """
         with patch('openedx.core.djangoapps.util.management_monitoring.set_monitoring_transaction_name'):
             with patch('openedx.core.djangoapps.util.management_monitoring.function_trace', return_value=nullcontext()):
-                with override_settings(ENABLE_MANAGEMENT_COMMAND_MONITORING=True):
+                with override_settings(FEATURES={'ENABLE_MANAGEMENT_COMMAND_MONITORING': True}):
                     with monitor_django_management_command('migrate', 'lms'):
                         pass
 

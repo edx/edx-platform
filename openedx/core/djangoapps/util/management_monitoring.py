@@ -78,7 +78,7 @@ def monitor_django_management_command(command_name, service_variant='unknown'):
     Raises:
         Any exception raised by the command under monitoring context.
     """
-    monitoring_enabled = getattr(settings, "ENABLE_MANAGEMENT_COMMAND_MONITORING", False)
+    monitoring_enabled = settings.FEATURES.get("ENABLE_MANAGEMENT_COMMAND_MONITORING", False)
     if not monitoring_enabled:
         yield
         return
