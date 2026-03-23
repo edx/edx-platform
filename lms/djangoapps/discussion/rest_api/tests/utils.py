@@ -674,15 +674,13 @@ class ForumMockUtilsMixin(MockForumApiMixin):
         self.set_mock_return_value("get_thread", thread)
 
     def register_get_comments_response(self, comments, page, num_pages):
-        self.set_mock_return_value(
-            "get_parent_comment",
-            {
-                "collection": comments,
-                "page": page,
-                "num_pages": num_pages,
-                "comment_count": len(comments),
-            },
-        )
+        """Register a mock response for get_user_comments API call."""
+        self.set_mock_return_value('get_user_comments', {
+            "collection": comments,
+            "page": page,
+            "num_pages": num_pages,
+            "comment_count": len(comments),
+        })
 
     def register_post_comment_response(self, comment_data, thread_id, parent_id=None):
         self.set_mock_side_effect(
@@ -718,22 +716,27 @@ class ForumMockUtilsMixin(MockForumApiMixin):
         }
         self.set_mock_side_effect("get_user", make_user_callbacks(self.users_map))
 
-    def register_get_user_retire_response(self, user, body=""):
-        self.set_mock_return_value("retire_user", body)
+    def register_get_user_retire_response(self, user, status=200, body=""):
+        self.set_mock_return_value('retire_user', body)
 
     def register_get_username_replacement_response(self, user, status=200, body=""):
         self.set_mock_return_value("update_username", body)
 
     def register_subscribed_threads_response(self, user, threads, page, num_pages):
-        self.set_mock_return_value(
-            "get_user_subscriptions",
-            {
-                "collection": threads,
-                "page": page,
-                "num_pages": num_pages,
-                "thread_count": len(threads),
-            },
-        )
+        """Register a mock response for get_user_threads and get_user_subscriptions API calls."""
+        self.set_mock_return_value('get_user_threads', {
+            "collection": threads,
+            "page": page,
+            "num_pages": num_pages,
+            "thread_count": len(threads),
+        })
+        # Also mock get_user_subscriptions for the Forum v2 API
+        self.set_mock_return_value('get_user_subscriptions', {
+            "collection": threads,
+            "page": page,
+            "num_pages": num_pages,
+            "thread_count": len(threads),
+        })
 
     def register_course_stats_response(self, course_key, stats, page, num_pages):
         self.set_mock_return_value(

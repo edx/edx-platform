@@ -144,8 +144,9 @@ from .utils import (
     get_usernames_for_course,
     get_usernames_from_search_string,
     is_captcha_enabled,
-    is_posting_allowed,
+    send_signal_after_commit,
     set_attribute,
+    is_posting_allowed,
 )
 
 log = logging.getLogger(__name__)
@@ -1147,7 +1148,6 @@ def get_thread_list(
         "group_id": group_id,
         "page": page,
         "per_page": page_size,
-        "text": text_search,
         "sort_key": cc_map.get(order_by),
         "author_id": author_id,
         "flagged": flagged,
@@ -1607,7 +1607,9 @@ def _handle_following_field(form_value, user, cc_content, request):
     else:
         user.unfollow(cc_content)
     signal = thread_followed if form_value else thread_unfollowed
-    signal.send(sender=None, user=user, post=cc_content)
+    send_signal_after_commit(
+        lambda: signal.send(sender=None, user=user, post=cc_content)
+    )
     track_thread_followed_event(request, course, cc_content, form_value)
 
 
@@ -1619,13 +1621,13 @@ def _handle_abuse_flagged_field(form_value, user, cc_content, request):
         cc_content.flagAbuse(user, cc_content)
         track_discussion_reported_event(request, course, cc_content)
         if ENABLE_DISCUSSIONS_MFE.is_enabled(course_key):
-            if cc_content.type == "thread":
-                thread_flagged.send(
-                    sender="flag_abuse_for_thread", user=user, post=cc_content
+            if cc_content.type == 'thread':
+                send_signal_after_commit(
+                    lambda: thread_flagged.send(sender='flag_abuse_for_thread', user=user, post=cc_content)
                 )
             else:
-                comment_flagged.send(
-                    sender="flag_abuse_for_comment", user=user, post=cc_content
+                send_signal_after_commit(
+                    lambda: comment_flagged.send(sender='flag_abuse_for_comment', user=user, post=cc_content)
                 )
     else:
         remove_all = bool(is_privileged_user(course_key, User.objects.get(id=user.id)))
@@ -1635,8 +1637,10 @@ def _handle_abuse_flagged_field(form_value, user, cc_content, request):
 
 def _handle_voted_field(form_value, cc_content, api_content, request, context):
     """vote or undo vote on thread/comment"""
-    signal = thread_voted if cc_content.type == "thread" else comment_voted
-    signal.send(sender=None, user=context["request"].user, post=cc_content)
+    signal = thread_voted if cc_content.type == 'thread' else comment_voted
+    send_signal_after_commit(
+        lambda: signal.send(sender=None, user=context["request"].user, post=cc_content)
+    )
     if form_value:
         context["cc_requester"].vote(cc_content, "up")
         api_content["vote_count"] += 1
@@ -1685,7 +1689,9 @@ def _handle_comment_signals(update_data, comment, user, sender=None):
     """
     for key, value in update_data.items():
         if key == "endorsed" and value is True:
-            comment_endorsed.send(sender=sender, user=user, post=comment)
+            send_signal_after_commit(
+                lambda: comment_endorsed.send(sender=sender, user=user, post=comment)
+            )
 
 
 def create_thread(request, thread_data):
@@ -1752,8 +1758,9 @@ def create_thread(request, thread_data):
         )
     serializer.save()
     cc_thread = serializer.instance
-    thread_created.send(
-        sender=None, user=user, post=cc_thread, notify_all_learners=notify_all_learners
+    # Use send_signal_after_commit() to ensure the signal is sent only after the transaction commits.
+    send_signal_after_commit(
+        lambda: thread_created.send(sender=None, user=user, post=cc_thread, notify_all_learners=notify_all_learners)
     )
     api_thread = serializer.data
     _do_extra_actions(
@@ -1828,7 +1835,9 @@ def create_comment(request, comment_data):
     context["cc_requester"].follow(cc_thread)
     serializer.save()
     cc_comment = serializer.instance
-    comment_created.send(sender=None, user=request.user, post=cc_comment)
+    send_signal_after_commit(
+        lambda: comment_created.send(sender=None, user=request.user, post=cc_comment)
+    )
     api_comment = serializer.data
     _do_extra_actions(
         api_comment,
@@ -1883,7 +1892,9 @@ def update_thread(request, thread_id, update_data):
     if set(update_data) - set(actions_form.fields):
         serializer.save()
         # signal to update Teams when a user edits a thread
-        thread_edited.send(sender=None, user=request.user, post=cc_thread)
+        send_signal_after_commit(
+            lambda: thread_edited.send(sender=None, user=request.user, post=cc_thread)
+        )
     api_thread = serializer.data
     _do_extra_actions(
         api_thread, cc_thread, list(update_data.keys()), actions_form, context, request
@@ -1938,7 +1949,9 @@ def update_comment(request, comment_id, update_data):
     # Only save comment object if some of the edited fields are in the comment data, not extra actions
     if set(update_data) - set(actions_form.fields):
         serializer.save()
-        comment_edited.send(sender=None, user=request.user, post=cc_comment)
+        send_signal_after_commit(
+            lambda: comment_edited.send(sender=None, user=request.user, post=cc_comment)
+        )
     api_comment = serializer.data
     _do_extra_actions(
         api_comment,
@@ -2164,7 +2177,9 @@ def delete_thread(request, thread_id):
     cc_thread, context = _get_thread_and_context(request, thread_id)
     if can_delete(cc_thread, context):
         cc_thread.delete(deleted_by=str(request.user.id))
-        thread_deleted.send(sender=None, user=request.user, post=cc_thread)
+        send_signal_after_commit(
+            lambda: thread_deleted.send(sender=None, user=request.user, post=cc_thread)
+        )
         track_thread_deleted_event(request, context["course"], cc_thread)
     else:
         raise PermissionDenied
@@ -2189,7 +2204,9 @@ def delete_comment(request, comment_id):
     cc_comment, context = _get_comment_and_context(request, comment_id)
     if can_delete(cc_comment, context):
         cc_comment.delete(deleted_by=str(request.user.id))
-        comment_deleted.send(sender=None, user=request.user, post=cc_comment)
+        send_signal_after_commit(
+            lambda: comment_deleted.send(sender=None, user=request.user, post=cc_comment)
+        )
         track_comment_deleted_event(request, context["course"], cc_comment)
     else:
         raise PermissionDenied

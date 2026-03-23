@@ -3,25 +3,18 @@
 
 import logging
 import time
-import typing as t
 
 from django.core.exceptions import ObjectDoesNotExist
 from eventtracking import tracker
 from rest_framework.serializers import ValidationError
 
 from forum import api as forum_api
-from forum.api.threads import (
-    prepare_thread_api_response,
-)  # pylint: disable=import-error
-from forum.backend import get_backend  # pylint: disable=import-error
-from forum.backends.mongodb.threads import CommentThread  # pylint: disable=import-error
-from forum.utils import ForumV2RequestError  # pylint: disable=import-error
-from openedx.core.djangoapps.discussions.config.waffle import (
-    is_forum_v2_disabled_globally,
-    is_forum_v2_enabled,
-)
+from forum.backend import get_backend
+from forum.backends.mongodb.threads import CommentThread as ForumThread
+from forum.utils import ForumV2RequestError
 
 from . import models, settings, utils
+
 
 log = logging.getLogger(__name__)
 
@@ -227,9 +220,9 @@ class Thread(models.Model):
         request_params = utils.clean_forum_params(request_params)
         course_id = kwargs.get("course_id")
         if not course_id:
-            _, course_id = is_forum_v2_enabled_for_thread(self.id)
-        if user_id := request_params.get("user_id"):
-            request_params["user_id"] = str(user_id)
+            course_id = forum_api.get_course_id_by_thread(self.id)
+        if user_id := request_params.get('user_id'):
+            request_params['user_id'] = str(user_id)
         response = forum_api.get_thread(
             thread_id=self.id,
             params=request_params,
@@ -282,7 +275,7 @@ class Thread(models.Model):
     @classmethod
     def get_user_threads_count(cls, user_id, course_ids):
         """
-        Returns threads and responses count of user in the given course_ids.
+        Returns threads count of user in the given course_ids.
         TODO: Add support for MySQL backend as well
         """
         query_params = {
@@ -291,9 +284,7 @@ class Thread(models.Model):
             "is_deleted": {"$ne": True},
             "_type": "CommentThread",
         }
-        return CommentThread()._collection.count_documents(
-            query_params
-        )  # pylint: disable=protected-access
+        return ForumThread()._collection.count_documents(query_params)
 
     @classmethod
     def _delete_thread(cls, thread_id, course_id=None, deleted_by=None):
@@ -323,7 +314,7 @@ class Thread(models.Model):
 
         try:
             start_time = time.perf_counter()
-            serialized_data = prepare_thread_api_response(thread, backend)
+            serialized_data = forum_api.threads.prepare_thread_api_response(thread, backend)
             log.info(
                 f"{prefix} Prepare response {time.perf_counter() - start_time} sec"
             )
@@ -371,10 +362,8 @@ class Thread(models.Model):
             "is_deleted": {"$ne": True},
         }
         threads_deleted = 0
-        threads = CommentThread().get_list(**query_params)
-        log.info(
-            f"<<Bulk Delete>> Fetched threads for user {user_id} in {time.time() - start_time} seconds"
-        )
+        threads = ForumThread().get_list(**query_params)
+        log.info(f"<<Bulk Delete>> Fetched threads for user {user_id} in {time.time() - start_time} seconds")
         for thread in threads:
             start_time = time.time()
             thread_id = thread.get("_id")
@@ -401,9 +390,7 @@ class Thread(models.Model):
             "_type": "CommentThread",
             "is_deleted": True,
         }
-        return CommentThread()._collection.count_documents(
-            query_params
-        )  # pylint: disable=protected-access
+        return ForumThread()._collection.count_documents(query_params)
 
     @classmethod
     def restore_user_deleted_threads(cls, user_id, course_ids, restored_by=None):
@@ -428,42 +415,18 @@ class Thread(models.Model):
         )
 
 
-def _url_for_flag_abuse_thread(thread_id):
-    return f"{settings.PREFIX}/threads/{thread_id}/abuse_flag"
-
-
-def _url_for_unflag_abuse_thread(thread_id):
-    return f"{settings.PREFIX}/threads/{thread_id}/abuse_unflag"
-
-
-def _url_for_pin_thread(thread_id):
-    return f"{settings.PREFIX}/threads/{thread_id}/pin"
-
-
-def _url_for_un_pin_thread(thread_id):
-    return f"{settings.PREFIX}/threads/{thread_id}/unpin"
-
-
-def is_forum_v2_enabled_for_thread(thread_id: str) -> tuple[bool, t.Optional[str]]:
-    """
-    Figure out whether we use forum v2 for a given thread.
-
-    This is a complex affair... First, we check the value of the DISABLE_FORUM_V2
-    setting, which overrides everything. If this setting does not exist, then we need to
-    find the course ID that corresponds to the thread ID. Then, we return the value of
-    the course waffle flag for this course ID.
-
-    Note that to fetch the course ID associated to a thread ID, we need to connect both
-    to mongodb and mysql. As a consequence, when forum v2 needs adequate connection
-    strings for both backends.
-
-    Return:
-
-        enabled (bool)
-        course_id (str or None)
-    """
-    if is_forum_v2_disabled_globally():
-        return False, None
-    course_id = forum_api.get_course_id_by_thread(thread_id)
-    course_key = utils.get_course_key(course_id)
-    return is_forum_v2_enabled(course_key), course_id
+def _clean_forum_params(params):
+    """Convert string booleans to actual booleans and remove None values from forum parameters."""
+    result = {}
+    for k, v in params.items():
+        if v is not None:
+            if isinstance(v, str):
+                if v.lower() == 'true':
+                    result[k] = True
+                elif v.lower() == 'false':
+                    result[k] = False
+                else:
+                    result[k] = v
+            else:
+                result[k] = v
+    return result
