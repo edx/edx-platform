@@ -702,3 +702,25 @@ def enable_unit_expanded_view(course_key):
     Returns a boolean if the Unit Expanded View feature is enabled for the given course.
     """
     return ENABLE_UNIT_EXPANDED_VIEW.is_enabled(course_key)
+
+
+# .. toggle_name: contentstore.enable_outline_component_creation
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, the Add Component widget is displayed inside each
+# ..   expanded unit on the Course Outline page, allowing authors to add new XBlocks
+# ..   directly without navigating to the unit page.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-03-24
+# .. toggle_target_removal_date: 2026-09-24
+# .. toggle_tickets: TNL2-533
+ENABLE_OUTLINE_COMPONENT_CREATION = CourseWaffleFlag(
+    f"{CONTENTSTORE_NAMESPACE}.enable_outline_component_creation", __name__
+)
+
+
+def enable_outline_component_creation(course_key):
+    """
+    Returns a boolean if the Add Component in Outline feature is enabled for the given course.
+    """
+    return ENABLE_OUTLINE_COMPONENT_CREATION.is_enabled(course_key)
