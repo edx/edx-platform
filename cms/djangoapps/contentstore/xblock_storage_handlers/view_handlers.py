@@ -373,7 +373,7 @@ def _save_xblock(
                 old_parent_location = store.get_parent_location(new_child)
                 if old_parent_location:
                     old_parent = store.get_item(old_parent_location)
-                    old_parent.children.remove(new_child)
+                    old_parent.children = [c for c in old_parent.children if c != new_child]
                     old_parent = save_xblock_with_callback(old_parent, user)
                 else:
                     # the Studio UI currently doesn't present orphaned children, so assume this is an error
