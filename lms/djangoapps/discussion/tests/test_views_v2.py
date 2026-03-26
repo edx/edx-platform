@@ -61,6 +61,7 @@ from lms.djangoapps.discussion.django_comment_client.tests.unicode import (
 )
 from lms.djangoapps.discussion.django_comment_client.tests.utils import (
     CohortedTestCase,
+    ForumsEnableMixin,
     config_course_discussions,
     topic_name_to_id,
 )
@@ -83,6 +84,7 @@ from openedx.core.djangoapps.django_comment_common.comment_client.utils import (
 from openedx.core.djangoapps.django_comment_common.models import (
     FORUM_ROLE_STUDENT,
     CourseDiscussionSettings,
+    ForumsConfig,
 )
 from openedx.core.djangoapps.django_comment_common.utils import (
     ThreadContext,
@@ -315,7 +317,7 @@ class ForumViewsUtilsMixin(MockForumApiMixin):
         self.set_mock_side_effect("get_user", make_user_callback())
 
 
-class SingleThreadTestCase(ModuleStoreTestCase, ForumViewsUtilsMixin):  # lint-amnesty, pylint: disable=missing-class-docstring
+class SingleThreadTestCase(ForumsEnableMixin, ModuleStoreTestCase, ForumViewsUtilsMixin):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     CREATE_USER = False
 
@@ -725,7 +727,7 @@ class SingleThreadGroupIdTestCase(CohortedTestCase, GroupIdAssertionMixinV2, For
         )
 
 
-class SingleThreadContentGroupTestCase(UrlResetMixin, ContentGroupTestCase, ForumViewsUtilsMixin):  # lint-amnesty, pylint: disable=missing-class-docstring
+class SingleThreadContentGroupTestCase(ForumsEnableMixin, UrlResetMixin, ContentGroupTestCase, ForumViewsUtilsMixin):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     @patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
     def setUp(self):
@@ -895,7 +897,7 @@ class FollowedThreadsDiscussionGroupIdTestCase(CohortedTestCase, CohortedTopicGr
         )
 
 
-class SingleThreadUnicodeTestCase(SharedModuleStoreTestCase, UnicodeTestMixin, ForumViewsUtilsMixin):  # lint-amnesty, pylint: disable=missing-class-docstring
+class SingleThreadUnicodeTestCase(ForumsEnableMixin, SharedModuleStoreTestCase, UnicodeTestMixin, ForumViewsUtilsMixin):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     @classmethod
     def setUpClass(cls):  # pylint: disable=super-method-not-called
@@ -932,7 +934,7 @@ class SingleThreadUnicodeTestCase(SharedModuleStoreTestCase, UnicodeTestMixin, F
 
 
 class ForumFormDiscussionContentGroupTestCase(
-        ContentGroupTestCase, ForumViewsUtilsMixin
+    ForumsEnableMixin, ContentGroupTestCase, ForumViewsUtilsMixin
 ):
     """
     Tests `forum_form_discussion api` works with different content groups.
@@ -1028,6 +1030,7 @@ class ForumFormDiscussionContentGroupTestCase(
 
 
 class ForumFormDiscussionUnicodeTestCase(
+    ForumsEnableMixin,
     SharedModuleStoreTestCase,
     UnicodeTestMixin,
     ForumViewsUtilsMixin,
@@ -1073,6 +1076,7 @@ class ForumFormDiscussionUnicodeTestCase(
 
 class EnterpriseConsentTestCase(
     EnterpriseTestConsentRequired,
+    ForumsEnableMixin,
     UrlResetMixin,
     ModuleStoreTestCase,
     ForumViewsUtilsMixin,
@@ -1194,7 +1198,7 @@ class InlineDiscussionGroupIdTestCase(  # lint-amnesty, pylint: disable=missing-
 
 
 class InlineDiscussionContextTestCase(
-        ModuleStoreTestCase, ForumViewsUtilsMixin
+    ForumsEnableMixin, ModuleStoreTestCase, ForumViewsUtilsMixin
 ):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     def setUp(self):
@@ -1451,7 +1455,7 @@ class UserProfileDiscussionGroupIdTestCase(
 
 @ddt.ddt
 class ForumDiscussionXSSTestCase(
-        UrlResetMixin, ModuleStoreTestCase, ForumViewsUtilsMixin
+    ForumsEnableMixin, UrlResetMixin, ModuleStoreTestCase, ForumViewsUtilsMixin
 ):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     @patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
@@ -1531,7 +1535,7 @@ class ForumDiscussionXSSTestCase(
 
 
 class InlineDiscussionTestCase(
-        ModuleStoreTestCase, ForumViewsUtilsMixin
+    ForumsEnableMixin, ModuleStoreTestCase, ForumViewsUtilsMixin
 ):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     def setUp(self):
@@ -1606,7 +1610,7 @@ class InlineDiscussionTestCase(
 
 
 class ForumDiscussionSearchUnicodeTestCase(
-        SharedModuleStoreTestCase, UnicodeTestMixin, ForumViewsUtilsMixin
+    ForumsEnableMixin, SharedModuleStoreTestCase, UnicodeTestMixin, ForumViewsUtilsMixin
 ):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     @classmethod
@@ -1648,7 +1652,7 @@ class ForumDiscussionSearchUnicodeTestCase(
 
 
 class InlineDiscussionUnicodeTestCase(
-        SharedModuleStoreTestCase, UnicodeTestMixin, ForumViewsUtilsMixin
+    ForumsEnableMixin, SharedModuleStoreTestCase, UnicodeTestMixin, ForumViewsUtilsMixin
 ):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     @classmethod
@@ -1739,7 +1743,7 @@ class ForumFormDiscussionGroupIdTestCase(
 
 
 class UserProfileTestCase(
-        UrlResetMixin, ModuleStoreTestCase, ForumViewsUtilsMixin
+    ForumsEnableMixin, UrlResetMixin, ModuleStoreTestCase, ForumViewsUtilsMixin
 ):  # lint-amnesty, pylint: disable=missing-class-docstring
 
     TEST_THREAD_TEXT = "userprofile-test-text"
@@ -1878,7 +1882,7 @@ class UserProfileTestCase(
 
 
 class ThreadViewedEventTestCase(
-    EventTestMixin, UrlResetMixin, ModuleStoreTestCase, ForumViewsUtilsMixin,
+    EventTestMixin, ForumsEnableMixin, UrlResetMixin, ModuleStoreTestCase, ForumViewsUtilsMixin,
 ):
     """
     Forum thread views are expected to launch analytics events. Test these here.
@@ -1975,6 +1979,7 @@ class ThreadViewedEventTestCase(
 
 
 class FollowedThreadsUnicodeTestCase(
+    ForumsEnableMixin,
     SharedModuleStoreTestCase,
     UnicodeTestMixin,
     ForumViewsUtilsMixin
@@ -2017,115 +2022,3 @@ class FollowedThreadsUnicodeTestCase(
         response_data = json.loads(response.content.decode('utf-8'))
         assert response_data['discussion_data'][0]['title'] == text
         assert response_data['discussion_data'][0]['body'] == text
-
-
-class UserProfileUnicodeTestCase(SharedModuleStoreTestCase, UnicodeTestMixin, ForumViewsUtilsMixin):  # lint-amnesty, pylint: disable=missing-class-docstring
-
-    @classmethod
-    def setUpClass(cls):
-        # pylint: disable=super-method-not-called
-        with super().setUpClassAndTestData():
-            cls.course = CourseFactory.create()
-        super().setUpClassAndForumMock()
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        super().disposeForumMocks()
-
-    @classmethod
-    def setUpTestData(cls):
-        super().setUpTestData()
-
-        cls.student = UserFactory.create()
-        CourseEnrollmentFactory(user=cls.student, course_id=cls.course.id)
-
-    def _test_unicode_data(self, text):  # lint-amnesty, pylint: disable=missing-function-docstring
-        self._configure_mock_responses(course=self.course, text=text)
-        request = RequestFactory().get("dummy_url")
-        request.user = self.student
-        # so (request.headers.get('x-requested-with') == 'XMLHttpRequest') == True
-        request.META["HTTP_X_REQUESTED_WITH"] = "XMLHttpRequest"
-
-        response = views.user_profile(request, str(self.course.id), str(self.student.id))
-        assert response.status_code == 200
-        response_data = json.loads(response.content.decode('utf-8'))
-        assert response_data['discussion_data'][0]['title'] == text
-        assert response_data['discussion_data'][0]['body'] == text
-
-
-class ForumMFETestCase(SharedModuleStoreTestCase, ModuleStoreTestCase, MockForumApiMixin):  # lint-amnesty, pylint: disable=missing-class-docstring
-    """
-    Tests that the MFE upgrade banner and MFE is shown in the correct situation with the correct UI
-    """
-
-    def setUp(self):
-        super().setUp()
-        self.course = CourseFactory.create()
-        self.user = UserFactory.create()
-        self.staff_user = AdminFactory.create()
-        CourseEnrollmentFactory.create(user=self.user, course_id=self.course.id)
-        self.set_mock_return_value("get_user", {
-            "id": "test_thread",
-            "title": "Title",
-            "body": "<p></p>",
-            "default_sort_key": "date",
-            "upvoted_ids": [],
-            "downvoted_ids": [],
-            "subscribed_thread_ids": [],
-        })
-        self.set_mock_return_value("get_user_active_threads", {})
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        super().setUpClassAndForumMock()
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        super().disposeForumMocks()
-
-    @override_settings(DISCUSSIONS_MICROFRONTEND_URL="http://test.url")
-    def test_redirect_from_legacy_base_url_to_new_experience(self):
-        """
-        Verify that the legacy url is redirected to MFE homepage when
-        ENABLE_DISCUSSIONS_MFE flag is enabled.
-        """
-
-        with override_waffle_flag(ENABLE_DISCUSSIONS_MFE, True):
-            self.client.login(username=self.user.username, password=self.TEST_PASSWORD)
-            url = reverse("forum_form_discussion", args=[self.course.id])
-            response = self.client.get(url)
-            assert response.status_code == 302
-            expected_url = f"{settings.DISCUSSIONS_MICROFRONTEND_URL}/{str(self.course.id)}"
-            assert response.url == expected_url
-
-    @override_settings(DISCUSSIONS_MICROFRONTEND_URL="http://test.url")
-    def test_redirect_from_legacy_profile_url_to_new_experience(self):
-        """
-        Verify that the requested user profile is redirected to MFE learners tab when
-        ENABLE_DISCUSSIONS_MFE flag is enabled
-        """
-        with override_waffle_flag(ENABLE_DISCUSSIONS_MFE, True):
-            self.client.login(username=self.user.username, password=self.TEST_PASSWORD)
-            url = reverse("user_profile", args=[self.course.id, self.user.id])
-            response = self.client.get(url)
-            assert response.status_code == 302
-            expected_url = f"{settings.DISCUSSIONS_MICROFRONTEND_URL}/{str(self.course.id)}/learners"
-            assert response.url == expected_url
-
-    @override_settings(DISCUSSIONS_MICROFRONTEND_URL="http://test.url")
-    def test_redirect_from_legacy_single_thread_to_new_experience(self):
-        """
-        Verify that a legacy single url is redirected to corresponding MFE thread url when the ENABLE_DISCUSSIONS_MFE
-        flag is enabled
-        """
-
-        with override_waffle_flag(ENABLE_DISCUSSIONS_MFE, True):
-            self.client.login(username=self.user.username, password=self.TEST_PASSWORD)
-            url = reverse("single_thread", args=[self.course.id, "test_discussion", "test_thread"])
-            response = self.client.get(url)
-            assert response.status_code == 302
-            expected_url = f"{settings.DISCUSSIONS_MICROFRONTEND_URL}/{str(self.course.id)}/posts/test_thread"
-            assert response.url == expected_url

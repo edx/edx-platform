@@ -50,7 +50,6 @@ from lms.djangoapps.discussion.django_comment_client.utils import (
     prepare_content,
     sanitize_body
 )
-from lms.djangoapps.discussion.rest_api.utils import send_signal_after_commit
 from openedx.core.djangoapps.django_comment_common.signals import (
     comment_created,
     comment_deleted,
@@ -588,10 +587,7 @@ def create_thread(request, course_id, commentable_id):
 
     thread.save()
 
-    # Use send_signal_after_commit() to ensure the signal is sent only after the transaction commits.
-    send_signal_after_commit(
-        lambda: thread_created.send(sender=None, user=user, post=thread)
-    )
+    thread_created.send(sender=None, user=user, post=thread)
 
     # patch for backward compatibility to comments service
     if 'pinned' not in thread.attributes:
@@ -602,9 +598,7 @@ def create_thread(request, course_id, commentable_id):
     if follow:
         cc_user = cc.User.from_django_user(user)
         cc_user.follow(thread, course_id)
-        send_signal_after_commit(
-            lambda: thread_followed.send(sender=None, user=user, post=thread)
-        )
+        thread_followed.send(sender=None, user=user, post=thread)
 
     data = thread.to_dict()
 
@@ -651,9 +645,7 @@ def update_thread(request, course_id, thread_id):
 
     thread.save()
 
-    send_signal_after_commit(
-        lambda: thread_edited.send(sender=None, user=user, post=thread)
-    )
+    thread_edited.send(sender=None, user=user, post=thread)
 
     track_thread_edited_event(request, course, thread, None)
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
@@ -696,9 +688,7 @@ def _create_comment(request, course_key, thread_id=None, parent_id=None):
     )
     comment.save(params={"course_id": str(course_key)})
 
-    send_signal_after_commit(
-        lambda: comment_created.send(sender=None, user=user, post=comment)
-    )
+    comment_created.send(sender=None, user=user, post=comment)
 
     followed = post.get('auto_subscribe', 'false').lower() == 'true'
 
@@ -739,9 +729,7 @@ def delete_thread(request, course_id, thread_id):
     course = get_course_with_access(request.user, 'load', course_key)
     thread = cc.Thread.find(thread_id)
     thread.delete(course_id=course_id)
-    send_signal_after_commit(
-        lambda: thread_deleted.send(sender=None, user=request.user, post=thread)
-    )
+    thread_deleted.send(sender=None, user=request.user, post=thread)
 
     track_thread_deleted_event(request, course, thread)
     return JsonResponse(prepare_content(thread.to_dict(), course_key))
@@ -763,9 +751,7 @@ def update_comment(request, course_id, comment_id):
     comment.body = sanitize_body(request.POST["body"])
     comment.save(params={"course_id": course_id})
 
-    send_signal_after_commit(
-        lambda: comment_edited.send(sender=None, user=request.user, post=comment)
-    )
+    comment_edited.send(sender=None, user=request.user, post=comment)
 
     track_comment_edited_event(request, course, comment, None)
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
@@ -790,9 +776,7 @@ def endorse_comment(request, course_id, comment_id):
     comment.endorsed = endorsed
     comment.endorsement_user_id = user.id
     comment.save(params={"course_id": course_id})
-    send_signal_after_commit(
-        lambda: comment_endorsed.send(sender=None, user=user, post=comment)
-    )
+    comment_endorsed.send(sender=None, user=user, post=comment)
     track_forum_response_mark_event(request, course, comment, endorsed)
     return JsonResponse(prepare_content(comment.to_dict(), course_key))
 
@@ -844,9 +828,7 @@ def delete_comment(request, course_id, comment_id):
     course = get_course_with_access(request.user, 'load', course_key)
     comment = cc.Comment.find(comment_id)
     comment.delete(course_id=course_id)
-    send_signal_after_commit(
-        lambda: comment_deleted.send(sender=None, user=request.user, post=comment)
-    )
+    comment_deleted.send(sender=None, user=request.user, post=comment)
     track_comment_deleted_event(request, course, comment)
     return JsonResponse(prepare_content(comment.to_dict(), course_key))
 
@@ -865,9 +847,7 @@ def _vote_or_unvote(request, course_id, obj, value='up', undo_vote=False):
         # (People could theoretically downvote by handcrafting AJAX requests.)
     else:
         user.vote(obj, value, course_id)
-    send_signal_after_commit(
-        lambda: thread_voted.send(sender=None, user=request.user, post=obj)
-    )
+    thread_voted.send(sender=None, user=request.user, post=obj)
     track_voted_event(request, course, obj, value, undo_vote)
     return JsonResponse(prepare_content(obj.to_dict(), course_key))
 
@@ -881,9 +861,7 @@ def vote_for_comment(request, course_id, comment_id, value):
     """
     comment = cc.Comment.find(comment_id)
     result = _vote_or_unvote(request, course_id, comment, value)
-    send_signal_after_commit(
-        lambda: comment_voted.send(sender=None, user=request.user, post=comment)
-    )
+    comment_voted.send(sender=None, user=request.user, post=comment)
     return result
 
 
@@ -936,9 +914,7 @@ def flag_abuse_for_thread(request, course_id, thread_id):
     thread = cc.Thread.find(thread_id)
     thread.flagAbuse(user, thread, course_id)
     track_discussion_reported_event(request, course, thread)
-    send_signal_after_commit(
-        lambda: thread_flagged.send(sender='flag_abuse_for_thread', user=request.user, post=thread)
-    )
+    thread_flagged.send(sender='flag_abuse_for_thread', user=request.user, post=thread)
     return JsonResponse(prepare_content(thread.to_dict(), course_key))
 
 
@@ -977,9 +953,7 @@ def flag_abuse_for_comment(request, course_id, comment_id):
     comment = cc.Comment.find(comment_id)
     comment.flagAbuse(user, comment, course_id)
     track_discussion_reported_event(request, course, comment)
-    send_signal_after_commit(
-        lambda: comment_flagged.send(sender='flag_abuse_for_comment', user=request.user, post=comment)
-    )
+    comment_flagged.send(sender='flag_abuse_for_comment', user=request.user, post=comment)
     return JsonResponse(prepare_content(comment.to_dict(), course_key))
 
 
@@ -1045,9 +1019,7 @@ def follow_thread(request, course_id, thread_id):  # lint-amnesty, pylint: disab
     course = get_course_by_id(course_key)
     thread = cc.Thread.find(thread_id)
     user.follow(thread, course_id=course_id)
-    send_signal_after_commit(
-        lambda: thread_followed.send(sender=None, user=request.user, post=thread)
-    )
+    thread_followed.send(sender=None, user=request.user, post=thread)
     track_thread_followed_event(request, course, thread, True)
     return JsonResponse({})
 
@@ -1079,9 +1051,7 @@ def unfollow_thread(request, course_id, thread_id):  # lint-amnesty, pylint: dis
     user = cc.User.from_django_user(request.user)
     thread = cc.Thread.find(thread_id)
     user.unfollow(thread, course_id=course_id)
-    send_signal_after_commit(
-        lambda: thread_unfollowed.send(sender=None, user=request.user, post=thread)
-    )
+    thread_unfollowed.send(sender=None, user=request.user, post=thread)
     track_thread_followed_event(request, course, thread, False)
     return JsonResponse({})
 
