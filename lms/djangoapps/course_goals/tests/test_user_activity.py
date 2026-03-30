@@ -20,6 +20,7 @@ from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import UserFactory
 from common.djangoapps.util.testing import UrlResetMixin
 from lms.djangoapps.course_goals.models import UserActivity
+from openedx.core.djangoapps.django_comment_common.models import ForumsConfig
 from openedx.features.course_experience import ENABLE_COURSE_GOALS
 
 User = get_user_model()
@@ -51,6 +52,10 @@ class UserActivityTests(UrlResetMixin, ModuleStoreTestCase):
 
         self.request = RequestFactory().get('foo')
         self.request.user = self.user
+
+        config = ForumsConfig.current()
+        config.enabled = True
+        config.save()
 
     def test_mfe_tabs_call_user_activity(self):
         '''
