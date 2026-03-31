@@ -696,6 +696,7 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["order_direction"],
             form.cleaned_data["requested_fields"],
             form.cleaned_data["count_flagged"],
+            form.cleaned_data["include_muted"],
             form.cleaned_data["show_deleted"],
         )
 
@@ -810,13 +811,20 @@ class LearnerThreadView(APIView):
         threads_per_page = request.GET.get("page_size", 10)
         count_flagged = request.GET.get("count_flagged", False)
         thread_type = request.GET.get("thread_type")
-        order_by = request.GET.get("order_by")
+        # Parse include_muted parameter (boolean)
+        include_muted = request.GET.get('include_muted', False)
+        if isinstance(include_muted, str):
+            include_muted = include_muted.lower() == 'true'
+
+        # Parse and map order_by parameter
+        order_by = request.GET.get('order_by')
         order_by_mapping = {
             "last_activity_at": "activity",
             "comment_count": "comments",
             "vote_count": "votes",
         }
         order_by = order_by_mapping.get(order_by, "activity")
+
         post_status = request.GET.get("status", None)
         show_deleted = request.GET.get("show_deleted", "false").lower() == "true"
         discussion_id = None
@@ -839,6 +847,7 @@ class LearnerThreadView(APIView):
             "count_flagged": count_flagged,
             "thread_type": thread_type,
             "sort_key": order_by,
+            "include_muted": include_muted,
             "show_deleted": show_deleted,
         }
         if post_status:
@@ -1065,6 +1074,7 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["flagged"],
             form.cleaned_data["requested_fields"],
             form.cleaned_data["merge_question_type_responses"],
+            form.cleaned_data["include_muted"],
             form.cleaned_data["show_deleted"],
         )
 
@@ -1099,6 +1109,7 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["page"],
             form.cleaned_data["page_size"],
             form.cleaned_data["requested_fields"],
+            form.cleaned_data["include_muted"],
         )
 
     def create(self, request):
@@ -1832,7 +1843,6 @@ class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
             course_or_org,
             course_id,
         )
-
         comment_count = Comment.get_user_deleted_comment_count(user.id, course_ids)
         thread_count = Thread.get_user_deleted_threads_count(user.id, course_ids)
         log.info(

@@ -1407,3 +1407,65 @@ class BanUserRequestSerializer(serializers.Serializer):
             # Just record the username for the view to resolve
             data['lookup_username'] = data['username']
         return data
+
+# Muting-related serializers
+
+
+class MuteRequestSerializer(serializers.Serializer):
+    """
+    Serializer for mute user requests.
+    """
+    muted_user_id = serializers.IntegerField(
+        help_text="ID of the user to be muted"
+    )
+    course_id = serializers.CharField(
+        help_text="Course ID where the mute applies"
+    )
+    scope = serializers.ChoiceField(
+        choices=['personal', 'course'],
+        default='personal',
+        help_text="Scope of the mute (personal or course-wide)"
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional reason for muting"
+    )
+
+
+class MuteAndReportRequestSerializer(MuteRequestSerializer):
+    """
+    Serializer for mute and report requests.
+    """
+    thread_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="ID of the thread being reported"
+    )
+    comment_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="ID of the comment being reported"
+    )
+    post_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Generic post ID (could be thread or comment) - used for retry logic"
+    )
+
+
+class UnmuteRequestSerializer(serializers.Serializer):
+    """
+    Serializer for unmute user requests.
+    """
+    muted_user_id = serializers.IntegerField(
+        help_text="ID of the user to be unmuted"
+    )
+    course_id = serializers.CharField(
+        help_text="Course ID where the unmute applies"
+    )
+    scope = serializers.ChoiceField(
+        choices=['personal', 'course'],
+        default='personal',
+        help_text="Scope of the unmute (personal or course-wide)"
+    )

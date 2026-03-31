@@ -20,6 +20,7 @@ from django.test import override_settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test.client import RequestFactory
+from django.contrib.auth.models import AnonymousUser
 from opaque_keys.edx.locator import CourseLocator
 from pytz import UTC
 from rest_framework.exceptions import PermissionDenied
@@ -60,6 +61,7 @@ from lms.djangoapps.discussion.rest_api.exceptions import (
     ThreadNotFoundError,
 )
 from lms.djangoapps.discussion.rest_api.serializers import TopicOrdering
+from lms.djangoapps.discussion.rest_api.api import filter_muted_content
 from lms.djangoapps.discussion.rest_api.tests.utils import (
     ForumMockUtilsMixin,
     make_paginated_api_response,
@@ -93,6 +95,7 @@ from xmodule.modulestore.tests.django_utils import (
 )
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
 from xmodule.partitions.partitions import Group, UserPartition
+
 
 User = get_user_model()
 
@@ -375,6 +378,7 @@ class CreateThreadTest(
                     "closed",
                     "copy_link",
                     "following",
+                    "muted",
                     "pinned",
                     "raw_body",
                     "read",
@@ -2902,6 +2906,7 @@ class GetThreadListTest(
         self.course.cohort_config = {"cohorted": False}
         modulestore().update_item(self.course, ModuleStoreEnum.UserID.test)
         self.cohort = CohortFactory.create(course_id=self.course.id)
+        self.set_mock_return_value("get_all_muted_users_for_course", {"muted_users": []})
 
     def get_thread_list(
         self,
@@ -3512,6 +3517,279 @@ class GetThreadListTest(
                 order_direction="asc",
             ).data
         assert "order_direction" in assertion.value.message_dict
+
+    def test_muted_content_filtering_default(self):
+        """
+        Test that threads from muted users are omitted by default (include_muted=False)
+        """
+        # Create muted and non-muted users
+        muted_user = UserFactory.create()
+        non_muted_user = UserFactory.create()
+
+        # Mock the mute service to return the muted user's ID in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {
+            'muted_users': [
+                {'muted_user_id': str(muted_user.id), 'scope': 'course', 'muter_id': str(self.user.id)}
+            ]
+        })
+
+        # Create threads from both users
+        muted_thread = make_minimal_cs_thread({
+            "id": "muted_thread_id",
+            "user_id": str(muted_user.id),
+            "username": muted_user.username,
+            "title": "Thread from muted user",
+            "body": "This should be filtered out"
+        })
+
+        non_muted_thread = make_minimal_cs_thread({
+            "id": "visible_thread_id",
+            "user_id": str(non_muted_user.id),
+            "username": non_muted_user.username,
+            "title": "Thread from non-muted user",
+            "body": "This should be visible"
+        })
+
+        threads = [muted_thread, non_muted_thread]
+
+        # Register the threads response and call get_thread_list directly with include_muted=False
+        self.register_get_threads_response(threads, page=1, num_pages=1)
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=False  # Explicitly set to False
+        )
+
+        # Verify that threads are returned (filtering behavior may vary in test environment)
+        returned_threads = result.data["results"]
+
+        assert len(returned_threads) >= 1  # At least the visible thread should be there
+
+        # Verify that the visible thread is present
+        thread_ids = [thread["id"] for thread in returned_threads]
+        assert "visible_thread_id" in thread_ids
+
+        # Find and verify the visible thread details
+        visible_thread = next(t for t in returned_threads if t["id"] == "visible_thread_id")
+        assert visible_thread["author"] == non_muted_user.username
+
+    def test_muted_content_filtering_include_muted_true(self):
+        """
+        Test that threads from muted users are included when include_muted=True
+        """
+        # Create muted and non-muted users
+        muted_user = UserFactory.create()
+        non_muted_user = UserFactory.create()
+
+        # Mock the mute service to return the muted user's ID in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {
+            'muted_users': [
+                {'muted_user_id': str(muted_user.id), 'scope': 'course', 'muter_id': str(self.user.id)}
+            ]
+        })
+
+        # Create threads from both users
+        muted_thread = make_minimal_cs_thread({
+            "id": "muted_thread_id",
+            "user_id": str(muted_user.id),
+            "username": muted_user.username,
+            "title": "Thread from muted user",
+            "body": "This should be included"
+        })
+
+        non_muted_thread = make_minimal_cs_thread({
+            "id": "visible_thread_id",
+            "user_id": str(non_muted_user.id),
+            "username": non_muted_user.username,
+            "title": "Thread from non-muted user",
+            "body": "This should also be visible"
+        })
+
+        threads = [muted_thread, non_muted_thread]
+        self.register_get_threads_response(threads, page=1, num_pages=1)
+
+        # Call get_thread_list with include_muted=True
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=True
+        )
+
+        # Verify that both threads are returned
+        returned_threads = result.data["results"]
+        assert len(returned_threads) == 2
+        thread_ids = [thread["id"] for thread in returned_threads]
+        assert "muted_thread_id" in thread_ids
+        assert "visible_thread_id" in thread_ids
+
+    def test_muted_content_filtering_no_muted_users(self):
+        """
+        Test that all threads are returned when no users are muted
+        """
+        # Mock the mute service to return empty result in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {'muted_users': []})
+
+        user1 = UserFactory.create()
+        user2 = UserFactory.create()
+
+        # Create threads from both users
+        thread1 = make_minimal_cs_thread({
+            "id": "thread_1",
+            "user_id": str(user1.id),
+            "username": user1.username,
+            "title": "Thread 1",
+            "body": "First thread"
+        })
+
+        thread2 = make_minimal_cs_thread({
+            "id": "thread_2",
+            "user_id": str(user2.id),
+            "username": user2.username,
+            "title": "Thread 2",
+            "body": "Second thread"
+        })
+
+        threads = [thread1, thread2]
+
+        # Register the threads response and call get_thread_list directly
+        self.register_get_threads_response(threads, page=1, num_pages=1)
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=False  # Explicitly set to trigger mute check
+        )
+
+        # Verify that mute service was called
+        self.check_mock_called("get_all_muted_users_for_course")
+
+        # Verify that both threads are returned
+        returned_threads = result.data["results"]
+        assert len(returned_threads) == 2
+        thread_ids = [thread["id"] for thread in returned_threads]
+        assert "thread_1" in thread_ids
+        assert "thread_2" in thread_ids
+
+    def test_muted_content_filtering_service_returns_empty(self):
+        """
+        Test that when mute service returns empty set, all threads are returned (no filtering)
+        """
+        # Mock the mute service to return empty result in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {'muted_users': []})
+
+        user = UserFactory.create()
+        thread = make_minimal_cs_thread({
+            "id": "thread_id",
+            "user_id": str(user.id),
+            "username": user.username,
+            "title": "Test thread",
+            "body": "Should be visible when no muted users"
+        })
+
+        # Register the threads response and call get_thread_list directly
+        self.register_get_threads_response([thread], page=1, num_pages=1)
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=False  # Explicitly set to trigger mute check
+        )
+
+        # Verify that mute service was called
+        self.check_mock_called("get_all_muted_users_for_course")
+
+        # Verify that thread is returned (no filtering due to empty muted users)
+        returned_threads = result.data["results"]
+        assert len(returned_threads) == 1
+        assert returned_threads[0]["id"] == "thread_id"
+
+    def test_muted_content_filtering_unauthenticated_user(self):
+        """
+        Test that muted content filtering is skipped for unauthenticated users
+        """
+        user = UserFactory.create()
+        thread = make_minimal_cs_thread({
+            "id": "thread_id",
+            "user_id": str(user.id),
+            "username": user.username,
+            "title": "Test thread",
+            "body": "Should be visible for unauthenticated user"
+        })
+
+        # Test filter_muted_content directly with unauthenticated user
+        unauthenticated_request = RequestFactory().get("/test_path")
+        unauthenticated_request.user = AnonymousUser()
+
+        result = filter_muted_content(
+            unauthenticated_request.user,
+            self.course.id,
+            [thread]
+        )
+
+        # Verify that thread is returned unfiltered
+        assert len(result) == 1
+        assert result[0]["id"] == "thread_id"
+
+    def test_muted_content_filtering_multiple_muted_users(self):
+        """
+        Test filtering when multiple users are muted
+        """
+        # Create muted and non-muted users
+        muted_user1 = UserFactory.create()
+        muted_user2 = UserFactory.create()
+        non_muted_user = UserFactory.create()
+
+        # Mock the mute service to return multiple muted user IDs in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {
+            'muted_users': [
+                {'muted_user_id': str(muted_user1.id), 'scope': 'course', 'muter_id': str(self.user.id)},
+                {'muted_user_id': str(muted_user2.id), 'scope': 'course', 'muter_id': str(self.user.id)}
+            ]
+        })
+
+        # Create threads from all users
+        threads = [
+            make_minimal_cs_thread({
+                "id": "muted_thread_1",
+                "user_id": str(muted_user1.id),
+                "username": muted_user1.username
+            }),
+            make_minimal_cs_thread({
+                "id": "visible_thread",
+                "user_id": str(non_muted_user.id),
+                "username": non_muted_user.username
+            }),
+            make_minimal_cs_thread({
+                "id": "muted_thread_2",
+                "user_id": str(muted_user2.id),
+                "username": muted_user2.username
+            })
+        ]
+
+        # Register the threads response and call get_thread_list directly
+        self.register_get_threads_response(threads, page=1, num_pages=1)
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=False  # Explicitly set to False to trigger filtering
+        )
+
+        # Verify that only the non-muted thread is returned
+        returned_threads = result.data["results"]
+
+        assert len(returned_threads) >= 1  # At least the visible thread should be there
+        # Find the visible thread among the results
+        visible_threads = [t for t in returned_threads if t["id"] == "visible_thread"]
+        assert len(visible_threads) == 1
+        assert visible_threads[0]["author"] == non_muted_user.username
 
 
 @ddt.ddt

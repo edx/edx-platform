@@ -994,7 +994,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
             editable_fields.remove("voted")
             editable_fields.extend(['anonymous', 'raw_body', 'title', 'topic_id', 'type'])
         elif role == FORUM_ROLE_MODERATOR:
-            editable_fields.extend(['close_reason_code', 'closed', 'edit_reason_code', 'pinned',
+            editable_fields.extend(['close_reason_code', 'closed', 'edit_reason_code', 'muted', 'pinned',
                                     'raw_body', 'title', 'topic_id', 'type'])
         expected = self.expected_thread_data({
             "author": author.username,
@@ -1053,7 +1053,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
             editable_fields.extend(['anonymous', 'raw_body', 'title', 'topic_id', 'type'])
 
         elif role == FORUM_ROLE_MODERATOR:
-            editable_fields.extend(['close_reason_code', 'closed', 'edit_reason_code', 'pinned',
+            editable_fields.extend(['close_reason_code', 'closed', 'edit_reason_code', 'muted', 'pinned',
                                     'raw_body', 'title', 'topic_id', 'type'])
 
         expected = self.expected_thread_data({
