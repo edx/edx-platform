@@ -204,12 +204,18 @@ class CourseEnrollmentManager(models.Manager):
         """
         max_enrollments = settings.FEATURES.get("MAX_ENROLLMENT_INSTR_BUTTONS")
 
-        enrollment_number = super().get_queryset().filter(
-            course_id=course_id,
-            is_active=1
-        )[:max_enrollments + 1].count()
+        # Fetch limited records without ordering (clears default ordering for performance).
+        # Calling .count() on a sliced queryset creates a slow subquery with ORDER BY.
+        # Instead, fetch the limited records and check the length.
+        enrollments = list(
+            super().get_queryset()
+            .filter(course_id=course_id, is_active=1)
+            .order_by()  # Clear default ordering - not needed for counting
+            .values_list('id', flat=True)  # Only fetch IDs, not full objects
+            [:max_enrollments + 1]
+        )
 
-        return enrollment_number <= max_enrollments
+        return len(enrollments) <= max_enrollments
 
     def num_enrolled_in_exclude_admins(self, course_id):
         """
