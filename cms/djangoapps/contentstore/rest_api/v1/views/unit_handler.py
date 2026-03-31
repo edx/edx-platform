@@ -10,7 +10,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from cms.djangoapps.contentstore.rest_api.v1.mixins import ContainerHandlerMixin
-from cms.djangoapps.contentstore.views.component import get_component_templates
 from openedx.core.lib.api.view_utils import view_auth_classes
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
@@ -114,18 +113,10 @@ class UnitComponentsView(APIView, ContainerHandlerMixin):
                         log.warning(f"Child block not found: {child_usage_key}")
                         continue
 
-            # Fetch the course to get component templates available for this unit
-            course_key = usage_key.course_key
-            course = modulestore().get_course(course_key)
-            component_templates = []
-            if course:
-                component_templates = get_component_templates(course)
-
             response_data = {
                 "unit_id": str(usage_key),
                 "display_name": unit_xblock.display_name_with_default,
                 "components": components,
-                "component_templates": component_templates,
             }
 
             return Response(response_data)
