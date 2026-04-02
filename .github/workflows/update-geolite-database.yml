@@ -68,11 +68,13 @@ jobs:
 
       - name: Close obsolete GeoLite update PRs
         run: |
+          set -euo pipefail
           gh pr list \
-              --search '"Update GeoLite Database" in:title base:release-ulmo' \
               --state open \
-              --json number \
-              --jq '.[].number' | \
+              --base 'release-ulmo' \
+              --limit 100 \
+              --json number,title,headRefName \
+              --jq '.[] | select(.title == "Update GeoLite Database" and (.headRefName | contains("/geoip2-bot-update-country-database-"))) | .number' | \
           xargs -r -I{} gh pr close {} \
               --comment 'Superseded by a newer automated GeoLite database update. Please review the latest PR.'
         env:
