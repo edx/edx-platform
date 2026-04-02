@@ -461,7 +461,8 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
                             "IntegrityError when saving CourseOverview for course %s: %s. This is likely due to "
                             "multiple CourseOverviews being requested simultaneously; will only save one.",
                             course.id,
-                            mock.ANY
+                            mock.ANY,
+                            exc_info=True
                         )
 
     def test_course_overview_version_update(self):
