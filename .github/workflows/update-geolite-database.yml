@@ -66,6 +66,18 @@ jobs:
           git config --global user.email '${{ github.actor }}@users.noreply.github.com'
           git config --global user.name '${{ github.actor }}'
 
+      - name: Close obsolete GeoLite update PRs
+        run: |
+          gh pr list \
+              --search '"Update GeoLite Database" in:title base:release-ulmo' \
+              --state open \
+              --json number \
+              --jq '.[].number' | \
+          xargs -r -I{} gh pr close {} \
+              --comment 'Superseded by a newer automated GeoLite database update. Please review the latest PR.'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_WITH_ORG }}
+
       - name: Create a branch, commit the code and make a PR
         id: create-pr
         run: |
