@@ -732,6 +732,7 @@
 
                 this.scrollCaption();
                 this.setSubtitlesHeight();
+                this.setLanguageMenuMaxHeight();
             },
 
             /**
@@ -779,6 +780,8 @@
                     this.languageChooserEl,
                     HtmlUtils.HTML($menu)
                 );
+
+                this.setLanguageMenuMaxHeight();
 
                 $menu.on('click', '.control-lang', function(e) {
                     var el = $(e.currentTarget).parent(),
@@ -1455,6 +1458,17 @@
                 this.subtitlesEl.css({
                     maxHeight: this.captionHeight() - height
                 });
+            },
+
+            /**
+            * @desc Sets the max height of the language selection menu so it
+            *     cannot overflow the video player container.
+            *
+            */
+            setLanguageMenuMaxHeight: function() {
+                var controlsHeight = this.state.el.find('.video-controls').height() || 0;
+                var availableHeight = (this.captionHeight() - controlsHeight) * 0.9;
+                this.languageChooserEl.find('.menu').css('maxHeight', availableHeight);
             }
         };
 
