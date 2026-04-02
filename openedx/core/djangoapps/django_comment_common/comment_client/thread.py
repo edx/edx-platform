@@ -369,9 +369,7 @@ class Thread(models.Model):
             thread_id = thread.get("_id")
             course_id = thread.get("course_id")
             if thread_id:
-                cls._delete_thread(
-                    thread_id, course_id=course_id, deleted_by=deleted_by
-                )
+                forum_api.delete_thread(thread_id, course_id=course_id)
                 threads_deleted += 1
             log.info(
                 f"<<Bulk Delete>> Deleted thread {thread_id} in {time.time() - start_time} seconds."
