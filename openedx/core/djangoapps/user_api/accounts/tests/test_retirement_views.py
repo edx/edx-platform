@@ -8,7 +8,6 @@ from unittest import mock
 
 import ddt
 from zoneinfo import ZoneInfo
-from consent.models import DataSharingConsent
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.contrib.sites.models import Site
 from django.core import mail
