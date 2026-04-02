@@ -458,8 +458,10 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
                         # Make sure that tbe second call skips the cache and
                         # IntegrityError is triggered and handled gracefully
                         mock_log.info.assert_called_with(
-                            "Multiple CourseOverviews for course %s requested simultaneously; will only save one.",
-                            course.id
+                            "IntegrityError when saving CourseOverview for course %s: %s. This is likely due to "
+                            "multiple CourseOverviews being requested simultaneously; will only save one.",
+                            course.id,
+                            mock.ANY
                         )
 
     def test_course_overview_version_update(self):

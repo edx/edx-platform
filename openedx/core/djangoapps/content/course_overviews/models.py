@@ -326,7 +326,7 @@ class CourseOverview(TimeStampedModel):
                         CourseOverviewImageSet.objects.filter(course_overview=course_overview).delete()
                         CourseOverviewImageSet.create(course_overview, course)
 
-                except IntegrityError:
+                except IntegrityError as e:
                     # There is a rare race condition that will occur if
                     # CourseOverview.get_from_id is called while a
                     # another identical overview is already in the process
@@ -336,9 +336,13 @@ class CourseOverview(TimeStampedModel):
                     # to save a duplicate.
                     # (see: https://openedx.atlassian.net/browse/TNL-2854).
                     log.info(
-                        "Multiple CourseOverviews for course %s requested "
-                        "simultaneously; will only save one.",
+                        (
+                            "IntegrityError when saving CourseOverview for course %s: %s. This is likely due to "
+                            "multiple CourseOverviews being requested simultaneously; will only save one."
+                        ),
                         course_id,
+                        e,
+                        exc_info=True
                     )
                 except Exception:
                     log.exception(
