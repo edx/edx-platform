@@ -276,15 +276,12 @@ class Thread(models.Model):
     def get_user_threads_count(cls, user_id, course_ids):
         """
         Returns threads count of user in the given course_ids.
-        TODO: Add support for MySQL backend as well
+        Uses forum_api to support both MongoDB and MySQL backends.
         """
-        query_params = {
-            "course_id": {"$in": course_ids},
-            "author_id": str(user_id),
-            "is_deleted": {"$ne": True},
-            "_type": "CommentThread",
-        }
-        return ForumThread()._collection.count_documents(query_params)
+        return forum_api.get_user_threads_count(
+            user_id=str(user_id),
+            course_ids=course_ids
+        )
 
     @classmethod
     def _delete_thread(cls, thread_id, course_id=None, deleted_by=None):
@@ -353,31 +350,13 @@ class Thread(models.Model):
     def delete_user_threads(cls, user_id, course_ids, deleted_by=None):
         """
         Deletes threads of user in the given course_ids.
-        TODO: Add support for MySQL backend as well
+        Uses forum_api to support both MongoDB and MySQL backends.
         """
-        start_time = time.time()
-        query_params = {
-            "course_id": {"$in": course_ids},
-            "author_id": str(user_id),
-            "is_deleted": {"$ne": True},
-        }
-        threads_deleted = 0
-        threads = ForumThread().get_list(**query_params)
-        log.info(f"<<Bulk Delete>> Fetched threads for user {user_id} in {time.time() - start_time} seconds")
-        for thread in threads:
-            start_time = time.time()
-            thread_id = thread.get("_id")
-            course_id = thread.get("course_id")
-            if thread_id:
-                cls._delete_thread(
-                    thread_id, course_id=course_id, deleted_by=deleted_by
-                )
-                threads_deleted += 1
-            log.info(
-                f"<<Bulk Delete>> Deleted thread {thread_id} in {time.time() - start_time} seconds."
-                f" Thread Found: {thread_id is not None}"
-            )
-        return threads_deleted
+        return forum_api.delete_user_threads(
+            user_id=str(user_id),
+            course_ids=course_ids,
+            deleted_by=deleted_by
+        )
 
     @classmethod
     def get_user_deleted_threads_count(cls, user_id, course_ids):

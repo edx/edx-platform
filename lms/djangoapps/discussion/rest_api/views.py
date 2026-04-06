@@ -1664,7 +1664,7 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
     def post(self, request, course_id):
         """
         Implements the delete user posts endpoint.
-        TODO: Add support for MySQLBackend as well
+        Supports both MongoDB and MySQL backends via forum API.
         """
         username = request.GET.get("username", None)
         execute_task = request.GET.get("execute", "false").lower() == "true"
