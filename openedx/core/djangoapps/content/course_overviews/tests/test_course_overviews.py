@@ -625,6 +625,7 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
         CourseOverview.load_from_module_store(course_key)
         assert CourseOverview.objects.filter(id=course_key).exists()
 
+    @override_settings(ENTRANCE_EXAM_MIN_SCORE_PCT=0.5)
     def test_null_entrance_exam_minimum_score(self):
         """
         Tests that course overview can be created when entrance_exam_minimum_score is null.
@@ -632,8 +633,7 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
         course = CourseFactory.create()
         course.entrance_exam_minimum_score_pct = None
         course_overview = CourseOverview._create_or_update(course)  # pylint: disable=protected-access
-        assert course_overview.entrance_exam_minimum_score_pct == \
-            CourseOverview.entrance_exam_minimum_score_pct.field.default
+        assert course_overview.entrance_exam_minimum_score_pct == 0.5
 
 
 @ddt.ddt
