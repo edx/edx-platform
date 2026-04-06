@@ -6,7 +6,6 @@ import os
 from io import BytesIO
 from unittest import mock
 
-from cms.djangoapps.contentstore.views import course
 import pytest
 import datetime  # lint-amnesty, pylint: disable=wrong-import-order
 import itertools  # lint-amnesty, pylint: disable=wrong-import-order
