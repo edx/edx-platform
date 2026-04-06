@@ -268,7 +268,7 @@ class CourseOverview(TimeStampedModel):
         # it to be a float like everything else.
         if isinstance(course.entrance_exam_minimum_score_pct, int):
             course_overview.entrance_exam_minimum_score_pct = course.entrance_exam_minimum_score_pct / 100
-        else:
+        elif course.entrance_exam_minimum_score_pct is not None:
             course_overview.entrance_exam_minimum_score_pct = course.entrance_exam_minimum_score_pct
 
         course_overview.force_on_flexible_peer_openassessments = course.force_on_flexible_peer_openassessments
