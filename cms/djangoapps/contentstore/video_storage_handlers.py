@@ -867,6 +867,13 @@ def videos_post(course, request):
             },
             ExpiresIn=KEY_EXPIRATION_IN_SECONDS,
         )
+        # Devstack: localstack uses an internal docker hostname that the
+        # browser can't resolve. Rewrite it to localhost so the browser PUT
+        # works. localstack is permissive about the host header so signature
+        # validation still passes. No-op in production where the endpoint
+        # URL never contains this hostname.
+        if 'edx.devstack.localstack' in (settings.AWS_S3_ENDPOINT_URL or ''):
+            upload_url = upload_url.replace('edx.devstack.localstack', 'localhost')
 
         # persist edx_video_id in VAL
         create_video({

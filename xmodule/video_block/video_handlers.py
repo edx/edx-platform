@@ -727,7 +727,7 @@ class VideoStudioViewHandlers:
                         content_type=body.get('content_type'),
                         file_size=body.get('file_size'),
                     )
-                    return Response(json.dumps(result), content_type='application/json')
+                    return Response(json=result)
 
                 if action == 'complete':
                     result = complete_audio_description_upload(
@@ -736,7 +736,7 @@ class VideoStudioViewHandlers:
                     )
                     # pylint: disable=attribute-defined-outside-init
                     self.audio_description = result['file_name']
-                    return Response(json.dumps(result), content_type='application/json')
+                    return Response(json=result)
             except AudioDescriptionUploadError as exc:
                 return Response(json={'error': str(exc)}, status=400)
 
@@ -755,9 +755,6 @@ class VideoStudioViewHandlers:
             url = generate_audio_description_download_url(self.edx_video_id)
             if not url:
                 return Response(status=404)
-            return Response(
-                json.dumps({'file_name': self.audio_description, 'url': url}),
-                content_type='application/json',
-            )
+            return Response(json={'file_name': self.audio_description, 'url': url})
 
         return Response(status=405)
