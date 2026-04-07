@@ -940,6 +940,22 @@ VIDEO_UPLOAD_PIPELINE = {
     'CONCURRENT_UPLOAD_LIMIT': 4,
 }
 
+############################# SETTINGS FOR VIDEO AUDIO DESCRIPTION #############################
+
+VIDEO_AUDIO_DESCRIPTION_SETTINGS = {
+    'MAX_BYTES': 500 * 1024 * 1024,                       # 500MB ceiling
+    'ALLOWED_CONTENT_TYPES': [
+        'audio/mpeg',
+        'audio/mp4',
+        'audio/wav',
+        'audio/aac',
+        'audio/x-m4a',
+    ],
+    'S3_KEY_PREFIX': 'audio_descriptions/',
+    'PRESIGNED_PUT_EXPIRATION_SECONDS': 3600,             # 1 hour — slow uploads
+    'PRESIGNED_GET_EXPIRATION_SECONDS': 6 * 3600,         # 6 hours — page session
+}
+
 ############################ APPS #####################################
 
 # The order of INSTALLED_APPS is important, when adding new apps here

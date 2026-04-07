@@ -179,6 +179,12 @@ class VideoFields:
         display_name=_("Upload Handout"),
         scope=Scope.settings,
     )
+    audio_description = String(
+        help=_("Upload an audio description file that replaces the video's original audio for accessibility."),
+        display_name=_("Audio Description"),
+        scope=Scope.settings,
+        default="",
+    )
     only_on_web = Boolean(
         help=_(
             "Specify whether access to this video is limited to browsers only, or if it can be "

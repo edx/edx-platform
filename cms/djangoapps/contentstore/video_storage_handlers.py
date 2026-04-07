@@ -66,6 +66,21 @@ from .views.course import get_course_and_check_access
 
 LOGGER = logging.getLogger(__name__)
 
+
+def get_s3_client():
+    """
+    Build an S3 client that honors AWS_S3_ENDPOINT_URL when set (for
+    localstack / MinIO in dev). In production AWS_S3_ENDPOINT_URL is
+    unset, so boto3 falls back to its default endpoint resolution and
+    talks to real AWS S3 with the regular credentials chain.
+    """
+    kwargs = {}
+    endpoint_url = getattr(settings, 'AWS_S3_ENDPOINT_URL', None)
+    if endpoint_url:
+        kwargs['endpoint_url'] = endpoint_url
+    return boto3.client('s3', **kwargs)
+
+
 # Waffle switches namespace for videos
 WAFFLE_NAMESPACE = 'videos'
 
@@ -808,7 +823,7 @@ def videos_post(course, request):
     if error:
         return {'error': error}, 400
 
-    s3_client = boto3.client('s3')
+    s3_client = get_s3_client()
 
     req_files = data['files']
     resp_files = []

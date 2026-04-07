@@ -3340,6 +3340,21 @@ VIDEO_UPLOAD_PIPELINE = {
     'ROOT_PATH': '',
 }
 
+############### Settings for video audio description ##################
+VIDEO_AUDIO_DESCRIPTION_SETTINGS = {
+    'MAX_BYTES': 500 * 1024 * 1024,                       # 500MB ceiling
+    'ALLOWED_CONTENT_TYPES': [
+        'audio/mpeg',
+        'audio/mp4',
+        'audio/wav',
+        'audio/aac',
+        'audio/x-m4a',
+    ],
+    'S3_KEY_PREFIX': 'audio_descriptions/',
+    'PRESIGNED_PUT_EXPIRATION_SECONDS': 3600,             # 1 hour — slow uploads
+    'PRESIGNED_GET_EXPIRATION_SECONDS': 6 * 3600,         # 6 hours — page session
+}
+
 ### Proctoring configuration (redirct URLs and keys shared between systems) ####
 PROCTORING_BACKENDS = {
     'DEFAULT': 'null',

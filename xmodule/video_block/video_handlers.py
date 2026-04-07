@@ -674,3 +674,90 @@ class VideoStudioViewHandlers:
         except (UnicodeDecodeError, TranscriptsGenerationException, NotFoundError):
             response = Response(status=404)
         return response
+
+    @XBlock.handler
+    def studio_audio_description(self, request, suffix=''):  # pylint: disable=unused-argument
+        """
+        Studio handler for the per-video audio description (AD) upload flow.
+
+        The browser uploads AD audio directly to S3 via a pre-signed URL so
+        bytes never traverse a Django worker. This handler brokers the
+        request/response side of that flow:
+
+        - POST {action: "get_upload_url", file_name, content_type, file_size}
+            Returns a pre-signed PUT URL plus the s3_key/edx_video_id the
+            client will need to confirm completion.
+        - POST {action: "complete", edx_video_id, s3_key}
+            Verifies the object landed in S3, marks the edx-val record
+            ready, and stores the filename on the XBlock.
+        - DELETE
+            Removes both the edx-val record and the underlying S3 object,
+            and clears the XBlock field.
+        - GET
+            Returns a fresh pre-signed GET URL for the current AD file.
+        """
+        # Imported lazily because the storage handlers live in
+        # cms.djangoapps and must not be pulled in at LMS import time.
+        from cms.djangoapps.contentstore.audio_description_storage_handlers import (  # pylint: disable=import-outside-toplevel
+            AudioDescriptionUploadError,
+            complete_audio_description_upload,
+            delete_audio_description,
+            generate_audio_description_download_url,
+            generate_audio_description_upload_url,
+        )
+
+        if request.method == 'POST':
+            try:
+                body = json.loads(request.body.decode('utf-8'))
+            except (ValueError, UnicodeDecodeError):
+                return Response(json={'error': 'Invalid JSON body'}, status=400)
+
+            action = body.get('action')
+            try:
+                if action == 'get_upload_url':
+                    if not self.edx_video_id:
+                        # Back-populate the video ID for an external video
+                        # so the AD can be associated with something concrete.
+                        # pylint: disable=attribute-defined-outside-init
+                        self.edx_video_id = create_external_video(display_name='external video')
+
+                    result = generate_audio_description_upload_url(
+                        edx_video_id=self.edx_video_id,
+                        file_name=body.get('file_name'),
+                        content_type=body.get('content_type'),
+                        file_size=body.get('file_size'),
+                    )
+                    return Response(json.dumps(result), content_type='application/json')
+
+                if action == 'complete':
+                    result = complete_audio_description_upload(
+                        edx_video_id=body.get('edx_video_id') or self.edx_video_id,
+                        s3_key=body.get('s3_key'),
+                    )
+                    # pylint: disable=attribute-defined-outside-init
+                    self.audio_description = result['file_name']
+                    return Response(json.dumps(result), content_type='application/json')
+            except AudioDescriptionUploadError as exc:
+                return Response(json={'error': str(exc)}, status=400)
+
+            return Response(json={'error': f'Unknown action: {action}'}, status=400)
+
+        if request.method == 'DELETE':
+            try:
+                delete_audio_description(self.edx_video_id)
+            except AudioDescriptionUploadError as exc:
+                return Response(json={'error': str(exc)}, status=400)
+            # pylint: disable=attribute-defined-outside-init
+            self.audio_description = ''
+            return Response(status=204)
+
+        if request.method == 'GET':
+            url = generate_audio_description_download_url(self.edx_video_id)
+            if not url:
+                return Response(status=404)
+            return Response(
+                json.dumps({'file_name': self.audio_description, 'url': url}),
+                content_type='application/json',
+            )
+
+        return Response(status=405)

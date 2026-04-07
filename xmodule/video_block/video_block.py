@@ -471,6 +471,10 @@ class _BuiltInVideoBlock(
             'ytTestTimeout': settings.YOUTUBE['TEST_TIMEOUT'],
         }
 
+        audio_description_url = self._get_audio_description_url()
+        if audio_description_url:
+            metadata['audioDescriptionUrl'] = audio_description_url
+
         bumperize(self)
 
         is_video_from_same_origin = bool(download_video_link and cdn_url and download_video_link.startswith(cdn_url))
@@ -1256,13 +1260,19 @@ class _BuiltInVideoBlock(
             for lang in available_translations
         }
 
-        return {
+        result = {
             "only_on_web": self.only_on_web,
             "duration": val_video_data.get('duration', None),
             "transcripts": transcripts,
             "encoded_videos": encoded_videos,
             "all_sources": all_sources,
         }
+
+        audio_description_url = self._get_audio_description_url()
+        if audio_description_url:
+            result["audio_description_url"] = audio_description_url
+
+        return result
 
     def _poster(self):
         """
@@ -1274,6 +1284,31 @@ class _BuiltInVideoBlock(
                 edx_video_id=self.edx_video_id.strip()
             )
         return None
+
+    def _get_audio_description_url(self):
+        """
+        Generate a fresh pre-signed GET URL for this video's audio
+        description file, if one exists. Pre-signed URLs expire, so this
+        is regenerated on every page load.
+
+        Returns the URL string, or None if no AD is configured for this
+        video or the URL cannot be generated for any reason.
+        """
+        if not getattr(self, 'audio_description', '') or not self.edx_video_id:
+            return None
+        try:
+            # Lazy import: the storage handler lives in cms.djangoapps and
+            # we don't want to require that package at module-import time.
+            from cms.djangoapps.contentstore.audio_description_storage_handlers import (  # pylint: disable=import-outside-toplevel
+                generate_audio_description_download_url,
+            )
+            return generate_audio_description_download_url(self.edx_video_id)
+        except Exception:  # pylint: disable=broad-except
+            log.exception(
+                'Failed to generate audio description URL for video %s',
+                self.edx_video_id,
+            )
+            return None
 
 
 VideoBlock = (
