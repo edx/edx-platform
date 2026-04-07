@@ -2,7 +2,6 @@
 Discussion API serializers
 """
 
-import html
 import re
 from typing import Dict
 from urllib.parse import urlencode, urlunparse
@@ -165,7 +164,9 @@ def filter_spam_urls_from_html(html_string):
     Returns:
         clean_post, is_spam
     """
-    html_string = html.unescape(html_string)
+    # BeautifulSoup automatically handles HTML entities correctly.
+    # Do NOT call html.unescape() here as it breaks properly escaped content in code blocks
+    # (e.g., &lt;div&gt; inside <code> tags would become real <div> tags).
     soup = BeautifulSoup(html_string, "html.parser")
     patterns = []
     is_spam = False
