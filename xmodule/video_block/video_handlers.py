@@ -695,6 +695,12 @@ class VideoStudioViewHandlers:
             and clears the XBlock field.
         - GET
             Returns a fresh pre-signed GET URL for the current AD file.
+
+        Gated by the contentstore.enable_audio_description_upload waffle
+        flag: when disabled, every method returns 404 so the endpoint
+        looks non-existent to clients. Note that LMS playback of AD files
+        already attached to a block is intentionally NOT gated by this
+        flag (see _get_audio_description_url in video_block.py).
         """
         # Imported lazily because the storage handlers live in
         # cms.djangoapps and must not be pulled in at LMS import time.
@@ -705,6 +711,12 @@ class VideoStudioViewHandlers:
             generate_audio_description_download_url,
             generate_audio_description_upload_url,
         )
+        from cms.djangoapps.contentstore.toggles import (  # pylint: disable=import-outside-toplevel
+            audio_description_upload_enabled,
+        )
+
+        if not audio_description_upload_enabled():
+            return Response(status=404)
 
         if request.method == 'POST':
             try:

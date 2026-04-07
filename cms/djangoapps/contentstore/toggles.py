@@ -67,6 +67,31 @@ def bypass_olx_failure_enabled():
     return BYPASS_OLX_FAILURE.is_enabled()
 
 
+# .. toggle_name: contentstore.enable_audio_description_upload
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Enables the audio description (AD) upload UI in the
+#   Studio video editor and the corresponding studio_audio_description XBlock
+#   handler. When disabled, course authors cannot upload, replace, or delete
+#   audio description files for video blocks. Playback of AD files that were
+#   already uploaded is NOT gated by this flag and continues to work in the
+#   LMS -- disable the playback path with a separate flag if needed.
+# .. toggle_use_cases: open_edx
+# .. toggle_creation_date: 2026-04-07
+ENABLE_AUDIO_DESCRIPTION_UPLOAD = WaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.enable_audio_description_upload',
+    __name__,
+    CONTENTSTORE_LOG_PREFIX,
+)
+
+
+def audio_description_upload_enabled():
+    """
+    Return True if the audio description upload UI and handler are enabled.
+    """
+    return ENABLE_AUDIO_DESCRIPTION_UPLOAD.is_enabled()
+
+
 # .. toggle_name: legacy_studio.exam_settings
 # .. toggle_implementation: WaffleFlag
 # .. toggle_default: False

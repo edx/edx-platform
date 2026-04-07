@@ -34,6 +34,7 @@ class CourseWaffleFlagsSerializer(serializers.Serializer):
     enable_course_optimizer_check_prev_run_links = serializers.SerializerMethodField()
     enable_unit_expanded_view = serializers.SerializerMethodField()
     enable_outline_component_creation = serializers.SerializerMethodField()
+    enable_audio_description_upload = serializers.SerializerMethodField()
 
     def get_course_key(self):
         """
@@ -192,3 +193,12 @@ class CourseWaffleFlagsSerializer(serializers.Serializer):
         """
         course_key = self.get_course_key()
         return toggles.enable_outline_component_creation(course_key)
+
+    def get_enable_audio_description_upload(self, obj):
+        """
+        Method to get the enable_audio_description_upload waffle flag.
+
+        This is an instance-wide flag (not per-course) that gates the
+        audio description upload UI in the Studio video editor.
+        """
+        return toggles.audio_description_upload_enabled()
