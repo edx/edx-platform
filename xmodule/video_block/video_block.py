@@ -1297,9 +1297,9 @@ class _BuiltInVideoBlock(
         if not getattr(self, 'audio_description', '') or not self.edx_video_id:
             return None
         try:
-            # Lazy import: the storage handler lives in cms.djangoapps and
-            # we don't want to require that package at module-import time.
-            from cms.djangoapps.contentstore.audio_description_storage_handlers import (  # pylint: disable=import-outside-toplevel
+            # Lazy import keeps boto3 / edxval out of the module-import path
+            # for video_block, which is loaded very early in both LMS and CMS.
+            from xmodule.video_block.audio_description_urls import (  # pylint: disable=import-outside-toplevel
                 generate_audio_description_download_url,
             )
             return generate_audio_description_download_url(self.edx_video_id)

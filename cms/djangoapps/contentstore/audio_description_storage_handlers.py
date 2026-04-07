@@ -266,21 +266,12 @@ def generate_audio_description_download_url(edx_video_id):
     """
     Generate a fresh pre-signed GET URL for the AD file. Returns None if
     no ready record exists for the given video.
-    """
-    record = get_video_audio_description(edx_video_id)
-    if record is None or record.get('status') != 'ready':
-        return None
 
-    ad_settings = _get_settings()
-    expires_in = ad_settings.get('PRESIGNED_GET_EXPIRATION_SECONDS', 6 * 3600)
-    bucket = _get_bucket_name()
-    s3_client = get_s3_client()
-    download_url = s3_client.generate_presigned_url(
-        ClientMethod='get_object',
-        Params={
-            'Bucket': bucket,
-            'Key': record['s3_key'],
-        },
-        ExpiresIn=expires_in,
+    The actual S3 work lives in `xmodule.video_block.audio_description_urls`
+    so the LMS video block can mint download URLs without importing
+    `cms.djangoapps.contentstore` (which is not in INSTALLED_APPS for LMS).
+    """
+    from xmodule.video_block.audio_description_urls import (  # pylint: disable=import-outside-toplevel
+        generate_audio_description_download_url as _generate,
     )
-    return _rewrite_devstack_presigned_url(download_url)
+    return _generate(edx_video_id)
