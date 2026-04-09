@@ -84,6 +84,7 @@ with codecs.open(CONFIG_FILE, encoding='utf-8') as f:
             'EVENT_BUS_PRODUCER_CONFIG',
             'DEFAULT_FILE_STORAGE',
             'STATICFILES_STORAGE',
+            'OPEN_EDX_FILTERS_CONFIG',
         ]
     })
 
@@ -280,6 +281,19 @@ EVENT_TRACKING_BACKENDS['tracking_logs']['OPTIONS']['backends'].update(
 EVENT_TRACKING_BACKENDS['segmentio']['OPTIONS']['processors'][0]['OPTIONS']['whitelist'].extend(
     EVENT_TRACKING_SEGMENTIO_EMIT_WHITELIST
 )
+
+# Merge OPEN_EDX_FILTERS_CONFIG from YAML into the default defined in common.py.
+# Pipeline steps from YAML are appended after steps defined in common.py.
+# The fail_silently value from YAML takes precedence over the one in common.py.
+for _filter_type, _filter_config in _YAML_TOKENS.get('OPEN_EDX_FILTERS_CONFIG', {}).items():
+    if _filter_type in OPEN_EDX_FILTERS_CONFIG:
+        OPEN_EDX_FILTERS_CONFIG[_filter_type]['pipeline'].extend(
+            _filter_config.get('pipeline', [])
+        )
+        if 'fail_silently' in _filter_config:
+            OPEN_EDX_FILTERS_CONFIG[_filter_type]['fail_silently'] = _filter_config['fail_silently']
+    else:
+        OPEN_EDX_FILTERS_CONFIG[_filter_type] = _filter_config
 
 if ENABLE_THIRD_PARTY_AUTH:
     AUTHENTICATION_BACKENDS = _YAML_TOKENS.get('THIRD_PARTY_AUTH_BACKENDS', [
