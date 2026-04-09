@@ -510,7 +510,6 @@ def get_mfe_context(request, redirect_to, tpa_hint=None):
     # Importing third_party_auth_context here to avoid circular import since it imports get_mfe_context
     from openedx.core.djangoapps.user_authn.views.utils import third_party_auth_context
 
-
     ip_address = get_client_ip(request)[0]
     country_code = country_code_from_ip(ip_address)
     context = third_party_auth_context(request, redirect_to, tpa_hint)
