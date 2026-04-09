@@ -25,7 +25,6 @@ from openedx.core.djangoapps.geoinfo.api import country_code_from_ip
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_authn.cookies import standard_cookie_settings
 from openedx.core.djangolib.markup import HTML, Text
-from openedx.core.djangoapps.user_authn.views.utils import third_party_auth_context
 from ipware import get_client_ip
 
 ENTERPRISE_HEADER_LINKS = WaffleFlag('enterprise.enterprise_header_links', __name__)  # lint-amnesty, pylint: disable=toggle-missing-annotation
@@ -508,6 +507,9 @@ def get_mfe_context(request, redirect_to, tpa_hint=None):
     """
     # Import enterprise functions INSIDE the function to avoid circular import
     from openedx.features.enterprise_support.api import enterprise_customer_for_request
+    # Importing third_party_auth_context here to avoid circular import since it imports get_mfe_context
+    from openedx.core.djangoapps.user_authn.views.utils import third_party_auth_context
+
 
     ip_address = get_client_ip(request)[0]
     country_code = country_code_from_ip(ip_address)
