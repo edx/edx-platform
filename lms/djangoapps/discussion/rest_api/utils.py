@@ -502,19 +502,20 @@ def get_captcha_site_key_by_platform(platform: str) -> str | None:
 
 def _is_privileged_user(user, course_id):
     """
-    Check if a user has privileged roles (staff, moderator, TA, etc.) in the course.
-
-    This helper function checks both forum roles and course access roles to determine
-    if a user should be considered privileged.
+    Check if a user has discussion privileged roles in the course.
 
     Args:
         user: User object to check
         course_id: Course key to check roles in
 
     Returns:
-        bool: True if user has any privileged role, False otherwise
+        bool: True if user has any discussion moderation role, False otherwise
     """
-    # Check forum-specific privileged roles
+    from common.djangoapps.student.roles import GlobalStaff
+
+    if GlobalStaff().has_user(user):
+        return True
+
     user_roles = get_user_role_names(user, course_id)
     privileged_roles = {
         FORUM_ROLE_ADMINISTRATOR,
@@ -523,16 +524,7 @@ def _is_privileged_user(user, course_id):
         FORUM_ROLE_GROUP_MODERATOR
     }
 
-    if any(role in privileged_roles for role in user_roles):
-        return True
-
-    # Check for staff roles using CourseAccessRole
-    # Include limited_staff for consistency with is_only_student check
-    return CourseAccessRole.objects.filter(
-        user=user,
-        course_id=course_id,
-        role__in=['instructor', 'staff', 'limited_staff']
-    ).exists()
+    return any(role in privileged_roles for role in user_roles)
 
 
 def _check_user_engagement(user, course_id):

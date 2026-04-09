@@ -378,7 +378,6 @@ class CreateThreadTest(
                     "closed",
                     "copy_link",
                     "following",
-                    "muted",
                     "pinned",
                     "raw_body",
                     "read",
