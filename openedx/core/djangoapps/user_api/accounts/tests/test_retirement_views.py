@@ -1412,7 +1412,7 @@ class TestAccountRetirementPost(RetirementTestCase):
         PendingEmailChangeFactory.create(user=self.test_user)
         UserOrgTagFactory.create(user=self.test_user, key='foo', value='bar')
         UserOrgTagFactory.create(user=self.test_user, key='cat', value='dog')
-        
+
         # Secondary email setup
         PendingSecondaryEmailChange.objects.create(
             user=self.test_user,
@@ -1530,7 +1530,7 @@ class TestAccountRetirementPost(RetirementTestCase):
 
         assert not PendingEmailChange.objects.filter(user=self.test_user).exists()
         assert not UserOrgTag.objects.filter(user=self.test_user).exists()
-        
+
         # Verify secondary email models were cleaned
         assert not PendingSecondaryEmailChange.objects.filter(user=self.test_user).exists()
         assert not AccountRecovery.objects.filter(user=self.test_user).exists()
