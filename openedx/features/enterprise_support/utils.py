@@ -21,11 +21,9 @@ from social_django.models import UserSocialAuth
 from common.djangoapps import third_party_auth
 from common.djangoapps.student.helpers import get_next_url_for_login_page
 from lms.djangoapps.branding.api import get_privacy_url
-from openedx.core.djangoapps.geoinfo.api import country_code_from_ip
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_authn.cookies import standard_cookie_settings
 from openedx.core.djangolib.markup import HTML, Text
-from ipware import get_client_ip
 
 ENTERPRISE_HEADER_LINKS = WaffleFlag('enterprise.enterprise_header_links', __name__)  # lint-amnesty, pylint: disable=toggle-missing-annotation
 
@@ -159,7 +157,7 @@ def build_enterprise_branding_for_authn_mfe(enterprise_customer):
 
     Returns:
         dict or None: Branding fields for the MFE, or None if there is no
-        customer or no sidebar context to expose.
+        customer.
     """
     if not enterprise_customer:
         return None
@@ -168,8 +166,6 @@ def build_enterprise_branding_for_authn_mfe(enterprise_customer):
         enterprise_customer,
         is_proxy_login=False,
     )
-    if not sidebar_context:
-        return None
 
     return {
         'enterpriseName': sidebar_context.get('enterprise_name'),
