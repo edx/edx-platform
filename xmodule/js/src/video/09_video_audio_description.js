@@ -29,6 +29,7 @@
                 this.state = state;
                 this.state.videoAudioDescription = this;
                 this.hasSource = !!state.config.audioDescriptionUrl;
+                this.featureEnabled = state.config.audioDescriptionEnabled;
 
                 this.initialize();
 
@@ -54,6 +55,9 @@
 
                 renderElements: function() {
                     var buttonHtml, secondaryControls;
+                    if (!this.featureEnabled && !this.hasSource) {
+                        return;
+                    }
 
                     if (this.hasSource) {
                         var audioEl = $('<audio>', {
@@ -139,15 +143,14 @@
                             if (!audioElement.paused) { audioElement.pause(); }
                             return;
                         }
-                        if (audioElement.paused) {
-                            audioElement.currentTime = videoTime;
-                            this._playAudio(audioElement);
-                            this._lastDriftCorrection = Date.now();
-                            return;
-                        }
-                        // Throttle corrections to avoid audio glitches.
                         var now = Date.now();
                         if (this._lastDriftCorrection && (now - this._lastDriftCorrection) < 800) {
+                            return;
+                        }
+                        if (audioElement.paused) {
+                            audioElement.currentTime = videoTime;
+                            this._lastDriftCorrection = now;
+                            this._playAudio(audioElement);
                             return;
                         }
                         var drift = Math.abs(audioElement.currentTime - videoTime);
@@ -219,6 +222,13 @@
                     if (playing) {
                         if (!this._isWithinAdRange(currentTime)) { return; }
 
+                        var timeSinceLast = this._lastDriftCorrection
+                            ? (Date.now() - this._lastDriftCorrection) : Infinity;
+                        if (timeSinceLast < 500) {
+                            this._lastDriftCorrection = Date.now();
+                            return;
+                        }
+
                         var timeSinceSync = this._lastSyncTime ? (Date.now() - this._lastSyncTime) : Infinity;
                         if (!audioElement.paused && timeSinceSync < 1000) {
                             this._lastDriftCorrection = Date.now();
@@ -231,7 +241,11 @@
                         };
 
                         if (timeSinceSync < 500) {
-                            doPlay();
+                            if (audioElement.paused) {
+                                doPlay();
+                            } else {
+                                self._lastDriftCorrection = Date.now();
+                            }
                         } else if (audioElement.readyState >= 1) {
                             audioElement.currentTime = currentTime;
                             doPlay();
@@ -254,6 +268,7 @@
                     if (this.audioEl) {
                         this.audioEl[0].pause();
                     }
+                    this._lastDriftCorrection = null;
                 },
 
                 syncCurrentTime: function(time) {

@@ -2,7 +2,6 @@
 CMS feature toggles.
 """
 from edx_toggles.toggles import SettingDictToggle, WaffleFlag
-from openedx.core.djangoapps.content.search import api as search_api
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 
 
@@ -636,6 +635,7 @@ def libraries_v2_enabled():
 
     Requires the ENABLE_CONTENT_LIBRARIES feature flag to be enabled, plus Meilisearch.
     """
+    from openedx.core.djangoapps.content.search import api as search_api  # pylint: disable=import-outside-toplevel
     return (
         ENABLE_CONTENT_LIBRARIES.is_enabled() and
         search_api.is_meilisearch_enabled() and

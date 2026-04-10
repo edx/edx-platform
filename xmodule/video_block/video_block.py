@@ -475,6 +475,15 @@ class _BuiltInVideoBlock(
         if audio_description_url:
             metadata['audioDescriptionUrl'] = audio_description_url
 
+        try:
+            from cms.djangoapps.contentstore.toggles import (  # pylint: disable=import-outside-toplevel
+                audio_description_upload_enabled
+            )
+            ad_feature_enabled = bool(audio_description_upload_enabled(self.course_id))
+        except Exception:  # pylint: disable=broad-except
+            ad_feature_enabled = False
+        metadata['audioDescriptionEnabled'] = ad_feature_enabled
+
         bumperize(self)
 
         is_video_from_same_origin = bool(download_video_link and cdn_url and download_video_link.startswith(cdn_url))
