@@ -197,8 +197,6 @@ class CourseWaffleFlagsSerializer(serializers.Serializer):
     def get_enable_audio_description_upload(self, obj):
         """
         Method to get the enable_audio_description_upload waffle flag.
-
-        This is an instance-wide flag (not per-course) that gates the
-        audio description upload UI in the Studio video editor.
         """
-        return toggles.audio_description_upload_enabled()
+        course_key = self.get_course_key()
+        return toggles.audio_description_upload_enabled(course_key)

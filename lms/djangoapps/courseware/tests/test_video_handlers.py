@@ -1368,7 +1368,7 @@ class TestVideoBlockAudioDescriptionPlayback(TestVideo):  # lint-amnesty, pylint
     """
     METADATA = {}
 
-    @patch('xmodule.video_block.audio_description_urls.generate_audio_description_download_url')
+    @patch('xmodule.video_block.video_block.edxval_api.get_video_audio_description_url')
     def test_playback_url_returns_presigned_url(self, mock_generate):
         """
         When the block has an AD attached and an edx_video_id set,

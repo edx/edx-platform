@@ -185,6 +185,13 @@ class VideoFields:
         scope=Scope.settings,
         default="",
     )
+    audio_description_video_id = String(
+        help=_("The edx-val Video ID associated with the uploaded audio description file. "
+               "Stored separately so it is not overwritten by the Studio form."),
+        display_name=_("Audio Description Video ID"),
+        scope=Scope.settings,
+        default="",
+    )
     only_on_web = Boolean(
         help=_(
             "Specify whether access to this video is limited to browsers only, or if it can be "

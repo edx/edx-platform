@@ -503,6 +503,7 @@ class _BuiltInVideoBlock(
             'transcript_download_format': transcript_download_format,
             'transcript_download_formats_list': self.fields['transcript_download_format'].values,  # lint-amnesty, pylint: disable=unsubscriptable-object
             'transcript_feedback_enabled': self.is_transcript_feedback_enabled(),
+            'audio_description_enabled': bool(audio_description_url),
         }
         if self.is_public_sharing_enabled():
             public_video_url = self.get_public_video_url()
@@ -981,6 +982,19 @@ class _BuiltInVideoBlock(
         }
 
         _context.update({'transcripts_basic_tab_metadata': metadata})
+        from cms.djangoapps.contentstore.toggles import audio_description_upload_enabled
+
+        # Audio description upload context for studio editor
+        ad_upload_enabled = bool(
+            audio_description_upload_enabled and audio_description_upload_enabled(self.course_id)
+        )
+        _context['audio_description_upload_enabled'] = ad_upload_enabled
+        if ad_upload_enabled:
+            _context['audio_description_file_name'] = getattr(self, 'audio_description', '')
+            _context['audio_description_handler_url'] = self.runtime.handler_url(
+                self, 'studio_audio_description'
+            ).rstrip('/?')
+
         return _context
 
     @classmethod
@@ -1287,27 +1301,24 @@ class _BuiltInVideoBlock(
 
     def _get_audio_description_url(self):
         """
-        Generate a fresh pre-signed GET URL for this video's audio
-        description file, if one exists. Pre-signed URLs expire, so this
-        is regenerated on every page load.
+        Return the download URL for this video's audio description file,
+        or None if no AD record exists in edx-val.
 
-        Returns the URL string, or None if no AD is configured for this
-        video or the URL cannot be generated for any reason.
+        Uses audio_description_video_id (set on upload, never reset by the
+        Studio form) so the button stays enabled after a subsequent Save.
+        Falls back to edx_video_id for videos that had AD set before the
+        dedicated field was introduced.
         """
-        if not getattr(self, 'audio_description', '') or not self.edx_video_id:
+        if not edxval_api:
+            return None
+        video_id = clean_video_id(getattr(self, 'audio_description_video_id', '')) \
+            or clean_video_id(self.edx_video_id)
+        if not video_id:
             return None
         try:
-            # Lazy import keeps boto3 / edxval out of the module-import path
-            # for video_block, which is loaded very early in both LMS and CMS.
-            from xmodule.video_block.audio_description_urls import (  # pylint: disable=import-outside-toplevel
-                generate_audio_description_download_url,
-            )
-            return generate_audio_description_download_url(self.edx_video_id)
+            return edxval_api.get_video_audio_description_url(video_id)
         except Exception:  # pylint: disable=broad-except
-            log.exception(
-                'Failed to generate audio description URL for video %s',
-                self.edx_video_id,
-            )
+            log.exception('Failed to get audio description URL for video %s', video_id)
             return None
 
 

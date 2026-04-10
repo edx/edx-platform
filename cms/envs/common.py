@@ -942,19 +942,14 @@ VIDEO_UPLOAD_PIPELINE = {
 
 ############################# SETTINGS FOR VIDEO AUDIO DESCRIPTION #############################
 
-VIDEO_AUDIO_DESCRIPTION_SETTINGS = {
-    'MAX_BYTES': 500 * 1024 * 1024,                       # 500MB ceiling
-    'ALLOWED_CONTENT_TYPES': [
-        'audio/mpeg',
-        'audio/mp4',
-        'audio/wav',
-        'audio/aac',
-        'audio/x-m4a',
-    ],
-    'S3_KEY_PREFIX': 'audio_descriptions/',
-    'PRESIGNED_PUT_EXPIRATION_SECONDS': 3600,             # 1 hour — slow uploads
-    'PRESIGNED_GET_EXPIRATION_SECONDS': 6 * 3600,         # 6 hours — page session
-}
+VIDEO_AUDIO_DESCRIPTION_SETTINGS = dict(
+    VIDEO_AUDIO_DESCRIPTION_MAX_BYTES=200 * 1024 * 1024,  # 200 MB
+    STORAGE_KWARGS=dict(
+        location=MEDIA_ROOT,
+    ),
+    DIRECTORY_PREFIX='audio-descriptions/',
+    BASE_URL=MEDIA_URL,
+)
 
 ############################ APPS #####################################
 

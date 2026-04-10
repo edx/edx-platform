@@ -32,8 +32,8 @@ from edxval.api import (
     create_video,
     get_3rd_party_transcription_plans,
     get_available_transcript_languages,
-    get_video_transcript_url,
     get_transcript_preferences,
+    get_video_transcript_url,
     get_videos_for_course,
     remove_transcript_preferences,
     remove_video_for_course,
@@ -65,21 +65,6 @@ from .video_utils import validate_video_image
 from .views.course import get_course_and_check_access
 
 LOGGER = logging.getLogger(__name__)
-
-
-def get_s3_client():
-    """
-    Build an S3 client that honors AWS_S3_ENDPOINT_URL when set (for
-    localstack / MinIO in dev). In production AWS_S3_ENDPOINT_URL is
-    unset, so boto3 falls back to its default endpoint resolution and
-    talks to real AWS S3 with the regular credentials chain.
-    """
-    kwargs = {}
-    endpoint_url = getattr(settings, 'AWS_S3_ENDPOINT_URL', None)
-    if endpoint_url:
-        kwargs['endpoint_url'] = endpoint_url
-    return boto3.client('s3', **kwargs)
-
 
 # Waffle switches namespace for videos
 WAFFLE_NAMESPACE = 'videos'
@@ -823,7 +808,7 @@ def videos_post(course, request):
     if error:
         return {'error': error}, 400
 
-    s3_client = get_s3_client()
+    s3_client = boto3.client('s3')
 
     req_files = data['files']
     resp_files = []
@@ -867,13 +852,6 @@ def videos_post(course, request):
             },
             ExpiresIn=KEY_EXPIRATION_IN_SECONDS,
         )
-        # Devstack: localstack uses an internal docker hostname that the
-        # browser can't resolve. Rewrite it to localhost so the browser PUT
-        # works. localstack is permissive about the host header so signature
-        # validation still passes. No-op in production where the endpoint
-        # URL never contains this hostname.
-        if 'edx.devstack.localstack' in (settings.AWS_S3_ENDPOINT_URL or ''):
-            upload_url = upload_url.replace('edx.devstack.localstack', 'localhost')
 
         # persist edx_video_id in VAL
         create_video({
