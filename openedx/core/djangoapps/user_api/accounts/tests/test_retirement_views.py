@@ -31,6 +31,7 @@ from common.djangoapps.student.models import (
     ManualEnrollmentAudit,
     PendingEmailChange,
     PendingNameChange,
+    PendingSecondaryEmailChange,
     Registration,
     SocialLink,
     UserProfile,
@@ -234,6 +235,24 @@ class TestDeactivateLogout(RetirementTestCase):
 
         # Assert that there is no longer a secondary/recovery email for test user
         assert len(AccountRecovery.objects.filter(user_id=self.test_user.id)) == 0
+
+    def test_user_can_deactivate_pending_secondary_email_change(self):
+        """
+        Verify that pending secondary email change records are removed when a user retires.
+        """
+        PendingSecondaryEmailChange.objects.create(
+            user=self.test_user,
+            new_secondary_email='pending-secondary@example.com',
+            activation_key='b' * 32,
+        )
+        assert len(PendingSecondaryEmailChange.objects.filter(user_id=self.test_user.id)) == 1
+
+        self.client.login(username=self.test_user.username, password=self.test_password)
+        headers = build_jwt_headers(self.test_user)
+        response = self.client.post(self.url, self.build_post(self.test_password), **headers)
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        assert len(PendingSecondaryEmailChange.objects.filter(user_id=self.test_user.id)) == 0
 
     def test_password_mismatch(self):
         """
@@ -1393,6 +1412,18 @@ class TestAccountRetirementPost(RetirementTestCase):
         PendingEmailChangeFactory.create(user=self.test_user)
         UserOrgTagFactory.create(user=self.test_user, key='foo', value='bar')
         UserOrgTagFactory.create(user=self.test_user, key='cat', value='dog')
+        
+        # Secondary email setup
+        PendingSecondaryEmailChange.objects.create(
+            user=self.test_user,
+            new_secondary_email='pending_secondary@example.com',
+            activation_key='test_activation_key_123'
+        )
+        AccountRecovery.objects.create(
+            user=self.test_user,
+            secondary_email='confirmed_secondary@example.com',
+            is_active=True
+        )
 
         CourseEnrollmentAllowedFactory.create(email=self.original_email)
 
@@ -1499,6 +1530,10 @@ class TestAccountRetirementPost(RetirementTestCase):
 
         assert not PendingEmailChange.objects.filter(user=self.test_user).exists()
         assert not UserOrgTag.objects.filter(user=self.test_user).exists()
+        
+        # Verify secondary email models were cleaned
+        assert not PendingSecondaryEmailChange.objects.filter(user=self.test_user).exists()
+        assert not AccountRecovery.objects.filter(user=self.test_user).exists()
 
         assert not CourseEnrollmentAllowed.objects.filter(email=self.original_email).exists()
         assert not UnregisteredLearnerCohortAssignments.objects.filter(email=self.original_email).exists()

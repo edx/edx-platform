@@ -28,6 +28,7 @@ from common.djangoapps.student.models import (
     ManualEnrollmentAudit,
     PendingEmailChange,
     PendingNameChange,
+    PendingSecondaryEmailChange,
     UserAttribute,
     UserCelebration,
     UserProfile
@@ -743,6 +744,29 @@ class TestAccountRecovery(TestCase):
 
         # Assert that there is no longer an AccountRecovery record for this user
         assert len(AccountRecovery.objects.filter(user_id=user.id)) == 0
+
+
+class TestPendingSecondaryEmailChange(TestCase):
+    """Tests for retiring PendingSecondaryEmailChange records."""
+
+    def test_retire_pending_secondary_email(self):
+        """Assert that pending secondary email records are deleted for retired users."""
+        user = UserFactory()
+        PendingSecondaryEmailChange.objects.create(
+            user=user,
+            new_secondary_email='new-secondary@example.com',
+            activation_key='a' * 32,
+        )
+        assert len(PendingSecondaryEmailChange.objects.filter(user_id=user.id)) == 1
+
+        PendingSecondaryEmailChange.retire_pending_secondary_email(user_id=user.id)
+
+        assert len(PendingSecondaryEmailChange.objects.filter(user_id=user.id)) == 0
+
+    def test_retire_pending_secondary_email_when_no_record(self):
+        """Assert retirement cleanup returns True when no pending secondary row exists."""
+        user = UserFactory()
+        assert PendingSecondaryEmailChange.retire_pending_secondary_email(user_id=user.id) is True
 
 
 @ddt.ddt

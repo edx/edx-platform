@@ -82,7 +82,8 @@ from common.djangoapps.student.models import (  # lint-amnesty, pylint: disable=
     UserSignupSource,
     UserStanding,
     create_comments_service_user,
-    email_exists_or_retired
+    email_exists_or_retired,
+    get_retired_email_by_email,
 )
 from common.djangoapps.student.signals import REFUND_ORDER
 from common.djangoapps.util.db import outer_atomic
@@ -862,6 +863,10 @@ def activate_secondary_email(request, key):
             'secondary_email': pending_secondary_email_change.new_secondary_email
         })
 
+    pending_secondary_email_change.new_secondary_email = get_retired_email_by_email(
+        pending_secondary_email_change.new_secondary_email
+    )
+    pending_secondary_email_change.save(update_fields=['new_secondary_email'])
     pending_secondary_email_change.delete()
 
     return render_to_response("secondary_email_change_successful.html")

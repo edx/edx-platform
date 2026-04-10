@@ -933,13 +933,33 @@ class PendingSecondaryEmailChange(DeletableByUserValue, models.Model):
     """
     This model keeps track of pending requested changes to a user's secondary email address.
 
-    .. pii: Contains new_secondary_email, not currently retired
+    .. pii: Contains new_secondary_email, retired in `DeactivateLogoutView`
     .. pii_types: email_address
-    .. pii_retirement: retained
+    .. pii_retirement: local_api
     """
     user = models.OneToOneField(User, unique=True, db_index=True, on_delete=models.CASCADE)
     new_secondary_email = models.CharField(blank=True, max_length=255, db_index=True)
     activation_key = models.CharField(('activation key'), max_length=32, unique=True, db_index=True)
+
+    @classmethod
+    def retire_pending_secondary_email(cls, user_id):
+        """
+        Retire a pending secondary email change row for a user.
+
+        Redacts the email before deletion so any downstream soft-delete mirror does
+        not retain the original secondary email address in the final row image.
+        """
+        try:
+            pending_secondary_email = cls.objects.get(user_id=user_id)
+        except cls.DoesNotExist:
+            return True
+
+        pending_secondary_email.new_secondary_email = get_retired_email_by_email(
+            pending_secondary_email.new_secondary_email
+        )
+        pending_secondary_email.save(update_fields=['new_secondary_email'])
+        pending_secondary_email.delete()
+        return True
 
 
 class LoginFailures(models.Model):
@@ -1690,16 +1710,21 @@ class AccountRecovery(models.Model):
         Retire user's recovery/secondary email as part of GDPR Phase I.
         Returns 'True'
 
-        If an AccountRecovery record is found for this user it will be deleted,
-        if it is not found it is assumed this table has no PII for the given user.
+        If an AccountRecovery record is found for this user it will be redacted and
+        deleted. If it is not found it is assumed this table has no PII for the given user.
 
         :param user_id: int
         :return: bool
         """
         try:
-            cls.objects.get(user_id=user_id).delete()
+            account_recovery = cls.objects.get(user_id=user_id)
         except cls.DoesNotExist:
-            pass
+            return True
+
+        account_recovery.secondary_email = get_retired_email_by_email(account_recovery.secondary_email)
+        account_recovery.is_active = False
+        account_recovery.save(update_fields=['secondary_email', 'is_active'])
+        account_recovery.delete()
 
         return True
 

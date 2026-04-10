@@ -39,11 +39,13 @@ from wiki.models.pluginbase import RevisionPluginRevision
 from common.djangoapps.track import segment
 from common.djangoapps.entitlements.models import CourseEntitlement
 from common.djangoapps.student.models import (  # lint-amnesty, pylint: disable=unused-import
+    AccountRecovery,
     CourseEnrollmentAllowed,
     LoginFailures,
     ManualEnrollmentAudit,
     PendingEmailChange,
     PendingNameChange,
+    PendingSecondaryEmailChange,
     User,
     UserProfile,
     get_potentially_retired_user_by_username,
@@ -1099,6 +1101,8 @@ class LMSAccountRetirementView(ViewSet):
             retirement = UserRetirementStatus.get_retirement_for_retirement_action(username)
             RevisionPluginRevision.retire_user(retirement.user)
             ArticleRevision.retire_user(retirement.user)
+            # Redact PendingNameChange before deletion to prevent plaintext sync to Snowflake
+            PendingNameChange.objects.filter(user=retirement.user).update(new_name="", rationale="")
             PendingNameChange.delete_by_user_value(retirement.user, field="user")
             ManualEnrollmentAudit.retire_manual_enrollments(retirement.user, retirement.retired_email)
 
@@ -1195,8 +1199,15 @@ class AccountRetirementView(ViewSet):
             self.retire_entitlement_support_detail(user)
 
             # Retire misc. models that may contain PII of this user
+            # Redact pending email change before deletion to prevent plaintext sync to Snowflake
+            pending_email = PendingEmailChange.objects.filter(user=user).first()
+            if pending_email:
+                pending_email.new_email = get_retired_email_by_email(pending_email.new_email)
+                pending_email.save(update_fields=['new_email'])
             PendingEmailChange.delete_by_user_value(user, field="user")
             UserOrgTag.delete_by_user_value(user, field="user")
+            PendingSecondaryEmailChange.retire_pending_secondary_email(user.id)
+            AccountRecovery.retire_recovery_email(user.id)
 
             # Retire any objects linked to the user via their original email
             CourseEnrollmentAllowed.delete_by_user_value(original_email, field="email")
@@ -1214,6 +1225,7 @@ class AccountRetirementView(ViewSet):
             user.last_name = ""
             user.is_active = False
             user.username = retired_username
+            user.email = retired_email
             user.save()
         except UserRetirementStatus.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)

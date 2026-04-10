@@ -7,6 +7,7 @@ import pytest
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.core.management import CommandError, call_command
 
+from common.djangoapps.student.models import PendingSecondaryEmailChange
 from ...models import UserRetirementStatus
 from openedx.core.djangoapps.user_api.accounts.tests.retirement_helpers import (  # lint-amnesty, pylint: disable=unused-import, wrong-import-order
     setup_retirement_states
@@ -105,3 +106,19 @@ def test_retire_with_username_email_userfile(setup_retirement_states):  # lint-a
     with pytest.raises(CommandError, match=r'You cannot use userfile option with username and user_email'):
         call_command('retire_user', user_file=user_file, username=username, user_email=user_email)
     remove_user_file()
+
+
+@skip_unless_lms
+def test_retire_user_cleans_pending_secondary_email(setup_retirement_states):  # lint-amnesty, pylint: disable=redefined-outer-name, unused-argument
+    user = UserFactory.create(username='user-cleanup', email='user-cleanup@example.com')
+    PendingSecondaryEmailChange.objects.create(
+        user=user,
+        new_secondary_email='pending-secondary@example.com',
+        activation_key='c' * 32,
+    )
+
+    assert PendingSecondaryEmailChange.objects.filter(user=user).exists()
+
+    call_command('retire_user', username=user.username, user_email=user.email)
+
+    assert not PendingSecondaryEmailChange.objects.filter(user=user).exists()
