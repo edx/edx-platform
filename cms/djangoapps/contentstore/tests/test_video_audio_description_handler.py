@@ -1,6 +1,6 @@
 """
 Tests for the studio_audio_description XBlock handler and its
-contentstore.enable_audio_description_upload waffle flag gate.
+contentstore.enable_audio_description waffle flag gate.
 
 The handler itself delegates to the storage helpers in
 cms.djangoapps.contentstore.audio_description_storage_handlers; these
@@ -22,7 +22,7 @@ from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.locator import CourseLocator
 from webob import Request
 
-from cms.djangoapps.contentstore.toggles import ENABLE_AUDIO_DESCRIPTION_UPLOAD
+from cms.djangoapps.contentstore.toggles import ENABLE_AUDIO_DESCRIPTION
 from xmodule.video_block.video_block import VideoBlock
 
 
@@ -78,7 +78,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         request = Request.blank("", **kwargs)
         return VideoBlock.studio_audio_description(block, request=request)
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION_UPLOAD, active=False)
+    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=False)
     def test_handler_returns_404_when_flag_disabled(self):
         """
         When the upload flag is off, every HTTP method on the handler
@@ -89,7 +89,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
             response = self._call(block, method)
             self.assertEqual(response.status_code, 404, msg=f"method={method}")
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION_UPLOAD, active=True)
+    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_post_uploads_file_and_returns_url(self):
         """
         With the flag on, a POST request carrying a file should reach
@@ -128,7 +128,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
                 file_data=file_mock.file,
             )
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION_UPLOAD, active=True)
+    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_post_returns_400_when_file_missing(self):
         """
         With the flag on but no file in the POST body, the handler must
@@ -145,7 +145,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("error", response.json)
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION_UPLOAD, active=True)
+    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_get_returns_404_when_no_url(self):
         """
         With the flag on but no AD record on the block, the GET branch
@@ -159,7 +159,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
 
             self.assertEqual(response.status_code, 404)
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION_UPLOAD, active=True)
+    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_get_returns_url_when_present(self):
         """
         With the flag on and a ready AD record, the GET branch returns
@@ -181,7 +181,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
                 },
             )
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION_UPLOAD, active=True)
+    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_delete_when_flag_enabled(self):
         """
         With the flag on, a DELETE request should call the storage

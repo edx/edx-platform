@@ -477,9 +477,9 @@ class _BuiltInVideoBlock(
 
         try:
             from cms.djangoapps.contentstore.toggles import (  # pylint: disable=import-outside-toplevel
-                audio_description_upload_enabled
+                audio_description_enabled
             )
-            ad_feature_enabled = bool(audio_description_upload_enabled(self.course_id))
+            ad_feature_enabled = bool(audio_description_enabled(self.course_id))
         except Exception:  # pylint: disable=broad-except
             ad_feature_enabled = False
         metadata['audioDescriptionEnabled'] = ad_feature_enabled
@@ -991,13 +991,13 @@ class _BuiltInVideoBlock(
         }
 
         _context.update({'transcripts_basic_tab_metadata': metadata})
-        from cms.djangoapps.contentstore.toggles import audio_description_upload_enabled
+        from cms.djangoapps.contentstore.toggles import audio_description_enabled
 
         # Audio description upload context for studio editor
         ad_upload_enabled = bool(
-            audio_description_upload_enabled and audio_description_upload_enabled(self.course_id)
+            audio_description_enabled and audio_description_enabled(self.course_id)
         )
-        _context['audio_description_upload_enabled'] = ad_upload_enabled
+        _context['audio_description_enabled'] = ad_upload_enabled
         if ad_upload_enabled:
             _context['audio_description_file_name'] = getattr(self, 'audio_description', '')
             _context['audio_description_handler_url'] = self.runtime.handler_url(

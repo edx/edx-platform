@@ -41,7 +41,7 @@ class CourseWaffleFlagsViewTest(CourseTestCase):
         "enable_course_optimizer_check_prev_run_links": False,
         "enable_unit_expanded_view": False,
         "enable_outline_component_creation": False,
-        "enable_audio_description_upload": False,
+        "enable_audio_description": False,
     }
 
     def setUp(self):
@@ -74,7 +74,7 @@ class CourseWaffleFlagsViewTest(CourseTestCase):
             "enable_course_optimizer_check_prev_run_links": True,
         }
 
-    @override_waffle_flag(toggles.ENABLE_AUDIO_DESCRIPTION_UPLOAD, active=True)
+    @override_waffle_flag(toggles.ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_audio_description_upload_flag_enabled(self):
         """
         When the global AD upload flag is on, the serializer should
@@ -83,4 +83,4 @@ class CourseWaffleFlagsViewTest(CourseTestCase):
         """
         url = reverse("cms.djangoapps.contentstore:v1:course_waffle_flags")
         response = self.client.get(url)
-        assert response.data["enable_audio_description_upload"] is True
+        assert response.data["enable_audio_description"] is True

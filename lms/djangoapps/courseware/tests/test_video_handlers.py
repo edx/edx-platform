@@ -1355,7 +1355,7 @@ class TestVideoBlockAudioDescriptionPlayback(TestVideo):  # lint-amnesty, pylint
     playback helper used by get_html / student_view_data.
 
     The companion handler tests for studio_audio_description and the
-    contentstore.enable_audio_description_upload waffle flag live in
+    contentstore.enable_audio_description waffle flag live in
     cms/djangoapps/contentstore/tests/test_video_audio_description_handler.py
     -- they cannot live here because cms.djangoapps.contentstore.toggles
     transitively imports the Studio-only search-api and won't load
@@ -1376,7 +1376,7 @@ class TestVideoBlockAudioDescriptionPlayback(TestVideo):  # lint-amnesty, pylint
         description URL helper and return its result.
 
         This is also a regression guard: the helper module must NEVER
-        check the contentstore.enable_audio_description_upload waffle
+        check the contentstore.enable_audio_description waffle
         flag. Existing AD files must continue to play in the LMS even
         after the upload flag is flipped off (see plan
         audio-description-waffle-flag.md).
