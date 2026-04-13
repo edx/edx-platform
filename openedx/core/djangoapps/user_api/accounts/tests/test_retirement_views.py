@@ -1466,7 +1466,13 @@ class TestAccountRetirementPost(RetirementTestCase):
 
     @mock.patch('openedx.core.djangoapps.user_api.accounts.views.get_profile_image_names')
     @mock.patch('openedx.core.djangoapps.user_api.accounts.views.remove_profile_images')
-    def test_retire_user(self, mock_remove_profile_images, mock_get_profile_image_names):
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.PendingEmailChange.redact_pending_email_by_user_value')
+    def test_retire_user(
+        self,
+        mock_redact_pending_email,
+        mock_remove_profile_images,
+        mock_get_profile_image_names,
+    ):
         data = {'username': self.original_username}
         self.post_and_assert_status(data)
 
@@ -1497,6 +1503,7 @@ class TestAccountRetirementPost(RetirementTestCase):
 
         self._entitlement_support_detail_assertions()
 
+        mock_redact_pending_email.assert_called_once_with(self.test_user, field="user")
         assert not PendingEmailChange.objects.filter(user=self.test_user).exists()
         assert not UserOrgTag.objects.filter(user=self.test_user).exists()
 
@@ -1508,6 +1515,24 @@ class TestAccountRetirementPost(RetirementTestCase):
         self.post_and_assert_status(data)
         fake_completed_retirement(self.test_user)
         self.post_and_assert_status(data)
+
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.PendingEmailChange.delete_by_user_value')
+    def test_retire_user_redacts_pending_email_before_delete(self, mock_delete_pending_email):
+        pending_email_before_retirement = PendingEmailChange.objects.get(user=self.test_user).new_email
+        expected_retired_pending_email = get_retired_email_by_email(pending_email_before_retirement)
+
+        def _assert_redacted_then_delete(value, field):
+            pending_record = PendingEmailChange.objects.get(user=self.test_user)
+            assert pending_record.new_email == expected_retired_pending_email
+            pending_record.delete()
+            return True
+
+        mock_delete_pending_email.side_effect = _assert_redacted_then_delete
+
+        data = {'username': self.original_username}
+        self.post_and_assert_status(data)
+
+        assert not PendingEmailChange.objects.filter(user=self.test_user).exists()
 
     @mock.patch('openedx.core.djangoapps.user_api.accounts.views.USER_RETIRE_LMS_CRITICAL')
     def test_retirement_sends_critical_signal_with_retirement_data(self, mock_signal):
