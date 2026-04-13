@@ -1101,8 +1101,7 @@ class LMSAccountRetirementView(ViewSet):
             retirement = UserRetirementStatus.get_retirement_for_retirement_action(username)
             RevisionPluginRevision.retire_user(retirement.user)
             ArticleRevision.retire_user(retirement.user)
-            # Redact PendingNameChange before deletion to prevent plaintext sync to Snowflake
-            PendingNameChange.objects.filter(user=retirement.user).update(new_name="", rationale="")
+            PendingNameChange.objects.filter(user=retirement.user).update(new_name="redacted", rationale="redacted")
             PendingNameChange.delete_by_user_value(retirement.user, field="user")
             ManualEnrollmentAudit.retire_manual_enrollments(retirement.user, retirement.retired_email)
 
@@ -1206,7 +1205,7 @@ class AccountRetirementView(ViewSet):
                 pending_email.save(update_fields=['new_email'])
             PendingEmailChange.delete_by_user_value(user, field="user")
             UserOrgTag.delete_by_user_value(user, field="user")
-            PendingSecondaryEmailChange.retire_pending_secondary_email(user.id)
+            PendingSecondaryEmailChange.redact_pending_secondary_email(user.id)
             AccountRecovery.retire_recovery_email(user.id)
 
             # Retire any objects linked to the user via their original email

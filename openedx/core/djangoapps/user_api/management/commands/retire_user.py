@@ -163,7 +163,7 @@ class Command(BaseCommand):
                     # Delete OAuth tokens associated with the user.
                     retire_dot_oauth2_models(user)
                     AccountRecovery.retire_recovery_email(user.id)
-                    PendingSecondaryEmailChange.retire_pending_secondary_email(user.id)
+                    PendingSecondaryEmailChange.redact_pending_secondary_email(user.id)
         except KeyError:
             error_message = f'Username not specified {user}'
             logger.error(error_message)

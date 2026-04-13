@@ -224,7 +224,7 @@ def create_retirement_request_and_deactivate_account(user):
     # Delete OAuth tokens associated with the user.
     retire_dot_oauth2_models(user)
     AccountRecovery.retire_recovery_email(user.id)
-    PendingSecondaryEmailChange.retire_pending_secondary_email(user.id)
+    PendingSecondaryEmailChange.redact_pending_secondary_email(user.id)
 
 
 def username_suffix_generator(suffix_length=4):

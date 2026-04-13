@@ -749,7 +749,7 @@ class TestAccountRecovery(TestCase):
 class TestPendingSecondaryEmailChange(TestCase):
     """Tests for retiring PendingSecondaryEmailChange records."""
 
-    def test_retire_pending_secondary_email(self):
+    def test_redact_pending_secondary_email(self):
         """Assert that pending secondary email records are deleted for retired users."""
         user = UserFactory()
         PendingSecondaryEmailChange.objects.create(
@@ -759,14 +759,14 @@ class TestPendingSecondaryEmailChange(TestCase):
         )
         assert len(PendingSecondaryEmailChange.objects.filter(user_id=user.id)) == 1
 
-        PendingSecondaryEmailChange.retire_pending_secondary_email(user_id=user.id)
+        PendingSecondaryEmailChange.redact_pending_secondary_email(user_id=user.id)
 
         assert len(PendingSecondaryEmailChange.objects.filter(user_id=user.id)) == 0
 
-    def test_retire_pending_secondary_email_when_no_record(self):
+    def test_redact_pending_secondary_email_when_no_record(self):
         """Assert retirement cleanup returns True when no pending secondary row exists."""
         user = UserFactory()
-        assert PendingSecondaryEmailChange.retire_pending_secondary_email(user_id=user.id) is True
+        assert PendingSecondaryEmailChange.redact_pending_secondary_email(user_id=user.id) is True
 
 
 @ddt.ddt

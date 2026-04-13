@@ -942,7 +942,7 @@ class PendingSecondaryEmailChange(DeletableByUserValue, models.Model):
     activation_key = models.CharField(('activation key'), max_length=32, unique=True, db_index=True)
 
     @classmethod
-    def retire_pending_secondary_email(cls, user_id):
+    def redact_pending_secondary_email(cls, user_id):
         """
         Retire a pending secondary email change row for a user.
 
