@@ -510,6 +510,14 @@ class ThreadViewSetListTest(
 
     def setUp(self):
         super().setUp()
+        # Patch forum_api in api module to use the same mock as the mixin
+        self.api_patcher = mock.patch(
+            'lms.djangoapps.discussion.rest_api.api.forum_api',
+            self.mock_forum_api
+        )
+        self.api_patcher.start()
+        self.addCleanup(self.api_patcher.stop)
+
         self.author = UserFactory.create()
         self.url = reverse("thread-list")
 
@@ -557,6 +565,7 @@ class ThreadViewSetListTest(
         )
 
     def test_basic(self):
+        self.set_mock_return_value("get_all_muted_users_for_course", {"muted_users": []})
         self.register_get_user_response(self.user, upvoted_ids=["test_thread"])
         source_threads = [
             self.create_source_thread(

@@ -7,6 +7,7 @@ import ddt
 from django.test import TestCase
 
 from lms.djangoapps.discussion.rest_api.render import render_body
+from lms.djangoapps.discussion.rest_api.serializers import filter_spam_urls_from_html
 
 
 def _add_p_tags(raw_body):
@@ -103,3 +104,16 @@ class RenderBodyTest(TestCase):
             render_body('foo<i>bar<b>baz</i>quux</b>greg'),
             '<p>foo<i>bar<b>baz</b></i><b>quux</b>greg</p>',
         )
+
+    def test_full_pipeline_preserves_escaped_html_in_code(self):
+        """
+        Test that angle brackets in code blocks remain escaped after the full pipeline.
+        This prevents the regression where filter_spam_urls_from_html() would break
+        properly escaped content like `<div>` by converting &lt; back to <.
+        """
+        raw_body = '`<script>alert("xss")</script>`'
+        rendered = render_body(raw_body)
+        filtered, _ = filter_spam_urls_from_html(rendered)
+        # Angle brackets must remain escaped as HTML entities
+        assert '&lt;script&gt;' in filtered
+        assert '<script>' not in filtered

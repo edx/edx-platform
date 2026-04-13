@@ -105,12 +105,15 @@ def get_editable_fields(cc_content: Union[Thread, Comment], context: Dict) -> Se
         # Flagging/un-flagging is always available.
         return {"abuse_flagged"}
 
+    is_author = _is_author(cc_content, context)
+
     # Map each field to the condition in which it's editable.
     editable_fields = {
         "abuse_flagged": True,
         "closed": is_thread and has_moderation_privilege,
         "close_reason_code": is_thread and has_moderation_privilege,
         "pinned": is_thread and (has_moderation_privilege or is_staff_or_admin),
+        "muted": is_thread and has_moderation_privilege and not is_author,
         "read": is_thread,
     }
     if is_thread:
@@ -120,7 +123,6 @@ def get_editable_fields(cc_content: Union[Thread, Comment], context: Dict) -> Se
         # Return only editable fields
         return _filter_fields(editable_fields)
 
-    is_author = _is_author(cc_content, context)
     editable_fields.update({
         "voted": has_moderation_privilege or not is_author or is_staff_or_admin,
         "raw_body": has_moderation_privilege or is_author,
@@ -192,13 +194,6 @@ def can_take_action_on_spam(user, course_id):
     """
     Returns if the user has access to take action against forum spam posts.
 
-    Grants access to:
-    - Global Staff (user.is_staff or GlobalStaff role)
-    - Course Staff for the specific course
-    - Course Instructors for the specific course
-    - Forum Moderators for the specific course
-    - Forum Administrators for the specific course
-
     Parameters:
         user: User object
         course_id: CourseKey or string of course_id
@@ -213,42 +208,20 @@ def can_take_action_on_spam(user, course_id):
     if isinstance(course_id, str):
         course_id = CourseKey.from_string(course_id)
 
-    # Check if user is Course Staff or Instructor for this specific course
-    if CourseStaffRole(course_id).has_user(user):
-        return True
-
-    if CourseInstructorRole(course_id).has_user(user):
-        return True
-
-    # Check forum moderator/administrator roles for this specific course
     user_roles = set(
         Role.objects.filter(
             users=user,
             course_id=course_id,
         ).values_list('name', flat=True)
     )
-
-    if user_roles & {FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR}:
+    if bool(user_roles & {FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR}):
         return True
-
     return False
 
 
 class IsAllowedToBulkDelete(permissions.BasePermission):
     """
     Permission that checks if the user is allowed to perform bulk delete and ban operations.
-
-    Grants access to:
-    - Global Staff (superusers)
-    - Course Staff
-    - Course Instructors
-    - Forum Moderators
-    - Forum Administrators
-
-    Denies access to:
-    - Unauthenticated users
-    - Regular students
-    - Community TAs (they can moderate individual posts but not bulk delete)
     """
 
     def has_permission(self, request, view):
@@ -277,22 +250,139 @@ class IsAllowedToBulkDelete(permissions.BasePermission):
         return can_take_action_on_spam(request.user, course_id)
 
 
+class CanMuteUsers(permissions.BasePermission):
+    """
+    Permission class for all mute/unmute operations.
+    """
+
+    @staticmethod
+    def _is_privileged_user(user, course_id):
+        """
+        Check if user has discussion moderation privileges.
+        """
+        return (
+            has_discussion_privileges(user, course_id) or
+            GlobalStaff().has_user(user)
+        )
+
+    def has_permission(self, request, view):
+        """
+        Check if user has permission to access mute/unmute endpoints.
+        """
+        if not request.user.is_authenticated:
+            return False
+
+        course_id = view.kwargs.get("course_id")
+        if not course_id:
+            return False
+
+        if isinstance(course_id, str):
+            try:
+                course_id = CourseKey.from_string(course_id)
+            except InvalidKeyError:
+                return False
+
+        return (
+            GlobalStaff().has_user(request.user) or
+            has_discussion_privileges(request.user, course_id) or
+            CourseEnrollment.is_enrolled(request.user, course_id)
+        )
+
+    @staticmethod
+    def can_mute(requesting_user, target_user, course_id, scope='personal'):
+        """
+        Check if the requesting user can mute the target user.
+
+        Args:
+            requesting_user: User attempting to mute
+            target_user: User to be muted
+            course_id: Course context
+            scope: 'personal' or 'course'
+
+        Returns:
+            bool: True if mute is allowed, False otherwise
+        """
+        # Users cannot mute themselves
+        if requesting_user.id == target_user.id:
+            return False
+
+        # Check if target user has discussion privileges
+        target_is_privileged = CanMuteUsers._is_privileged_user(target_user, course_id)
+
+        # Check if requesting user has discussion privileges
+        requesting_is_privileged = CanMuteUsers._is_privileged_user(requesting_user, course_id)
+
+        # Learners cannot mute discussion-privileged users
+        if target_is_privileged and not requesting_is_privileged:
+            return False
+
+        # For course-wide muting, user must have discussion privileges
+        if scope == 'course' and not requesting_is_privileged:
+            return False
+
+        # Non-privileged users must be enrolled in the course
+        if not requesting_is_privileged:
+            try:
+                CourseEnrollment.objects.get(
+                    user=requesting_user,
+                    course_id=course_id,
+                    is_active=True
+                )
+            except CourseEnrollment.DoesNotExist:
+                return False
+
+        return True
+
+    @staticmethod
+    def can_unmute(requesting_user, target_user, course_id, scope='personal'):
+        """
+        Determine whether the requesting user can unmute the target user.
+
+        Rules:
+        - Users cannot unmute themselves
+        - Staff (instructors, TAs, global staff) can unmute anyone at any scope
+        - Course-wide unmute is restricted to staff
+        - Personal unmute requires enrollment
+
+        Args:
+            requesting_user: User attempting to unmute
+            target_user: User to be unmuted
+            course_id: Course context
+            scope: 'personal' or 'course'
+
+        Returns:
+            bool: True if the basic permission requirements are met.
+        """
+        # Users cannot unmute themselves as the target
+        if requesting_user.id == target_user.id:
+            return False
+
+        # Check if requesting user is staff or has discussion privileges (includes CTAs)
+        requesting_is_privileged = CanMuteUsers._is_privileged_user(requesting_user, course_id)
+
+        # Privileged users (staff, instructors, CTAs, moderators) can unmute anyone
+        if requesting_is_privileged:
+            return True
+
+        # For course-wide unmuting, only privileged users are allowed
+        if scope == 'course' and not requesting_is_privileged:
+            return False
+
+        # For personal unmuting, verify the user is enrolled in the course
+        try:
+            CourseEnrollment.objects.get(
+                user=requesting_user,
+                course_id=course_id,
+                is_active=True
+            )
+            return True
+        except CourseEnrollment.DoesNotExist:
+            return False
+
+
 class IsAllowedToRestore(permissions.BasePermission):
     """
     Permission that checks if the user has privileges to restore individual deleted content.
-
-    This permission is intentionally more permissive than IsAllowedToBulkDelete because:
-    - Restoring individual content is a less risky operation than bulk deletion
-    - Users who can see deleted content should be able to restore it
-    - Course-level moderation staff need this capability for day-to-day moderation
-
-    Allowed users (course-level permissions):
-    - Global staff (platform-wide)
-    - Course instructors
-    - Course staff
-    - Discussion moderators (course-specific)
-    - Discussion community TAs (course-specific)
-    - Discussion administrators (course-specific)
     """
 
     def has_permission(self, request, view):
@@ -314,12 +404,6 @@ class IsAllowedToRestore(permissions.BasePermission):
         except InvalidKeyError:
             return False
 
-        # Check if user is course staff or instructor
-        if CourseStaffRole(course_key).has_user(request.user) or \
-           CourseInstructorRole(course_key).has_user(request.user):
-            return True
-
-        # Check if user has discussion privileges (moderator, community TA, administrator)
         if has_discussion_privileges(request.user, course_key):
             return True
 

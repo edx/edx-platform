@@ -494,6 +494,8 @@
     box-shadow: none;
     background-color: #282c2e;
     list-style: none;
+    overflow-y: auto;
+    scrollbar-width: thin;
 }
 
 .xmodule_display.xmodule_VideoBlock .video .video-wrapper .video-controls .secondary-controls .menu-container .menu li {

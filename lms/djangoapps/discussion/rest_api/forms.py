@@ -62,6 +62,7 @@ class ThreadListGetForm(_PaginationForm):
     )
     count_flagged = ExtendedNullBooleanField(required=False)
     flagged = ExtendedNullBooleanField(required=False)
+    include_muted = ExtendedNullBooleanField(required=False)
     show_deleted = ExtendedNullBooleanField(required=False)
     view = ChoiceField(
         choices=[
@@ -144,6 +145,7 @@ class CommentListGetForm(_PaginationForm):
     endorsed = ExtendedNullBooleanField(required=False)
     requested_fields = MultiValueField(required=False)
     merge_question_type_responses = BooleanField(required=False)
+    include_muted = BooleanField(required=False)
     show_deleted = ExtendedNullBooleanField(required=False)
 
 
@@ -181,6 +183,7 @@ class CommentGetForm(_PaginationForm):
     """
 
     requested_fields = MultiValueField(required=False)
+    include_muted = BooleanField(required=False)
 
 
 class CourseDiscussionSettingsForm(Form):

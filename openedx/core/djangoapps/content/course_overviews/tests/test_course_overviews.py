@@ -459,8 +459,11 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
                         # Make sure that tbe second call skips the cache and
                         # IntegrityError is triggered and handled gracefully
                         mock_log.info.assert_called_with(
-                            "Multiple CourseOverviews for course %s requested simultaneously; will only save one.",
-                            course.id
+                            "IntegrityError when saving CourseOverview for course %s: %s. This is likely due to "
+                            "multiple CourseOverviews being requested simultaneously; will only save one.",
+                            course.id,
+                            mock.ANY,
+                            exc_info=True
                         )
 
     def test_course_overview_version_update(self):
@@ -622,6 +625,16 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
 
         CourseOverview.load_from_module_store(course_key)
         assert CourseOverview.objects.filter(id=course_key).exists()
+
+    @override_settings(ENTRANCE_EXAM_MIN_SCORE_PCT=0.5)
+    def test_null_entrance_exam_minimum_score(self):
+        """
+        Tests that course overview can be created when entrance_exam_minimum_score is null.
+        """
+        course = CourseFactory.create()
+        course.entrance_exam_minimum_score_pct = None
+        course_overview = CourseOverview._create_or_update(course)  # pylint: disable=protected-access
+        assert course_overview.entrance_exam_minimum_score_pct == 0.5
 
 
 @ddt.ddt

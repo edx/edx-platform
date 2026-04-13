@@ -9,12 +9,27 @@ import dateutil
 import pytz
 from crum import get_current_request
 from edx_django_utils.cache import RequestCache
+from edx_toggles.toggles import WaffleFlag
 
 from common.djangoapps.track import segment
 from lms.djangoapps.experiments.stable_bucketing import stable_bucketing_hash_group
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 
 log = logging.getLogger(__name__)
+
+# .. toggle_name: experiments.audit_expiry_urgency_v1.enabled
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Kill switch for the Audit Expiry Urgency (v1) backend experiment.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-03-25
+# .. toggle_target_removal_date: None
+# .. toggle_tickets: Audit Expiry Urgency Experiment
+# .. toggle_warning: This temporary feature toggle does not have a target removal date.
+AUDIT_EXPIRY_URGENCY_V1_ENABLED = WaffleFlag(
+    'experiments.audit_expiry_urgency_v1.enabled',
+    __name__,
+)
 
 
 class ExperimentWaffleFlag(CourseWaffleFlag):

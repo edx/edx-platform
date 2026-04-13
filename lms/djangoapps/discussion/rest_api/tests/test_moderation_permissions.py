@@ -35,17 +35,17 @@ class CanTakeActionOnSpamTest(ModuleStoreTestCase):
         GlobalStaff().add_users(user)
         self.assertTrue(can_take_action_on_spam(user, self.course_key))
 
-    def test_course_staff_has_permission(self):
-        """Course staff should have permission for their course."""
+    def test_course_staff_no_permission(self):
+        """Course staff should NOT have permission (authoring role only)."""
         user = UserFactory.create()
         CourseStaffRole(self.course_key).add_users(user)
-        self.assertTrue(can_take_action_on_spam(user, self.course_key))
+        self.assertFalse(can_take_action_on_spam(user, self.course_key))
 
-    def test_course_instructor_has_permission(self):
-        """Course instructors should have permission for their course."""
+    def test_course_instructor_no_permission(self):
+        """Course instructors should NOT have permission (authoring role only)."""
         user = UserFactory.create()
         CourseInstructorRole(self.course_key).add_users(user)
-        self.assertTrue(can_take_action_on_spam(user, self.course_key))
+        self.assertFalse(can_take_action_on_spam(user, self.course_key))
 
     def test_forum_moderator_has_permission(self):
         """Forum moderators should have permission for their course."""
@@ -74,16 +74,18 @@ class CanTakeActionOnSpamTest(ModuleStoreTestCase):
         self.assertFalse(can_take_action_on_spam(user, self.course_key))
 
     def test_staff_different_course_no_permission(self):
-        """Staff from a different course should not have permission."""
+        """Discussion moderators from a different course should not have permission."""
         other_course = CourseFactory.create(org='OtherX', number='CS201', run='2024')
         user = UserFactory.create()
-        CourseStaffRole(other_course.id).add_users(user)
+        role = Role.objects.create(name='Moderator', course_id=other_course.id)
+        role.users.add(user)
         self.assertFalse(can_take_action_on_spam(user, self.course_key))
 
     def test_accepts_string_course_id(self):
         """Function should accept string course_id and convert it."""
         user = UserFactory.create()
-        CourseStaffRole(self.course_key).add_users(user)
+        role = Role.objects.create(name='Moderator', course_id=self.course_key)
+        role.users.add(user)
         self.assertTrue(can_take_action_on_spam(user, str(self.course_key)))
 
 
@@ -130,23 +132,23 @@ class IsAllowedToBulkDeleteTest(ModuleStoreTestCase):
 
         self.assertTrue(self.permission.has_permission(request, view))
 
-    def test_course_staff_with_course_id_in_data(self):
-        """Course staff should have permission when course_id is in request data."""
+    def test_course_staff_denied(self):
+        """Course staff should NOT have permission (authoring role only)."""
         user = UserFactory.create()
         CourseStaffRole(self.course.id).add_users(user)
         request = self._create_request_with_data(user, self.course_key)
         view = self._create_view_with_kwargs()
 
-        self.assertTrue(self.permission.has_permission(request, view))
+        self.assertFalse(self.permission.has_permission(request, view))
 
-    def test_course_instructor_with_course_id_in_data(self):
-        """Course instructors should have permission when course_id is in request data."""
+    def test_course_instructor_denied(self):
+        """Course instructors should NOT have permission (authoring role only)."""
         user = UserFactory.create()
         CourseInstructorRole(self.course.id).add_users(user)
         request = self._create_request_with_data(user, self.course_key)
         view = self._create_view_with_kwargs()
 
-        self.assertTrue(self.permission.has_permission(request, view))
+        self.assertFalse(self.permission.has_permission(request, view))
 
     def test_forum_moderator_with_course_id_in_data(self):
         """Forum moderators should have permission when course_id is in request data."""
@@ -169,7 +171,8 @@ class IsAllowedToBulkDeleteTest(ModuleStoreTestCase):
     def test_course_id_in_url_kwargs(self):
         """Permission should work when course_id is in URL kwargs."""
         user = UserFactory.create()
-        CourseStaffRole(self.course.id).add_users(user)
+        role = Role.objects.create(name='Moderator', course_id=self.course.id)
+        role.users.add(user)
         request = self.factory.get('/api/discussion/v1/moderation/banned-users/')
         request.user = user
         request.data = {}
@@ -193,10 +196,11 @@ class IsAllowedToBulkDeleteTest(ModuleStoreTestCase):
         self.assertFalse(self.permission.has_permission(request, view))
 
     def test_staff_different_course_denied(self):
-        """Staff from different course should be denied."""
+        """Discussion moderators from different course should be denied."""
         other_course = CourseFactory.create(org='OtherX', number='CS201', run='2024')
         user = UserFactory.create()
-        CourseStaffRole(other_course.id).add_users(user)
+        role = Role.objects.create(name='Moderator', course_id=other_course.id)
+        role.users.add(user)
         request = self._create_request_with_data(user, self.course_key)
         view = self._create_view_with_kwargs()
 

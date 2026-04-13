@@ -28,6 +28,13 @@ from lms.djangoapps.discussion.rest_api.views import (
     ThreadViewSet,
     UploadFileView,
 )
+from lms.djangoapps.discussion.rest_api.forum_mute_views import (
+    ForumMuteUserView,
+    ForumUnmuteUserView,
+    ForumMuteAndReportView,
+    ForumMutedUsersListView,
+    ForumMuteStatusView,
+)
 
 ROUTER = SimpleRouter()
 ROUTER.register("threads", ThreadViewSet, basename="thread")
@@ -137,6 +144,31 @@ urlpatterns = [
         rf"^v1/deleted_content/{settings.COURSE_ID_PATTERN}",
         DeletedContentView.as_view(),
         name="deleted_content",
+    ),
+    re_path(
+        fr"^v1/moderation/forum-mute/{settings.COURSE_ID_PATTERN}/$",
+        ForumMuteUserView.as_view(),
+        name="forum_mute_user"
+    ),
+    re_path(
+        fr"^v1/moderation/forum-unmute/{settings.COURSE_ID_PATTERN}/$",
+        ForumUnmuteUserView.as_view(),
+        name="forum_unmute_user"
+    ),
+    re_path(
+        fr"^v1/moderation/forum-mute-and-report/{settings.COURSE_ID_PATTERN}/$",
+        ForumMuteAndReportView.as_view(),
+        name="forum_mute_and_report"
+    ),
+    re_path(
+        fr"^v1/moderation/forum-muted-users/{settings.COURSE_ID_PATTERN}/$",
+        ForumMutedUsersListView.as_view(),
+        name="forum_muted_users_list"
+    ),
+    re_path(
+        fr"^v1/moderation/forum-mute-status/{settings.COURSE_ID_PATTERN}/(?P<user_id>[0-9]+)/$",
+        ForumMuteStatusView.as_view(),
+        name="forum_mute_status"
     ),
     path("v1/", include(ROUTER.urls)),
 ]

@@ -2,7 +2,6 @@
 Discussion API serializers
 """
 
-import html
 import re
 from typing import Dict
 from urllib.parse import urlencode, urlunparse
@@ -90,7 +89,7 @@ def get_context(course, request, thread=None):
     cc_requester["course_id"] = course.id
     course_discussion_settings = CourseDiscussionSettings.get(course.id)
     is_global_staff = GlobalStaff().has_user(requester)
-    all_privileged_ids = set(moderator_user_ids) | set(ta_user_ids) | set(course_staff_user_ids)
+    all_privileged_ids = set(moderator_user_ids) | set(ta_user_ids)
     has_moderation_privilege = requester.id in all_privileged_ids or is_global_staff
     return {
         "course": course,
@@ -165,7 +164,9 @@ def filter_spam_urls_from_html(html_string):
     Returns:
         clean_post, is_spam
     """
-    html_string = html.unescape(html_string)
+    # BeautifulSoup automatically handles HTML entities correctly.
+    # Do NOT call html.unescape() here as it breaks properly escaped content in code blocks
+    # (e.g., &lt;div&gt; inside <code> tags would become real <div> tags).
     soup = BeautifulSoup(html_string, "html.parser")
     patterns = []
     is_spam = False
@@ -241,13 +242,21 @@ class _ContentSerializer(serializers.Serializer):
 
     def _is_user_privileged(self, user_id):
         """
-        Returns a boolean indicating whether the given user_id identifies a
-        privileged user.
+        Returns a boolean indicating whether the given user_id identifies a privileged user.
         """
-        return (
+        is_privileged = (
             user_id in self.context["moderator_user_ids"]
             or user_id in self.context["ta_user_ids"]
         )
+
+        if not is_privileged:
+            try:
+                user = User.objects.get(id=user_id)
+                is_privileged = GlobalStaff().has_user(user)
+            except User.DoesNotExist:
+                pass
+
+        return is_privileged
 
     def _is_anonymous(self, obj):
         """
@@ -270,16 +279,22 @@ class _ContentSerializer(serializers.Serializer):
 
     def _get_user_label(self, user_id):
         """
-        Returns the role label (i.e. "Staff", "Moderator" or "Community TA") for the user
-        with the given id.
+        Returns the role label for the user with the given id.
         """
-        is_staff = user_id in self.context["course_staff_user_ids"]
         is_moderator = user_id in self.context["moderator_user_ids"]
         is_ta = user_id in self.context["ta_user_ids"]
 
+        is_global_staff = False
+        if not (is_moderator or is_ta):
+            try:
+                user = User.objects.get(id=user_id)
+                is_global_staff = GlobalStaff().has_user(user)
+            except User.DoesNotExist:
+                pass
+
         return (
             "Staff"
-            if is_staff
+            if is_global_staff
             else "Moderator" if is_moderator else "Community TA" if is_ta else None
         )
 
@@ -1407,3 +1422,65 @@ class BanUserRequestSerializer(serializers.Serializer):
             # Just record the username for the view to resolve
             data['lookup_username'] = data['username']
         return data
+
+# Muting-related serializers
+
+
+class MuteRequestSerializer(serializers.Serializer):
+    """
+    Serializer for mute user requests.
+    """
+    muted_user_id = serializers.IntegerField(
+        help_text="ID of the user to be muted"
+    )
+    course_id = serializers.CharField(
+        help_text="Course ID where the mute applies"
+    )
+    scope = serializers.ChoiceField(
+        choices=['personal', 'course'],
+        default='personal',
+        help_text="Scope of the mute (personal or course-wide)"
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional reason for muting"
+    )
+
+
+class MuteAndReportRequestSerializer(MuteRequestSerializer):
+    """
+    Serializer for mute and report requests.
+    """
+    thread_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="ID of the thread being reported"
+    )
+    comment_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="ID of the comment being reported"
+    )
+    post_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Generic post ID (could be thread or comment) - used for retry logic"
+    )
+
+
+class UnmuteRequestSerializer(serializers.Serializer):
+    """
+    Serializer for unmute user requests.
+    """
+    muted_user_id = serializers.IntegerField(
+        help_text="ID of the user to be unmuted"
+    )
+    course_id = serializers.CharField(
+        help_text="Course ID where the unmute applies"
+    )
+    scope = serializers.ChoiceField(
+        choices=['personal', 'course'],
+        default='personal',
+        help_text="Scope of the unmute (personal or course-wide)"
+    )

@@ -1,6 +1,5 @@
 # pylint: disable=missing-docstring,protected-access
 import logging
-import time
 
 from bs4 import BeautifulSoup
 
@@ -169,50 +168,24 @@ class Comment(models.Model):
     def get_user_comment_count(cls, user_id, course_ids):
         """
         Returns comments and responses count of user in the given course_ids.
-        TODO: Add support for MySQL backend as well
+        Uses forum_api to support both MongoDB and MySQL backends.
         """
-        query_params = {
-            "course_id": {"$in": course_ids},
-            "author_id": str(user_id),
-            "is_deleted": {"$ne": True},
-            "_type": "Comment",
-        }
-        return ForumComment()._collection.count_documents(
-            query_params
-        )  # pylint: disable=protected-access
+        return forum_api.get_user_comment_count(
+            user_id=str(user_id),
+            course_ids=course_ids
+        )
 
     @classmethod
     def delete_user_comments(cls, user_id, course_ids, deleted_by=None):
         """
         Deletes comments and responses of user in the given course_ids.
-        TODO: Add support for MySQL backend as well
+        Uses forum_api to support both MongoDB and MySQL backends.
         """
-        start_time = time.time()
-        query_params = {
-            "course_id": {"$in": course_ids},
-            "author_id": str(user_id),
-            "is_deleted": {"$ne": True},
-        }
-        comments_deleted = 0
-        comments = ForumComment().get_list(**query_params)
-        log.info(
-            f"<<Bulk Delete>> Fetched comments for user {user_id} in {time.time() - start_time} seconds"
+        return forum_api.delete_user_comments(
+            user_id=str(user_id),
+            course_ids=course_ids,
+            deleted_by=deleted_by
         )
-        for comment in comments:
-            start_time = time.time()
-            comment_id = comment.get("_id")
-            course_id = comment.get("course_id")
-            if comment_id:
-                # Use forum_api.delete_comment which supports deleted_by parameter
-                forum_api.delete_comment(  # pylint: disable=unexpected-keyword-arg
-                    comment_id, course_id=course_id, deleted_by=deleted_by
-                )
-                comments_deleted += 1
-            log.info(
-                f"<<Bulk Delete>> Deleted comment {comment_id} in {time.time() - start_time} seconds."
-                f" Comment Found: {comment_id is not None}"
-            )
-        return comments_deleted
 
     @classmethod
     def get_user_deleted_comment_count(cls, user_id, course_ids):

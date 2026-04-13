@@ -766,7 +766,7 @@ edx-drf-extensions==10.6.0
     #   enterprise-integrated-channels
     #   openedx-authz
     #   openedx-learning
-edx-enterprise==6.8.3
+edx-enterprise==6.8.6
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/doc.txt
@@ -895,7 +895,7 @@ enmerkar-underscore==2.4.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
-enterprise-integrated-channels==0.1.54
+enterprise-integrated-channels==0.1.56
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -1408,6 +1408,7 @@ openedx-filters==2.1.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
+    #   edx-enterprise
     #   lti-consumer-xblock
     #   ora2
 openedx-forum==0.3.8
@@ -1983,6 +1984,7 @@ social-auth-app-django==5.4.1
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
     #   edx-auth-backends
+    #   edx-enterprise
 social-auth-core==4.8.1
     # via
     #   -r requirements/edx/doc.txt
