@@ -1287,9 +1287,8 @@ OPTIONAL_APPS = (
     # edxval
     ('edxval', 'openedx.core.djangoapps.content.course_overviews.apps.CourseOverviewsConfig'),
 
-    # Enterprise App (http://github.com/openedx/edx-enterprise)
-    ('enterprise', None),
-    ('consent', None),
+    # Deprecated apps from the edx-enterprise package. We're working on removing these as part of
+    # pluginifying edx-enterprise (<https://discuss.openedx.org/t/18316>)
     ('integrated_channels.integrated_channel', None),
     ('integrated_channels.degreed', None),
     ('integrated_channels.degreed2', None),

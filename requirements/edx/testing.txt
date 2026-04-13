@@ -593,7 +593,7 @@ edx-drf-extensions==10.6.0
     #   enterprise-integrated-channels
     #   openedx-authz
     #   openedx-learning
-edx-enterprise==6.6.9
+edx-enterprise==6.8.3
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/base.txt
@@ -692,7 +692,7 @@ enmerkar==0.7.1
     #   enmerkar-underscore
 enmerkar-underscore==2.4.0
     # via -r requirements/edx/base.txt
-enterprise-integrated-channels==0.1.51
+enterprise-integrated-channels==0.1.54
     # via -r requirements/edx/base.txt
 event-tracking==3.3.0
     # via
