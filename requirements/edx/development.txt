@@ -747,7 +747,7 @@ edx-drf-extensions==10.6.0
     #   edxval
     #   enterprise-integrated-channels
     #   openedx-learning
-edx-enterprise==6.8.6
+edx-enterprise==7.0.2
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/doc.txt
@@ -1201,6 +1201,7 @@ lxml[html-clean]==5.3.2
     #   -c requirements/constraints.txt
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
+    #   edx-enterprise
     #   edx-i18n-tools
     #   edxval
     #   lti-consumer-xblock
