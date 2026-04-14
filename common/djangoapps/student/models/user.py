@@ -928,7 +928,7 @@ class PendingEmailChange(DeletableByUserValue, models.Model):
         for record in records_matching_user_value:
             record.new_email = get_retired_email_by_email(record.new_email)
             record.activation_key = uuid.uuid4().hex
-            record.save(update_fields=['new_email', 'activation_key'])
+            record.save(update_fields=['new_email'])
 
         return True
 
