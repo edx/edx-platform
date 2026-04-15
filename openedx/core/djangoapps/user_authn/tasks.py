@@ -18,9 +18,23 @@ from common.djangoapps.track import segment
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_authn.utils import check_pwned_password
 from openedx.core.lib.celery.task_utils import emulate_http_request
-from openedx.core.djangoapps.ace_common.utils import ENABLE_SES_FOR_ACCOUNT_ACTIVATION
+from edx_toggles.toggles import WaffleFlag
 
 log = logging.getLogger('edx.celery.task')
+
+# .. toggle_name: user_authn.enable_ses_for_account_activation
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Route account activation emails via SES using ACE.
+# .. toggle_use_cases: opt_in, temporary
+# .. toggle_creation_date: 2026-03-31
+# .. toggle_target_removal_date: None
+# .. toggle_warning: Controls SES routing for account activation emails.
+
+ENABLE_SES_FOR_ACCOUNT_ACTIVATION = WaffleFlag(
+    'user_authn.enable_ses_for_account_activation',
+    __name__,
+)
 
 
 @shared_task
@@ -79,16 +93,7 @@ def send_activation_email(self, msg_string, from_address=None, site_id=None):
     sent_via_ses = False
 
     if route_via_ses:
-        msg.options.update({
-            'override_default_channel': 'django_email',
-            'transactional': True,
-            'from_address': configuration_helpers.get_value(
-                'ACTIVATION_EMAIL_FROM_ADDRESS'
-            ) or configuration_helpers.get_value(
-                'email_from_address',
-                settings.DEFAULT_FROM_EMAIL
-            ),
-        })
+        msg.options['override_default_channel'] = 'django_email'
 
     try:
         with emulate_http_request(site=site, user=user):
@@ -96,13 +101,20 @@ def send_activation_email(self, msg_string, from_address=None, site_id=None):
             sent_via_ses = route_via_ses
 
     except RecoverableChannelDeliveryError:
-        log.warning(
-            "SES send failed for %s, falling back to default ACE channel",
-            dest_addr,
-            exc_info=True,
-        )
+        if route_via_ses:
+            log.warning(
+                "SES send failed for %s, falling back to default ACE channel",
+                dest_addr,
+                exc_info=True,
+            )
 
-        if not route_via_ses:
+            msg.options.pop('override_default_channel', None)
+
+            with emulate_http_request(site=site, user=user):
+                ace.send(msg)
+                sent_via_ses = False
+
+        else:
             log.info(
                 'Retrying sending email to user {dest_addr}, attempt # {attempt} of {max_attempts}'.format(
                     dest_addr=dest_addr,
@@ -124,33 +136,6 @@ def send_activation_email(self, msg_string, from_address=None, site_id=None):
                 )
             return
 
-        _remove_ses_overrides(msg)
-
-        try:
-            with emulate_http_request(site=site, user=user):
-                ace.send(msg)
-                sent_via_ses = False
-
-        except RecoverableChannelDeliveryError:
-            log.info(
-                'Retrying sending email to user {dest_addr}, attempt # {attempt} of {max_attempts}'.format(
-                    dest_addr=dest_addr,
-                    attempt=retries,
-                    max_attempts=max_retries
-                )
-            )
-            try:
-                self.retry(
-                    countdown=settings.RETRY_ACTIVATION_EMAIL_TIMEOUT,
-                    max_retries=max_retries
-                )
-            except MaxRetriesExceededError:
-                log.error(
-                    'Unable to send activation email to user from "%s" to "%s"',
-                    from_address,
-                    dest_addr,
-                    exc_info=True
-                )
     except Exception:
         log.exception(
             'Unable to send activation email to user from "%s" to "%s"',
@@ -164,9 +149,3 @@ def send_activation_email(self, msg_string, from_address=None, site_id=None):
         dest_addr,
         'SES' if sent_via_ses else 'default ACE channel',
     )
-
-
-def _remove_ses_overrides(msg):
-    msg.options.pop('override_default_channel', None)
-    msg.options.pop('transactional', None)
-    msg.options.pop('from_address', None)
