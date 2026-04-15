@@ -14,12 +14,6 @@ from django.core.files.base import ContentFile
 from django.utils.timezone import now
 from edxval.api import create_external_video, create_or_update_video_transcript, delete_video_transcript
 from opaque_keys.edx.locator import CourseLocator, LibraryLocatorV2
-from cms.djangoapps.contentstore.audio_description_storage_handlers import (
-    AudioDescriptionUploadError,
-    delete_audio_description,
-    get_audio_description_url,
-    upload_audio_description,
-)
 
 from webob import Response
 from xblock.core import XBlock
@@ -694,7 +688,16 @@ class VideoStudioViewHandlers:
         - DELETE
         - GET   returns {file_name, url}
         """
-        from cms.djangoapps.contentstore.toggles import audio_description_enabled
+        # CMS-only imports: xmodule is shared between CMS and LMS, so these
+        # must stay inside the handler to avoid ImportError in LMS context.
+        from cms.djangoapps.contentstore.audio_description_storage_handlers import (  # pylint: disable=import-outside-toplevel
+            AudioDescriptionUploadError,
+            delete_audio_description,
+            get_audio_description_url,
+            upload_audio_description,
+        )
+        from cms.djangoapps.contentstore.toggles import audio_description_enabled  # pylint: disable=import-outside-toplevel
+
         if not audio_description_enabled or not audio_description_enabled(self.course_id):
             return Response(status=404)
 

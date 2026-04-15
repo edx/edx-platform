@@ -13,11 +13,17 @@ import re
 
 from django.conf import settings
 from django.core.files.base import ContentFile
-from edxval.api import (
-    create_or_update_video_audio_description,
-    delete_video_audio_description,
-    get_video_audio_description_url
-)
+
+try:
+    from edxval.api import (
+        create_or_update_video_audio_description,
+        delete_video_audio_description,
+        get_video_audio_description_url,
+    )
+except ImportError:
+    create_or_update_video_audio_description = None
+    delete_video_audio_description = None
+    get_video_audio_description_url = None
 
 log = logging.getLogger(__name__)
 

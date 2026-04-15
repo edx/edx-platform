@@ -42,9 +42,6 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         self.storage_handlers = importlib.import_module(
             "cms.djangoapps.contentstore.audio_description_storage_handlers"
         )
-        self.video_handlers = importlib.import_module(
-            "xmodule.video_block.video_handlers"
-        )
 
     def _build_block_mock(self, edx_video_id="video-1", audio_description=""):
         """
@@ -111,7 +108,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         }
 
         with patch.object(
-            self.video_handlers, "upload_audio_description"
+            self.storage_handlers, "upload_audio_description"
         ) as mock_upload:
             mock_upload.return_value = "https://s3.example/bar.mp3"
             response = self._call(block, "POST", request=request)
@@ -153,7 +150,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         """
         block = self._build_block_mock()
 
-        with patch.object(self.video_handlers, "get_audio_description_url") as mock_url:
+        with patch.object(self.storage_handlers, "get_audio_description_url") as mock_url:
             mock_url.return_value = None
             response = self._call(block, "GET")
 
@@ -168,7 +165,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         """
         block = self._build_block_mock(audio_description="bar.mp3")
 
-        with patch.object(self.video_handlers, "get_audio_description_url") as mock_url:
+        with patch.object(self.storage_handlers, "get_audio_description_url") as mock_url:
             mock_url.return_value = "https://s3.example/get-presigned"
             response = self._call(block, "GET")
 
@@ -193,7 +190,7 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         )
 
         with patch.object(
-            self.video_handlers, "delete_audio_description"
+            self.storage_handlers, "delete_audio_description"
         ) as mock_delete:
             response = self._call(block, "DELETE")
 

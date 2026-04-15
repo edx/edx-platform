@@ -991,7 +991,7 @@ class _BuiltInVideoBlock(
         }
 
         _context.update({'transcripts_basic_tab_metadata': metadata})
-        from cms.djangoapps.contentstore.toggles import audio_description_enabled
+        from cms.djangoapps.contentstore.toggles import audio_description_enabled  # pylint: disable=import-outside-toplevel
 
         # Audio description upload context for studio editor
         ad_upload_enabled = bool(
@@ -1320,12 +1320,16 @@ class _BuiltInVideoBlock(
         """
         if not edxval_api:
             return None
+        # Guard against edxval versions that do not yet expose this helper.
+        get_ad_url = getattr(edxval_api, 'get_video_audio_description_url', None)
+        if not get_ad_url:
+            return None
         video_id = clean_video_id(getattr(self, 'audio_description_video_id', '')) \
             or clean_video_id(self.edx_video_id)
         if not video_id:
             return None
         try:
-            return edxval_api.get_video_audio_description_url(video_id)
+            return get_ad_url(video_id)
         except Exception:  # pylint: disable=broad-except
             log.exception('Failed to get audio description URL for video %s', video_id)
             return None
