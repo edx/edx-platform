@@ -252,7 +252,7 @@ class TestAccountApi(UserSettingsEventTestMixin, EmailTemplateTagMixin, CreateAc
         'openedx.core.djangoapps.user_api.accounts.api.AccountSettingsReadOnlyFieldsRequested.run_filter',
         return_value=({'country'}, None),
     )
-    def test_readonly_field_from_filter_is_rejected(self, mock_run_filter):  # pylint: disable=unused-argument
+    def test_readonly_field_from_filter_is_rejected(self, _mock_run_filter):
         """
         When AccountSettingsReadOnlyFieldsRequested.run_filter returns a field as read-only,
         update_account_settings should raise AccountValidationError for that field.
