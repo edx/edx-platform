@@ -830,8 +830,9 @@ openedx-events==10.5.0
     #   edx-name-affirmation
     #   event-tracking
     #   ora2
-openedx-filters==2.1.0
+openedx-filters @ git+https://github.com/pwnage101/openedx-filters.git@1ddc9ba450b03f3286430d18a9345728d945739d
     # via
+    #   -r requirements/edx/github.in
     #   -r requirements/edx/kernel.in
     #   edx-enterprise
     #   lti-consumer-xblock

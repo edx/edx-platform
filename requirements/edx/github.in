@@ -85,4 +85,9 @@
 # Critical fixes for packages that are not yet available in a PyPI release.
 ##############################################################################
 
-# ... add dependencies here
+# https://github.com/openedx/openedx-filters/pull/333
+# Installing from pwnage101's branch which adds GradeEventContextRequested and AccountSettingsReadOnlyFieldsRequested.
+# The published 3.1.0 release has Requires-Python: >=3.12 which is overly strict; the code is compatible with
+# Python 3.11. This PR will also relax that constraint before merge, after which this line should be updated
+# to pin openedx-filters==3.2.0 from PyPI instead.
+git+https://github.com/pwnage101/openedx-filters.git@1ddc9ba450b03f3286430d18a9345728d945739d#egg=openedx-filters==3.2.0
