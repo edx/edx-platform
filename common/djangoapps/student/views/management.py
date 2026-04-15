@@ -89,7 +89,6 @@ from common.djangoapps.util.db import outer_atomic
 from common.djangoapps.util.json_request import JsonResponse
 from common.djangoapps.student.signals import USER_EMAIL_CHANGED
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
-from openedx.core.djangoapps.ace_common.utils import apply_ses_routing_if_enabled
 
 log = logging.getLogger("edx.student")
 
@@ -231,7 +230,6 @@ def compose_activation_email(
         user_context=message_context,
     )
 
-    msg = apply_ses_routing_if_enabled(msg)
     return msg
 
 
