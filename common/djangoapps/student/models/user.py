@@ -933,7 +933,7 @@ class PendingSecondaryEmailChange(DeletableByUserValue, models.Model):
     """
     This model keeps track of pending requested changes to a user's secondary email address.
 
-    .. pii: Contains new_secondary_email, retired in `DeactivateLogoutView`
+    .. pii: Contains new_secondary_email, redacted in `DeactivateLogoutView`
     .. pii_types: email_address
     .. pii_retirement: local_api
     """
@@ -944,7 +944,7 @@ class PendingSecondaryEmailChange(DeletableByUserValue, models.Model):
     @classmethod
     def redact_pending_secondary_email(cls, user_id):
         """
-        Retire a pending secondary email change row for a user.
+        Redact a pending secondary email change row for a user.
 
         Redacts the email before deletion so any downstream soft-delete mirror does
         not retain the original secondary email address in the final row image.
@@ -954,9 +954,7 @@ class PendingSecondaryEmailChange(DeletableByUserValue, models.Model):
         except cls.DoesNotExist:
             return True
 
-        pending_secondary_email.new_secondary_email = get_retired_email_by_email(
-            pending_secondary_email.new_secondary_email
-        )
+        pending_secondary_email.new_secondary_email = f"redacted+{user_id}@redacted.com"
         pending_secondary_email.save(update_fields=['new_secondary_email'])
         pending_secondary_email.delete()
         return True
@@ -1674,7 +1672,7 @@ class AccountRecovery(models.Model):
     """
     Model for storing information for user's account recovery in case of access loss.
 
-    .. pii: the field named secondary_email contains pii, retired in the `DeactivateLogoutView`
+    .. pii: the field named secondary_email contains pii, redacted in the `DeactivateLogoutView`
     .. pii_types: email_address
     .. pii_retirement: local_api
     """
@@ -1707,7 +1705,7 @@ class AccountRecovery(models.Model):
     @classmethod
     def retire_recovery_email(cls, user_id):
         """
-        Retire user's recovery/secondary email as part of GDPR Phase I.
+        Redact user's recovery/secondary email as part of GDPR Phase I.
         Returns 'True'
 
         If an AccountRecovery record is found for this user it will be redacted and
@@ -1721,7 +1719,7 @@ class AccountRecovery(models.Model):
         except cls.DoesNotExist:
             return True
 
-        account_recovery.secondary_email = get_retired_email_by_email(account_recovery.secondary_email)
+        account_recovery.secondary_email = f"redacted+{user_id}@redacted.com"
         account_recovery.is_active = False
         account_recovery.save(update_fields=['secondary_email', 'is_active'])
         account_recovery.delete()
