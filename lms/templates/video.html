@@ -37,14 +37,6 @@ from openedx.core.djangolib.js_utils import (
           </div>
           <div class="video-player-post"></div>
           <div class="closed-captions"></div>
-          % if audio_description_enabled:
-          <audio
-            id="audio-description-${id}"
-            class="video-audio-description"
-            aria-hidden="true"
-            preload="none"
-          ></audio>
-          % endif
           <div class="video-controls is-hidden">
               <div>
                   <div class="vcr"><div class="vidtime">0:00 / 0:00</div></div>

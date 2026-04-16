@@ -132,7 +132,6 @@ class TestVideoYouTube(TestVideo):  # lint-amnesty, pylint: disable=missing-clas
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
-                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -142,7 +141,6 @@ class TestVideoYouTube(TestVideo):  # lint-amnesty, pylint: disable=missing-clas
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': '',
         }
 
@@ -223,7 +221,6 @@ class TestVideoNonYouTube(TestVideo):  # pylint: disable=test-inherits-tests
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
-                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -233,7 +230,6 @@ class TestVideoNonYouTube(TestVideo):  # pylint: disable=test-inherits-tests
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': '',
         }
 
@@ -384,7 +380,6 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             'completionPercentage': 0.95,
             'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
             'prioritizeHls': False,
-            'audioDescriptionEnabled': False,
         })
 
     def get_handler_url(self, handler, suffix):
@@ -481,7 +476,6 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': '',
         }
 
@@ -615,7 +609,6 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': '',
         }
         initial_context['metadata']['duration'] = None
@@ -755,7 +748,6 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             'poster': 'null',
             'metadata': metadata,
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': 'mock item',
         }
 
@@ -944,7 +936,6 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             'poster': 'null',
             'metadata': metadata,
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': data['edx_video_id'].replace('\t', ' '),
         }
 
@@ -1066,7 +1057,6 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': 'vid-v1:12345',
         }
         initial_context['metadata']['duration'] = None
@@ -1168,7 +1158,6 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': 'vid-v1:12345',
         }
         initial_context['metadata']['duration'] = None
@@ -2445,7 +2434,6 @@ class TestVideoWithBumper(TestVideo):  # pylint: disable=test-inherits-tests
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
-                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -2458,7 +2446,6 @@ class TestVideoWithBumper(TestVideo):  # pylint: disable=test-inherits-tests
                 'type': 'youtube'
             })),
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': '',
         }
 
@@ -2535,7 +2522,6 @@ class TestAutoAdvanceVideo(TestVideo):  # lint-amnesty, pylint: disable=test-inh
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
-                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -2545,7 +2531,6 @@ class TestAutoAdvanceVideo(TestVideo):  # lint-amnesty, pylint: disable=test-inh
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
-            'audio_description_enabled': False,
             'video_id': '',
         }
         return context

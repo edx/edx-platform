@@ -1329,17 +1329,6 @@ VIDEO_TRANSCRIPTS_SETTINGS = dict(
 
 VIDEO_TRANSCRIPTS_MAX_AGE = 31536000
 
-####################### Video Audio Description Storage ######################
-
-VIDEO_AUDIO_DESCRIPTION_SETTINGS = dict(
-    VIDEO_AUDIO_DESCRIPTION_MAX_BYTES=200 * 1024 * 1024,  # 200 MB
-    STORAGE_KWARGS=dict(
-        location=MEDIA_ROOT,
-    ),
-    DIRECTORY_PREFIX='audio-descriptions/',
-    BASE_URL=MEDIA_URL,
-)
-
 ############################ Parental Controls #############################
 
 # .. setting_name: PARENTAL_CONSENT_AGE_LIMIT

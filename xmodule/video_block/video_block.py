@@ -471,19 +471,6 @@ class _BuiltInVideoBlock(
             'ytTestTimeout': settings.YOUTUBE['TEST_TIMEOUT'],
         }
 
-        audio_description_url = self._get_audio_description_url()
-        if audio_description_url:
-            metadata['audioDescriptionUrl'] = audio_description_url
-
-        try:
-            from cms.djangoapps.contentstore.toggles import (  # pylint: disable=import-outside-toplevel
-                audio_description_enabled
-            )
-            ad_feature_enabled = bool(audio_description_enabled(self.course_id))
-        except Exception:  # pylint: disable=broad-except
-            ad_feature_enabled = False
-        metadata['audioDescriptionEnabled'] = ad_feature_enabled
-
         bumperize(self)
 
         is_video_from_same_origin = bool(download_video_link and cdn_url and download_video_link.startswith(cdn_url))
@@ -512,7 +499,6 @@ class _BuiltInVideoBlock(
             'transcript_download_format': transcript_download_format,
             'transcript_download_formats_list': self.fields['transcript_download_format'].values,  # lint-amnesty, pylint: disable=unsubscriptable-object
             'transcript_feedback_enabled': self.is_transcript_feedback_enabled(),
-            'audio_description_enabled': bool(audio_description_url),
         }
         if self.is_public_sharing_enabled():
             public_video_url = self.get_public_video_url()
@@ -991,19 +977,6 @@ class _BuiltInVideoBlock(
         }
 
         _context.update({'transcripts_basic_tab_metadata': metadata})
-        from cms.djangoapps.contentstore.toggles import audio_description_enabled  # pylint: disable=import-outside-toplevel
-
-        # Audio description upload context for studio editor
-        ad_upload_enabled = bool(
-            audio_description_enabled and audio_description_enabled(self.course_id)
-        )
-        _context['audio_description_enabled'] = ad_upload_enabled
-        if ad_upload_enabled:
-            _context['audio_description_file_name'] = getattr(self, 'audio_description', '')
-            _context['audio_description_handler_url'] = self.runtime.handler_url(
-                self, 'studio_audio_description'
-            ).rstrip('/?')
-
         return _context
 
     @classmethod
@@ -1283,19 +1256,13 @@ class _BuiltInVideoBlock(
             for lang in available_translations
         }
 
-        result = {
+        return {
             "only_on_web": self.only_on_web,
             "duration": val_video_data.get('duration', None),
             "transcripts": transcripts,
             "encoded_videos": encoded_videos,
             "all_sources": all_sources,
         }
-
-        audio_description_url = self._get_audio_description_url()
-        if audio_description_url:
-            result["audio_description_url"] = audio_description_url
-
-        return result
 
     def _poster(self):
         """
@@ -1307,32 +1274,6 @@ class _BuiltInVideoBlock(
                 edx_video_id=self.edx_video_id.strip()
             )
         return None
-
-    def _get_audio_description_url(self):
-        """
-        Return the download URL for this video's audio description file,
-        or None if no AD record exists in edx-val.
-
-        Uses audio_description_video_id (set on upload, never reset by the
-        Studio form) so the button stays enabled after a subsequent Save.
-        Falls back to edx_video_id for videos that had AD set before the
-        dedicated field was introduced.
-        """
-        if not edxval_api:
-            return None
-        # Guard against edxval versions that do not yet expose this helper.
-        get_ad_url = getattr(edxval_api, 'get_video_audio_description_url', None)
-        if not get_ad_url:
-            return None
-        video_id = clean_video_id(getattr(self, 'audio_description_video_id', '')) \
-            or clean_video_id(self.edx_video_id)
-        if not video_id:
-            return None
-        try:
-            return get_ad_url(video_id)
-        except Exception:  # pylint: disable=broad-except
-            log.exception('Failed to get audio description URL for video %s', video_id)
-            return None
 
 
 VideoBlock = (

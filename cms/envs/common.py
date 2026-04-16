@@ -940,17 +940,6 @@ VIDEO_UPLOAD_PIPELINE = {
     'CONCURRENT_UPLOAD_LIMIT': 4,
 }
 
-############################# SETTINGS FOR VIDEO AUDIO DESCRIPTION #############################
-
-VIDEO_AUDIO_DESCRIPTION_SETTINGS = dict(
-    VIDEO_AUDIO_DESCRIPTION_MAX_BYTES=200 * 1024 * 1024,  # 200 MB
-    STORAGE_KWARGS=dict(
-        location=MEDIA_ROOT,
-    ),
-    DIRECTORY_PREFIX='audio-descriptions/',
-    BASE_URL=MEDIA_URL,
-)
-
 ############################ APPS #####################################
 
 # The order of INSTALLED_APPS is important, when adding new apps here
