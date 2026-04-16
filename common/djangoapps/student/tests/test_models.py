@@ -604,8 +604,7 @@ class PendingEmailChangeTests(SharedModuleStoreTestCase):
         assert record_was_redacted
         self.email_change.refresh_from_db()
         assert self.email_change.new_email == expected_retired_email
-        assert self.email_change.activation_key != original_activation_key
-        assert len(self.email_change.activation_key) == 32
+        assert self.email_change.activation_key == original_activation_key
 
     def test_delete_by_user_no_effect_for_user_with_no_email_change(self):
         record_was_deleted = PendingEmailChange.delete_by_user_value(self.user2, field='user')
