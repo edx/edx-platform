@@ -7,10 +7,15 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from social_django.models import UserSocialAuth
 
-from common.djangoapps.student.models import AccountRecovery, Registration, get_retired_email_by_email
+from common.djangoapps.student.models import (
+    AccountRecovery,
+    Registration,
+    get_retired_email_by_email,
+)
 from openedx.core.djangolib.oauth2_retirement_utils import retire_dot_oauth2_models
 
 from ...models import BulkUserRetirementConfig, UserRetirementStatus
+from openedx.core.djangoapps.user_api.accounts.utils import redact_user_social_auth_pii
 
 logger = logging.getLogger(__name__)
 
@@ -144,8 +149,10 @@ class Command(BaseCommand):
                 for user in users:
                     # Add user to retirement queue.
                     UserRetirementStatus.create_retirement(user)
-                    # Unlink LMS social auth accounts
-                    UserSocialAuth.objects.filter(user_id=user.id).delete()
+                    # Redact and unlink LMS social auth accounts
+                    for social_auth in UserSocialAuth.objects.filter(user_id=user.id):
+                        redact_user_social_auth_pii(social_auth)
+                        social_auth.delete()
                     # Change LMS password & email
                     user.email = get_retired_email_by_email(user.email)
                     user.set_unusable_password()

@@ -3,18 +3,21 @@ Test the retire_user management command
 """
 
 
+import csv
+import os
+
 import pytest
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.core.management import CommandError, call_command
+from social_django.models import UserSocialAuth
 
-from ...models import UserRetirementStatus
+from common.djangoapps.student.tests.factories import UserFactory  # lint-amnesty, pylint: disable=wrong-import-order
 from openedx.core.djangoapps.user_api.accounts.tests.retirement_helpers import (  # lint-amnesty, pylint: disable=unused-import, wrong-import-order
-    setup_retirement_states
+    setup_retirement_states,  # noqa: F401
 )
 from openedx.core.djangolib.testing.utils import skip_unless_lms  # lint-amnesty, pylint: disable=wrong-import-order
-from common.djangoapps.student.tests.factories import UserFactory  # lint-amnesty, pylint: disable=wrong-import-order
-import csv
-import os
+
+from ...models import UserRetirementStatus
 
 pytestmark = pytest.mark.django_db
 user_file = 'userfile.csv'
@@ -105,3 +108,71 @@ def test_retire_with_username_email_userfile(setup_retirement_states):  # lint-a
     with pytest.raises(CommandError, match=r'You cannot use userfile option with username and user_email'):
         call_command('retire_user', user_file=user_file, username=username, user_email=user_email)
     remove_user_file()
+
+
+@skip_unless_lms
+def test_retire_user_redacts_sso_pii_before_deletion(setup_retirement_states):  # lint-amnesty, pylint: disable=redefined-outer-name, unused-argument
+    """
+    Test that SSO PII is redacted before deletion during user retirement.
+    """
+    user = UserFactory.create(username='sso-user', email='sso-user@example.com')
+
+    # Create SSO association with PII
+    social_auth = UserSocialAuth.objects.create(
+        user=user,
+        provider='google-oauth2',
+        uid='sso-user@example.com',
+        extra_data={
+            'email': 'sso-user@example.com',
+            'name': 'SSO Test User',
+            'id': '123456789',
+        }
+    )
+    social_auth_id = social_auth.id
+
+    # Retire the user
+    call_command('retire_user', username=user.username, user_email=user.email)
+
+    # Verify SSO record was deleted
+    assert not UserSocialAuth.objects.filter(id=social_auth_id).exists()
+
+    # Verify user retirement was successful
+    retired_user_status = UserRetirementStatus.objects.filter(original_username=user.username).first()
+    assert retired_user_status is not None
+    assert retired_user_status.original_email == 'sso-user@example.com'
+
+
+@skip_unless_lms
+def test_retire_user_redacts_multiple_sso_providers(setup_retirement_states):  # lint-amnesty, pylint: disable=redefined-outer-name, unused-argument
+    """
+    Test that multiple SSO providers have their PII redacted before deletion.
+    """
+    user = UserFactory.create(username='multi-sso-user', email='multi-sso@example.com')
+
+    # Create multiple SSO associations
+    google_auth = UserSocialAuth.objects.create(
+        user=user,
+        provider='google-oauth2',
+        uid='google-multi@example.com',
+        extra_data={'email': 'google-multi@example.com', 'name': 'Google User'}
+    )
+    saml_auth = UserSocialAuth.objects.create(
+        user=user,
+        provider='tpa-saml',
+        uid='saml-multi@example.com',
+        extra_data={'email': 'saml-multi@example.com', 'name': 'SAML User', 'uid': 'saml-123'}
+    )
+
+    google_id = google_auth.id
+    saml_id = saml_auth.id
+
+    # Retire the user
+    call_command('retire_user', username=user.username, user_email=user.email)
+
+    # Verify both SSO records were deleted
+    assert not UserSocialAuth.objects.filter(id=google_id).exists()
+    assert not UserSocialAuth.objects.filter(id=saml_id).exists()
+
+    # Verify user retirement was successful
+    retired_user_status = UserRetirementStatus.objects.filter(original_username=user.username).first()
+    assert retired_user_status is not None
