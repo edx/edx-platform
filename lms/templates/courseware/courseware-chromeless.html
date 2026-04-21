@@ -59,6 +59,110 @@ ${static.get_page_title_breadcrumbs(course_name())}
   var $$course_id = "${course.id | n, js_escaped_string}";
 </script>
 
+<script type="text/javascript">
+  (function () {
+    // Keep LMS unit content direction aligned with learner language preference.
+    var rtlPrefixes = ['ar', 'fa', 'he', 'ur'];
+
+    function getCookieValue(name) {
+      var cookieString = document.cookie || '';
+      var cookies = cookieString ? cookieString.split(';') : [];
+      for (var i = 0; i < cookies.length; i++) {
+        var cookie = cookies[i].trim();
+        if (cookie.indexOf(name + '=') === 0) {
+          return decodeURIComponent(cookie.slice(name.length + 1));
+        }
+      }
+      return '';
+    }
+
+    function isRtlLanguage(languageCode) {
+      if (!languageCode) {
+        return false;
+      }
+      var normalized = String(languageCode).toLowerCase();
+      for (var i = 0; i < rtlPrefixes.length; i++) {
+        if (normalized.indexOf(rtlPrefixes[i]) === 0) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    var languageCode =
+      getCookieValue('openedx-language-preference') ||
+      getCookieValue('django_language') ||
+      getCookieValue('prod-edx-language-preference');
+
+    if (!isRtlLanguage(languageCode)) {
+      return;
+    }
+
+    function applyRtlDirection() {
+      document.documentElement.setAttribute('dir', 'rtl');
+      document.documentElement.setAttribute('lang', languageCode);
+
+      if (document.body) {
+        document.body.setAttribute('dir', 'rtl');
+      }
+
+      var courseContent = document.getElementById('course-content');
+      if (courseContent) {
+        courseContent.setAttribute('dir', 'rtl');
+        courseContent.style.direction = 'rtl';
+        courseContent.style.textAlign = 'right';
+      }
+
+      var mainContent = document.getElementById('main');
+      if (mainContent) {
+        mainContent.setAttribute('dir', 'rtl');
+        mainContent.setAttribute('lang', languageCode);
+        mainContent.style.direction = 'rtl';
+        mainContent.style.textAlign = 'right';
+      }
+
+      var rtlStyle = document.getElementById('courseware-rtl-style');
+      if (!rtlStyle) {
+        rtlStyle = document.createElement('style');
+        rtlStyle.id = 'courseware-rtl-style';
+        rtlStyle.textContent = ''
+          + 'html[dir="rtl"] #course-content,'
+          + 'html[dir="rtl"] #main {'
+          + 'direction: rtl !important;'
+          + 'text-align: right !important;'
+          + '}'
+          + 'html[dir="rtl"] #main p,'
+          + 'html[dir="rtl"] #main div,'
+          + 'html[dir="rtl"] #main span,'
+          + 'html[dir="rtl"] #main li,'
+          + 'html[dir="rtl"] #main h1,'
+          + 'html[dir="rtl"] #main h2,'
+          + 'html[dir="rtl"] #main h3,'
+          + 'html[dir="rtl"] #main h4,'
+          + 'html[dir="rtl"] #main h5,'
+          + 'html[dir="rtl"] #main h6 {'
+          + 'direction: rtl !important;'
+          + 'text-align: right !important;'
+          + '}'
+          + 'html[dir="rtl"] #main ul,'
+          + 'html[dir="rtl"] #main ol {'
+          + 'direction: rtl !important;'
+          + 'text-align: right !important;'
+          + 'padding-right: 1.5em !important;'
+          + 'padding-left: 0 !important;'
+          + '}';
+        document.head.appendChild(rtlStyle);
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', applyRtlDirection);
+    } else {
+      applyRtlDirection();
+    }
+  }());
+</script>
+
 </%block>
 
 <%block name="js_extra">
