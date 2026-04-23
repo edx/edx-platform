@@ -59,6 +59,36 @@ ${static.get_page_title_breadcrumbs(course_name())}
   var $$course_id = "${course.id | n, js_escaped_string}";
 </script>
 
+<style id="courseware-rtl-style">
+  html[dir="rtl"] #course-content,
+  html[dir="rtl"] #main {
+    direction: rtl !important;
+    text-align: start !important;
+  }
+
+  html[dir="rtl"] #main p,
+  html[dir="rtl"] #main div,
+  html[dir="rtl"] #main span,
+  html[dir="rtl"] #main li,
+  html[dir="rtl"] #main h1,
+  html[dir="rtl"] #main h2,
+  html[dir="rtl"] #main h3,
+  html[dir="rtl"] #main h4,
+  html[dir="rtl"] #main h5,
+  html[dir="rtl"] #main h6 {
+    direction: rtl !important;
+    text-align: start !important;
+  }
+
+  html[dir="rtl"] #main ul,
+  html[dir="rtl"] #main ol {
+    direction: rtl !important;
+    text-align: start !important;
+    padding-inline-start: 1.5em !important;
+    padding-inline-end: 0 !important;
+  }
+</style>
+
 <script type="text/javascript">
   (function () {
     // Keep LMS unit content direction aligned with learner language preference.
@@ -76,6 +106,14 @@ ${static.get_page_title_breadcrumbs(course_name())}
       return '';
     }
 
+    function normalizeLanguageCode(languageCode) {
+      if (!languageCode) {
+        return '';
+      }
+      // Normalize to BCP 47: trim whitespace and convert underscores to hyphens
+      return String(languageCode).trim().replace(/_/g, '-');
+    }
+
     function isRtlLanguage(languageCode) {
       if (!languageCode) {
         return false;
@@ -89,19 +127,23 @@ ${static.get_page_title_breadcrumbs(course_name())}
       return false;
     }
 
-    var languageCode =
+    var languageCode = normalizeLanguageCode(
       getCookieValue('openedx-language-preference') ||
       getCookieValue('django_language') ||
-      getCookieValue('prod-edx-language-preference');
+      getCookieValue('prod-edx-language-preference')
+    );
 
     if (!isRtlLanguage(languageCode)) {
       return;
     }
 
-    function applyRtlDirection() {
-      document.documentElement.setAttribute('dir', 'rtl');
-      document.documentElement.setAttribute('lang', languageCode);
+    // Apply dir/lang to documentElement immediately to prevent LTR→RTL flash
+    // This runs synchronously in the head before first paint
+    document.documentElement.setAttribute('dir', 'rtl');
+    document.documentElement.setAttribute('lang', languageCode);
 
+    function applyRtlToBody() {
+      // Apply RTL to body and content elements once they exist
       if (document.body) {
         document.body.setAttribute('dir', 'rtl');
       }
@@ -109,56 +151,19 @@ ${static.get_page_title_breadcrumbs(course_name())}
       var courseContent = document.getElementById('course-content');
       if (courseContent) {
         courseContent.setAttribute('dir', 'rtl');
-        courseContent.style.direction = 'rtl';
-        courseContent.style.textAlign = 'right';
       }
 
       var mainContent = document.getElementById('main');
       if (mainContent) {
         mainContent.setAttribute('dir', 'rtl');
         mainContent.setAttribute('lang', languageCode);
-        mainContent.style.direction = 'rtl';
-        mainContent.style.textAlign = 'right';
-      }
-
-      var rtlStyle = document.getElementById('courseware-rtl-style');
-      if (!rtlStyle) {
-        rtlStyle = document.createElement('style');
-        rtlStyle.id = 'courseware-rtl-style';
-        rtlStyle.textContent = ''
-          + 'html[dir="rtl"] #course-content,'
-          + 'html[dir="rtl"] #main {'
-          + 'direction: rtl !important;'
-          + 'text-align: right !important;'
-          + '}'
-          + 'html[dir="rtl"] #main p,'
-          + 'html[dir="rtl"] #main div,'
-          + 'html[dir="rtl"] #main span,'
-          + 'html[dir="rtl"] #main li,'
-          + 'html[dir="rtl"] #main h1,'
-          + 'html[dir="rtl"] #main h2,'
-          + 'html[dir="rtl"] #main h3,'
-          + 'html[dir="rtl"] #main h4,'
-          + 'html[dir="rtl"] #main h5,'
-          + 'html[dir="rtl"] #main h6 {'
-          + 'direction: rtl !important;'
-          + 'text-align: right !important;'
-          + '}'
-          + 'html[dir="rtl"] #main ul,'
-          + 'html[dir="rtl"] #main ol {'
-          + 'direction: rtl !important;'
-          + 'text-align: right !important;'
-          + 'padding-right: 1.5em !important;'
-          + 'padding-left: 0 !important;'
-          + '}';
-        document.head.appendChild(rtlStyle);
       }
     }
 
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', applyRtlDirection);
+      document.addEventListener('DOMContentLoaded', applyRtlToBody);
     } else {
-      applyRtlDirection();
+      applyRtlToBody();
     }
   }());
 </script>
