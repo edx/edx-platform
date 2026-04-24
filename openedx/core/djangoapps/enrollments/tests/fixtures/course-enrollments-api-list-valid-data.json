@@ -9,14 +9,18 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student1",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:e+d+X",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -30,21 +34,27 @@
                 "is_active": true,
                 "mode": "verified",
                 "user": "staff",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "verified",
                 "user": "student3",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -59,14 +69,18 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "verified",
                 "user": "student3",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -81,7 +95,9 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -95,24 +111,29 @@
                 "is_active": true,
                 "mode": "verified",
                 "user": "staff",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:e+d+X",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
-
     ],
     [
         {
@@ -124,7 +145,9 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student1",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -138,21 +161,27 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student1",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:e+d+X",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -167,7 +196,9 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -179,35 +210,45 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student1",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:e+d+X",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "verified",
                 "user": "student3",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "verified",
                 "user": "staff",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -221,35 +262,45 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student1",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:e+d+X",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "verified",
                 "user": "staff",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "verified",
                 "user": "student3",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ],
@@ -264,14 +315,18 @@
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             },
             {
                 "course_id": "course-v1:x+y+Z",
                 "is_active": true,
                 "mode": "honor",
                 "user": "student2",
-                "created": "2018-01-01T00:00:01Z"
+                "created": "2018-01-01T00:00:01Z",
+                "access_expiration_date": null,
+                "is_audit_with_expiring_upgrade": false
             }
         ]
     ]
