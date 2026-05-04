@@ -110,6 +110,8 @@ DEFAULT_ADVANCED_MODULES = [
     'word_cloud',
     'recommender',
     'library_content',
+    'schoolyourself_lesson',
+    'schoolyourself_review',
 ]
 
 

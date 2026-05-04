@@ -220,6 +220,15 @@ def _validate_email_change(user, data, field_errors):
     if "email" not in data:
         return
 
+    saml_provider = get_saml_provider_for_user(user)
+    if saml_provider and saml_provider.disable_email_editing:
+        field_errors["email"] = {
+            "developer_message": "Email address changes are disabled for this SSO provider.",
+            "user_message": _("Your email address is managed by your institution and cannot be changed here.")
+        }
+        del data["email"]
+        return
+
     if not settings.FEATURES['ALLOW_EMAIL_ADDRESS_CHANGE']:
         raise AccountUpdateError("Email address changes have been disabled by the site operators.")
 

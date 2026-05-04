@@ -89,7 +89,7 @@ def get_context(course, request, thread=None):
     cc_requester["course_id"] = course.id
     course_discussion_settings = CourseDiscussionSettings.get(course.id)
     is_global_staff = GlobalStaff().has_user(requester)
-    all_privileged_ids = set(moderator_user_ids) | set(ta_user_ids) | set(course_staff_user_ids)
+    all_privileged_ids = set(moderator_user_ids) | set(ta_user_ids)
     has_moderation_privilege = requester.id in all_privileged_ids or is_global_staff
     return {
         "course": course,
@@ -242,13 +242,21 @@ class _ContentSerializer(serializers.Serializer):
 
     def _is_user_privileged(self, user_id):
         """
-        Returns a boolean indicating whether the given user_id identifies a
-        privileged user.
+        Returns a boolean indicating whether the given user_id identifies a privileged user.
         """
-        return (
+        is_privileged = (
             user_id in self.context["moderator_user_ids"]
             or user_id in self.context["ta_user_ids"]
         )
+
+        if not is_privileged:
+            try:
+                user = User.objects.get(id=user_id)
+                is_privileged = GlobalStaff().has_user(user)
+            except User.DoesNotExist:
+                pass
+
+        return is_privileged
 
     def _is_anonymous(self, obj):
         """
@@ -271,16 +279,22 @@ class _ContentSerializer(serializers.Serializer):
 
     def _get_user_label(self, user_id):
         """
-        Returns the role label (i.e. "Staff", "Moderator" or "Community TA") for the user
-        with the given id.
+        Returns the role label for the user with the given id.
         """
-        is_staff = user_id in self.context["course_staff_user_ids"]
         is_moderator = user_id in self.context["moderator_user_ids"]
         is_ta = user_id in self.context["ta_user_ids"]
 
+        is_global_staff = False
+        if not (is_moderator or is_ta):
+            try:
+                user = User.objects.get(id=user_id)
+                is_global_staff = GlobalStaff().has_user(user)
+            except User.DoesNotExist:
+                pass
+
         return (
             "Staff"
-            if is_staff
+            if is_global_staff
             else "Moderator" if is_moderator else "Community TA" if is_ta else None
         )
 

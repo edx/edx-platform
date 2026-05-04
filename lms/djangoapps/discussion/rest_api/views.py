@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import BadRequest, ValidationError
 from django.shortcuts import get_object_or_404
 from drf_yasg import openapi
+from edx_django_utils.monitoring import set_custom_attribute
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import (
     SessionAuthenticationAllowInactiveUser,
@@ -18,7 +19,11 @@ from edx_rest_framework_extensions.auth.session.authentication import (
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import permissions, status
 from rest_framework.authentication import SessionAuthentication
-from rest_framework.exceptions import ParseError, UnsupportedMediaType
+from rest_framework.exceptions import (
+    ParseError,
+    PermissionDenied,
+    UnsupportedMediaType,
+)
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -118,6 +123,80 @@ from .utils import (
 log = logging.getLogger(__name__)
 
 User = get_user_model()
+
+
+def _discussion_error_type(exc):
+    """Map common discussion exceptions to a stable Datadog error type."""
+    if isinstance(exc, PermissionError):
+        return "permission_denied"
+    if isinstance(exc, PermissionDenied):
+        return "permission_denied"
+    if isinstance(exc, InvalidKeyError):
+        return "validation_error"
+    if isinstance(exc, ValidationError):
+        return "validation_error"
+    if isinstance(exc, ParseError):
+        return "validation_error"
+    if isinstance(exc, UnsupportedMediaType):
+        return "validation_error"
+    return "backend_error"
+
+
+def _get_comment_trace_context(comment_id):
+    """Retrieve comment context needed for request-level telemetry."""
+    cc_comment = Comment(id=comment_id).retrieve()
+    course_id = get_course_id_from_thread_id(cc_comment["thread_id"])
+    return cc_comment, course_id
+
+
+def _moderation_error_type(exc):
+    """Map moderation failures to a stable Datadog error type."""
+    if isinstance(exc, PermissionError):
+        return "permission_denied"
+    if isinstance(exc, PermissionDenied):
+        return "permission_denied"
+    if isinstance(exc, InvalidKeyError):
+        return "validation_error"
+    if isinstance(exc, ValidationError):
+        return "validation_error"
+    if isinstance(exc, ParseError):
+        return "validation_error"
+    if isinstance(exc, UnsupportedMediaType):
+        return "validation_error"
+    if isinstance(exc, ValueError):
+        return "validation_error"
+    if isinstance(exc, TypeError):
+        return "validation_error"
+    return "backend_error"
+
+
+def _set_moderation_trace_context(request, operation, course_id="", entity_id=""):
+    """Attach canonical moderation request-level telemetry to the active span."""
+    set_custom_attribute("forum.operation", operation)
+    set_custom_attribute("forum.entity_type", "user")
+    set_custom_attribute("forum.entity_id", str(entity_id or ""))
+    set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+    set_custom_attribute("forum.course_id", str(course_id or ""))
+
+
+def _set_trace_outcome(response_status, error_type=None):
+    """Attach a normalized success/error outcome to the active span."""
+    set_custom_attribute(
+        "forum.result",
+        "success" if int(response_status) < status.HTTP_400_BAD_REQUEST else "error",
+    )
+    set_custom_attribute("forum.http_status", str(response_status))
+    if error_type:
+        set_custom_attribute("forum.error_type", error_type)
+
+
+def _set_deleted_content_trace_context(request, operation, course_id="", entity_id="", entity_type="deleted_content"):
+    """Attach canonical deleted-content telemetry to the active span."""
+    set_custom_attribute("forum.operation", operation)
+    set_custom_attribute("forum.entity_type", entity_type)
+    set_custom_attribute("forum.entity_id", str(entity_id or ""))
+    set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+    set_custom_attribute("forum.course_id", str(course_id or ""))
 
 
 @view_auth_classes()
@@ -713,52 +792,152 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         Implements the POST method for the list endpoint as described in the
         class docstring.
         """
-        if not request.data.get("course_id"):
-            raise ValidationError({"course_id": ["This field is required."]})
-        course_key_str = request.data.get("course_id")
-        course_key = CourseKey.from_string(course_key_str)
+        set_custom_attribute("forum.operation", "thread.create")
+        set_custom_attribute("forum.course_id", request.data.get("course_id", ""))
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
 
-        if is_content_creation_rate_limited(request, course_key=course_key):
-            return Response(
-                "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
-            )
+        if request.data.get("type"):
+            set_custom_attribute("forum.thread_type", request.data.get("type"))
+        if request.data.get("topic_id"):
+            set_custom_attribute("forum.commentable_id", request.data.get("topic_id"))
+        if request.data.get("group_id") is not None:
+            set_custom_attribute("forum.group_id", str(request.data.get("group_id")))
 
-        if is_captcha_enabled(course_key) and is_only_student(course_key, request.user):
-            captcha_token = request.data.get("captcha_token")
-            if not captcha_token:
-                raise ValidationError({"captcha_token": "This field is required."})
+        try:
+            if not request.data.get("course_id"):
+                raise ValidationError({"course_id": ["This field is required."]})
+            course_key_str = request.data.get("course_id")
+            course_key = CourseKey.from_string(course_key_str)
 
-            if not verify_recaptcha_token(captcha_token):
-                return Response({"error": "CAPTCHA verification failed."}, status=400)
+            if is_content_creation_rate_limited(request, course_key=course_key):
+                set_custom_attribute("forum.result", "error")
+                set_custom_attribute(
+                    "forum.http_status", str(status.HTTP_429_TOO_MANY_REQUESTS)
+                )
+                set_custom_attribute("forum.error_type", "rate_limited")
+                return Response(
+                    "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
 
-        if (
-            ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
-            and not request.user.is_active
-        ):
-            raise ValidationError(
-                {"detail": "Only verified users can post in discussions."}
-            )
+            if is_captcha_enabled(course_key) and is_only_student(
+                course_key, request.user
+            ):
+                captcha_token = request.data.get("captcha_token")
+                if not captcha_token:
+                    raise ValidationError({"captcha_token": "This field is required."})
 
-        data = request.data.copy()
-        data.pop("captcha_token", None)
-        return Response(create_thread(request, data))
+                if not verify_recaptcha_token(captcha_token):
+                    set_custom_attribute("forum.result", "error")
+                    set_custom_attribute(
+                        "forum.http_status", str(status.HTTP_400_BAD_REQUEST)
+                    )
+                    set_custom_attribute("forum.error_type", "validation_error")
+                    return Response(
+                        {"error": "CAPTCHA verification failed."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            if (
+                ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
+                and not request.user.is_active
+            ):
+                raise ValidationError(
+                    {"detail": "Only verified users can post in discussions."}
+                )
+
+            data = request.data.copy()
+            data.pop("captcha_token", None)
+            response = Response(create_thread(request, data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def partial_update(self, request, thread_id):
         """
         Implements the PATCH method for the instance endpoint as described in
         the class docstring.
         """
-        if request.content_type != MergePatchParser.media_type:
-            raise UnsupportedMediaType(request.content_type)
-        return Response(update_thread(request, thread_id, request.data))
+        voted_value = request.data.get("voted") if "voted" in request.data else None
+        if voted_value in (True, "true", "True", 1, "1"):
+            operation = "thread.vote"
+        elif voted_value in (False, "false", "False", 0, "0"):
+            operation = "thread.unvote"
+        else:
+            operation = "thread.update"
+
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.entity_id", thread_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            course_id = request.data.get("course_id") or get_course_id_from_thread_id(
+                thread_id
+            )
+            set_custom_attribute("forum.course_id", str(course_id))
+
+            update_fields = [
+                field
+                for field, value in request.data.items()
+                if value is not None and field != "voted"
+            ]
+            if update_fields and operation == "thread.update":
+                set_custom_attribute("forum.update_fields", ",".join(update_fields))
+
+            if request.data.get("type"):
+                set_custom_attribute("forum.thread_type", request.data.get("type"))
+            if request.data.get("topic_id"):
+                set_custom_attribute(
+                    "forum.commentable_id", request.data.get("topic_id")
+                )
+            if request.data.get("group_id") is not None:
+                set_custom_attribute(
+                    "forum.group_id", str(request.data.get("group_id"))
+                )
+
+            if request.content_type != MergePatchParser.media_type:
+                raise UnsupportedMediaType(request.content_type)
+
+            response = Response(update_thread(request, thread_id, request.data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def destroy(self, request, thread_id):
         """
         Implements the DELETE method for the instance endpoint as described in
         the class docstring
         """
-        delete_thread(request, thread_id)
-        return Response(status=204)
+        set_custom_attribute("forum.operation", "thread.delete")
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.entity_id", thread_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            course_id = get_course_id_from_thread_id(thread_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            set_custom_attribute("forum.delete_mode", "soft")
+
+            delete_thread(request, thread_id)
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(status.HTTP_204_NO_CONTENT))
+            return Response(status=204)
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
 
 class LearnerThreadView(APIView):
@@ -1117,52 +1296,150 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
         Implements the POST method for the list endpoint as described in the
         class docstring.
         """
-        if not request.data.get("thread_id"):
-            raise ValidationError({"thread_id": ["This field is required."]})
-        course_key_str = get_course_id_from_thread_id(request.data["thread_id"])
-        course_key = CourseKey.from_string(course_key_str)
+        operation = (
+            "comment.create_child"
+            if request.data.get("parent_id")
+            else "comment.create_parent"
+        )
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
 
-        if is_content_creation_rate_limited(request, course_key=course_key):
-            return Response(
-                "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
-            )
+        try:
+            if not request.data.get("thread_id"):
+                raise ValidationError({"thread_id": ["This field is required."]})
+            course_key_str = get_course_id_from_thread_id(request.data["thread_id"])
+            course_key = CourseKey.from_string(course_key_str)
+            set_custom_attribute("forum.course_id", str(course_key_str))
 
-        if is_captcha_enabled(course_key) and is_only_student(course_key, request.user):
-            captcha_token = request.data.get("captcha_token")
-            if not captcha_token:
-                raise ValidationError({"captcha_token": "This field is required."})
+            if request.data.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(request.data.get("parent_id"))
+                )
 
-            if not verify_recaptcha_token(captcha_token):
-                return Response({"error": "CAPTCHA verification failed."}, status=400)
+            if is_content_creation_rate_limited(request, course_key=course_key):
+                set_custom_attribute("forum.result", "error")
+                set_custom_attribute(
+                    "forum.http_status", str(status.HTTP_429_TOO_MANY_REQUESTS)
+                )
+                set_custom_attribute("forum.error_type", "rate_limited")
+                return Response(
+                    "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
 
-        if (
-            ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
-            and not request.user.is_active
-        ):
-            raise ValidationError(
-                {"detail": "Only verified users can post in discussions."}
-            )
+            if is_captcha_enabled(course_key) and is_only_student(
+                course_key, request.user
+            ):
+                captcha_token = request.data.get("captcha_token")
+                if not captcha_token:
+                    raise ValidationError({"captcha_token": "This field is required."})
 
-        data = request.data.copy()
-        data.pop("captcha_token", None)
-        return Response(create_comment(request, data))
+                if not verify_recaptcha_token(captcha_token):
+                    set_custom_attribute("forum.result", "error")
+                    set_custom_attribute(
+                        "forum.http_status", str(status.HTTP_400_BAD_REQUEST)
+                    )
+                    set_custom_attribute("forum.error_type", "validation_error")
+                    return Response(
+                        {"error": "CAPTCHA verification failed."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            if (
+                ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
+                and not request.user.is_active
+            ):
+                raise ValidationError(
+                    {"detail": "Only verified users can post in discussions."}
+                )
+
+            data = request.data.copy()
+            data.pop("captcha_token", None)
+            response = Response(create_comment(request, data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def destroy(self, request, comment_id):
         """
         Implements the DELETE method for the instance endpoint as described in
         the class docstring
         """
-        delete_comment(request, comment_id)
-        return Response(status=204)
+        set_custom_attribute("forum.operation", "comment.delete")
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.entity_id", comment_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            cc_comment, course_id = _get_comment_trace_context(comment_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            if cc_comment.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(cc_comment.get("parent_id"))
+                )
+            set_custom_attribute("forum.delete_mode", "soft")
+
+            delete_comment(request, comment_id)
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(status.HTTP_204_NO_CONTENT))
+            return Response(status=204)
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def partial_update(self, request, comment_id):
         """
         Implements the PATCH method for the instance endpoint as described in
         the class docstring.
         """
-        if request.content_type != MergePatchParser.media_type:
-            raise UnsupportedMediaType(request.content_type)
-        return Response(update_comment(request, comment_id, request.data))
+        voted_value = request.data.get("voted") if "voted" in request.data else None
+        if voted_value in (True, "true", "True", 1, "1"):
+            operation = "comment.vote"
+        elif voted_value in (False, "false", "False", 0, "0"):
+            operation = "comment.unvote"
+        else:
+            operation = "comment.update"
+
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.entity_id", comment_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            cc_comment, course_id = _get_comment_trace_context(comment_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            if cc_comment.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(cc_comment.get("parent_id"))
+                )
+
+            update_fields = [
+                field
+                for field, value in request.data.items()
+                if value is not None and field != "voted"
+            ]
+            if update_fields and operation == "comment.update":
+                set_custom_attribute("forum.update_fields", ",".join(update_fields))
+
+            if request.content_type != MergePatchParser.media_type:
+                raise UnsupportedMediaType(request.content_type)
+
+            response = Response(update_comment(request, comment_id, request.data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
 
 class UploadFileView(DeveloperErrorViewMixin, APIView):
@@ -1666,15 +1943,22 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
         Implements the delete user posts endpoint.
         Supports both MongoDB and MySQL backends via forum API.
         """
+        set_custom_attribute("forum.operation", "bulk_delete_user_posts.queue")
+        set_custom_attribute("forum.entity_type", "user")
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+        set_custom_attribute("forum.course_id", str(course_id or ""))
         username = request.GET.get("username", None)
         execute_task = request.GET.get("execute", "false").lower() == "true"
         if (not username) or (not course_id):
             raise BadRequest("username and course_id are required.")
         course_or_org = request.GET.get("course_or_org", "course")
+        set_custom_attribute("forum.scope", course_or_org)
+        set_custom_attribute("forum.execute", str(execute_task).lower())
         if course_or_org not in ["course", "org"]:
             raise BadRequest("course_or_org must be either 'course' or 'org'.")
 
         user = get_object_or_404(User, username=username)
+        set_custom_attribute("forum.entity_id", str(user.id))
         course_ids = [course_id]
         if course_or_org == "org":
             org_id = CourseKey.from_string(course_id).org
@@ -1690,6 +1974,9 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
 
         comment_count = Comment.get_user_comment_count(user.id, course_ids)
         thread_count = Thread.get_user_threads_count(user.id, course_ids)
+        set_custom_attribute("forum.course_count", str(len(course_ids)))
+        set_custom_attribute("forum.thread_count", str(thread_count))
+        set_custom_attribute("forum.comment_count", str(comment_count))
         log.info(
             f"<<Bulk Delete>> {username} in {course_ids} - Count thread {thread_count}, comment {comment_count}"
         )
@@ -1702,9 +1989,11 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
                 "course_or_org": course_or_org,
                 "course_key": course_id,
             }
-            delete_course_post_for_user.apply_async(
+            task = delete_course_post_for_user.apply_async(
                 args=(user.id, username, course_ids, event_data),
             )
+            set_custom_attribute("forum.task_id", str(task.id))
+        _set_trace_outcome(status.HTTP_202_ACCEPTED)
         return Response(
             {"comment_count": comment_count, "thread_count": thread_count},
             status=status.HTTP_202_ACCEPTED,
@@ -1743,13 +2032,33 @@ class RestoreContent(DeveloperErrorViewMixin, APIView):
         content_type = request.data.get("content_type")
         content_id = request.data.get("content_id")
         course_id = request.data.get("course_id")
+        entity_type = "thread" if content_type == "thread" else "comment"
+        operation = "thread.restore" if content_type == "thread" else "comment.restore"
+        _set_deleted_content_trace_context(
+            request,
+            operation,
+            course_id=course_id,
+            entity_id=content_id,
+            entity_type=entity_type,
+        )
 
         if not all([content_type, content_id, course_id]):
+            _set_trace_outcome(status.HTTP_400_BAD_REQUEST, "validation_error")
             raise BadRequest("content_type, content_id, and course_id are required.")
 
         if content_type not in ["thread", "comment", "response"]:
+            _set_trace_outcome(status.HTTP_400_BAD_REQUEST, "validation_error")
             raise BadRequest("content_type must be 'thread', 'comment', or 'response'.")
 
+        entity_type = "thread" if content_type == "thread" else "comment"
+        operation = "thread.restore" if content_type == "thread" else "comment.restore"
+        _set_deleted_content_trace_context(
+            request,
+            operation,
+            course_id=course_id,
+            entity_id=content_id,
+            entity_type=entity_type,
+        )
         restored_by_user_id = str(request.user.id)
 
         try:
@@ -1763,23 +2072,28 @@ class RestoreContent(DeveloperErrorViewMixin, APIView):
                 )
 
             if success:
-                return Response(
+                response = Response(
                     {
                         "success": True,
                         "message": f"{content_type.capitalize()} restored successfully",
                     },
                     status=status.HTTP_200_OK,
                 )
+                _set_trace_outcome(response.status_code)
+                return response
             else:
-                return Response(
+                response = Response(
                     {
                         "success": False,
                         "message": f"{content_type.capitalize()} not found or already restored",
                     },
                     status=status.HTTP_404_NOT_FOUND,
                 )
+                _set_trace_outcome(response.status_code, "validation_error")
+                return response
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.error("Error restoring %s %s: %s", content_type, content_id, str(e))
+            _set_trace_outcome(status.HTTP_500_INTERNAL_SERVER_ERROR, "backend_error")
             return Response(
                 {
                     "success": False,
@@ -1818,15 +2132,22 @@ class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
         """
         Implements the restore user posts endpoint.
         """
+        set_custom_attribute("forum.operation", "bulk_restore_user_posts.queue")
+        set_custom_attribute("forum.entity_type", "user")
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+        set_custom_attribute("forum.course_id", str(course_id or ""))
         username = request.GET.get("username", None)
         execute_task = request.GET.get("execute", "false").lower() == "true"
         if (not username) or (not course_id):
             raise BadRequest("username and course_id are required.")
         course_or_org = request.GET.get("course_or_org", "course")
+        set_custom_attribute("forum.scope", course_or_org)
+        set_custom_attribute("forum.execute", str(execute_task).lower())
         if course_or_org not in ["course", "org"]:
             raise BadRequest("course_or_org must be either 'course' or 'org'.")
 
         user = get_object_or_404(User, username=username)
+        set_custom_attribute("forum.entity_id", str(user.id))
         course_ids = [course_id]
         if course_or_org == "org":
             org_id = CourseKey.from_string(course_id).org
@@ -1845,6 +2166,9 @@ class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
         )
         comment_count = Comment.get_user_deleted_comment_count(user.id, course_ids)
         thread_count = Thread.get_user_deleted_threads_count(user.id, course_ids)
+        set_custom_attribute("forum.course_count", str(len(course_ids)))
+        set_custom_attribute("forum.thread_count", str(thread_count))
+        set_custom_attribute("forum.comment_count", str(comment_count))
         log.info(
             "<<Bulk Restore>> %s in %s - Count thread %s, comment %s",
             username,
@@ -1861,9 +2185,11 @@ class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
                 "course_or_org": course_or_org,
                 "course_key": course_id,
             }
-            restore_course_post_for_user.apply_async(
+            task = restore_course_post_for_user.apply_async(
                 args=(user.id, username, course_ids, event_data),
             )
+            set_custom_attribute("forum.task_id", str(task.id))
+        _set_trace_outcome(status.HTTP_202_ACCEPTED)
         return Response(
             {"comment_count": comment_count, "thread_count": thread_count},
             status=status.HTTP_202_ACCEPTED,
@@ -1915,9 +2241,15 @@ class DeletedContentView(DeveloperErrorViewMixin, APIView):
         """
         Retrieve all deleted content for a course.
         """
+        _set_deleted_content_trace_context(
+            request,
+            "deleted_content.list",
+            course_id=course_id,
+        )
         try:
             course_key = CourseKey.from_string(course_id)
         except Exception as e:
+            _set_trace_outcome(status.HTTP_400_BAD_REQUEST, "validation_error")
             raise BadRequest("Invalid course_id") from e
 
         # Get query parameters
@@ -1930,6 +2262,7 @@ class DeletedContentView(DeveloperErrorViewMixin, APIView):
 
         # Validate parameters
         if content_type and content_type not in ["thread", "comment"]:
+            _set_trace_outcome(status.HTTP_400_BAD_REQUEST, "validation_error")
             raise BadRequest("content_type must be 'thread' or 'comment'")
 
         per_page = min(per_page, 100)  # Limit to prevent excessive load
@@ -1949,12 +2282,15 @@ class DeletedContentView(DeveloperErrorViewMixin, APIView):
                 author_id=author_id,
             )
 
-            return Response(results, status=status.HTTP_200_OK)
+            response = Response(results, status=status.HTTP_200_OK)
+            _set_trace_outcome(response.status_code)
+            return response
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             logging.exception(
                 "Error retrieving deleted content for course %s: %s", course_id, e
             )
+            _set_trace_outcome(status.HTTP_500_INTERNAL_SERVER_ERROR, "backend_error")
             return Response(
                 {"error": "Failed to retrieve deleted content"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -2226,8 +2562,16 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
         from forum import api as forum_api
         from lms.djangoapps.discussion.rest_api.serializers import BanUserRequestSerializer
 
+        _set_moderation_trace_context(
+            request,
+            "moderation.ban_user",
+            course_id=request.data.get("course_id", ""),
+            entity_id=request.data.get("user_id", ""),
+        )
+
         # Check if ban API is available
         if not hasattr(forum_api, 'ban_user') or not hasattr(forum_api, 'is_user_banned'):
+            _set_trace_outcome(status.HTTP_501_NOT_IMPLEMENTED, "backend_error")
             return Response(
                 {'error': 'Ban functionality is not available in this forum version'},
                 status=status.HTTP_501_NOT_IMPLEMENTED
@@ -2235,24 +2579,49 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
 
         serializer = BanUserRequestSerializer(data=request.data, context={'request': request})
         if not serializer.is_valid():
+            _set_trace_outcome(status.HTTP_400_BAD_REQUEST, "validation_error")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate and get user
         result = self._validate_ban_request_and_get_user(request, serializer.validated_data)
         if isinstance(result, Response):
+            error_type = "permission_denied" if result.status_code == status.HTTP_403_FORBIDDEN else "validation_error"
+            _set_trace_outcome(result.status_code, error_type)
             return result
         user, course_key, ban_scope, reason = result
+        _set_moderation_trace_context(
+            request,
+            "moderation.ban_user",
+            course_id=str(course_key),
+            entity_id=user.id,
+        )
 
         # Check permissions
         permission_error = self._check_ban_permissions(request, ban_scope, course_key)
         if permission_error:
+            error_type = (
+                "permission_denied"
+                if permission_error.status_code == status.HTTP_403_FORBIDDEN
+                else "validation_error"
+            )
+            _set_trace_outcome(permission_error.status_code, error_type)
             return permission_error
 
         # Get or create ban
-        result = self._get_or_create_ban(user, course_key, ban_scope, reason, request)
-        if isinstance(result, Response):
-            return result
-        ban, action_type, message = result
+        try:
+            result = self._get_or_create_ban(user, course_key, ban_scope, reason, request)
+            if isinstance(result, Response):
+                error_type = (
+                    "permission_denied"
+                    if result.status_code == status.HTTP_403_FORBIDDEN
+                    else "validation_error"
+                )
+                _set_trace_outcome(result.status_code, error_type)
+                return result
+            ban, action_type, message = result
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            _set_trace_outcome(status.HTTP_500_INTERNAL_SERVER_ERROR, _moderation_error_type(exc))
+            raise
 
         # Audit log
         org_key = course_key.org if ban_scope == 'organization' else None
@@ -2269,7 +2638,7 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
             }
         )
 
-        return Response({
+        response = Response({
             'status': 'success',
             'message': message,
             'ban_id': ban['id'],
@@ -2278,6 +2647,8 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
             'scope': ban_scope,
             'course_id': str(course_key) if ban_scope == 'course' else None,
         }, status=status.HTTP_201_CREATED)
+        _set_trace_outcome(response.status_code)
+        return response
 
     @apidocs.schema(
         body=openapi.Schema(
@@ -2382,8 +2753,20 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
         from forum import api as forum_api
         from lms.djangoapps.discussion.rest_api.serializers import BanUserRequestSerializer
 
+        _set_moderation_trace_context(
+            request,
+            "moderation.unban_user",
+            course_id=request.data.get("course_id", ""),
+            entity_id=request.data.get("user_id", ""),
+        )
+
         # Check if ban API is available
         if not hasattr(forum_api, 'unban_user') or not hasattr(forum_api, 'is_user_banned'):
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute(
+                "forum.http_status", str(status.HTTP_501_NOT_IMPLEMENTED)
+            )
+            set_custom_attribute("forum.error_type", "backend_error")
             return Response(
                 {'error': 'Ban functionality is not available in this forum version'},
                 status=status.HTTP_501_NOT_IMPLEMENTED
@@ -2391,22 +2774,46 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
 
         serializer = BanUserRequestSerializer(data=request.data, context={'request': request})
         if not serializer.is_valid():
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", "validation_error")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate and get user
         result = self._validate_ban_request_and_get_user(request, serializer.validated_data)
         if isinstance(result, Response):
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(result.status_code))
+            if result.status_code == status.HTTP_403_FORBIDDEN:
+                set_custom_attribute("forum.error_type", "permission_denied")
+            else:
+                set_custom_attribute("forum.error_type", "validation_error")
             return result
 
         user, course_key, ban_scope, reason = result
+        _set_moderation_trace_context(
+            request,
+            "moderation.unban_user",
+            course_id=str(course_key),
+            entity_id=user.id,
+        )
 
         # Permission check
         permission_error = self._check_ban_permissions(request, ban_scope, course_key)
         if permission_error:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(permission_error.status_code))
+            if permission_error.status_code == status.HTTP_403_FORBIDDEN:
+                set_custom_attribute("forum.error_type", "permission_denied")
+            else:
+                set_custom_attribute("forum.error_type", "validation_error")
             return permission_error
 
         # Check if user has an active ban
         if not forum_api.is_user_banned(user, course_key, check_org=(ban_scope == 'organization')):
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", "validation_error")
             return Response(
                 {
                     'error': f'User {user.username} does not have an active ban at {ban_scope} level',
@@ -2427,12 +2834,18 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
         # NOTE: The newer /moderation/{pk}/unban/ endpoint (line ~2912) correctly
         # supports optional course_id for creating exceptions. This older endpoint
         # should always fully unban when scope='organization'.
-        unban_result = forum_api.unban_user(
-            user=user,
-            unbanned_by=request.user,
-            course_id=course_key if ban_scope == 'course' else None,
-            scope=ban_scope
-        )
+        try:
+            unban_result = forum_api.unban_user(
+                user=user,
+                unbanned_by=request.user,
+                course_id=course_key if ban_scope == 'course' else None,
+                scope=ban_scope
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_500_INTERNAL_SERVER_ERROR))
+            set_custom_attribute("forum.error_type", _moderation_error_type(exc))
+            raise
 
         # Prepare ban parameters based on scope
         org_key = course_key.org if ban_scope == 'organization' else None
@@ -2451,7 +2864,7 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
             },
         )
 
-        return Response({
+        response = Response({
             'status': 'success',
             'message': f'User {user.username} unbanned at {ban_scope} level',
             'ban_id': ban_data.get('id') if ban_data else None,
@@ -2459,6 +2872,9 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
             'username': user.username,
             'scope': ban_scope,
         }, status=status.HTTP_200_OK)
+        set_custom_attribute("forum.result", "success")
+        set_custom_attribute("forum.http_status", str(response.status_code))
+        return response
 
     @apidocs.schema(
         body=openapi.Schema(
@@ -2699,7 +3115,14 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
         from forum import api as forum_api
         from lms.djangoapps.discussion.rest_api.permissions import can_take_action_on_spam
 
+        _set_moderation_trace_context(
+            request,
+            "moderation.list_banned_users",
+            course_id=course_id or "",
+        )
+
         if not course_id:
+            _set_trace_outcome(status.HTTP_400_BAD_REQUEST, "validation_error")
             return Response(
                 {'error': 'course_id parameter is required'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -2708,6 +3131,7 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
         try:
             course_key = CourseKey.from_string(course_id)
         except InvalidKeyError:
+            _set_trace_outcome(status.HTTP_400_BAD_REQUEST, "validation_error")
             return Response(
                 {'error': f'Invalid course_id: {course_id}'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -2715,6 +3139,7 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
 
         # Permission check: user must be able to moderate in this course
         if not can_take_action_on_spam(request.user, course_key):
+            _set_trace_outcome(status.HTTP_403_FORBIDDEN, "permission_denied")
             return Response(
                 {'error': 'You do not have permission to view banned users in this course'},
                 status=status.HTTP_403_FORBIDDEN
@@ -2722,6 +3147,7 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
 
         # Check if ban feature is enabled for this course
         if not ENABLE_DISCUSSION_BAN.is_enabled(course_key):
+            _set_trace_outcome(status.HTTP_403_FORBIDDEN, "permission_denied")
             return Response(
                 {'error': 'Discussion ban feature is not enabled for this course'},
                 status=status.HTTP_403_FORBIDDEN
@@ -2730,11 +3156,14 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
         # Optional scope filter
         scope = request.query_params.get('scope')
 
-        # Get banned users using forum API
-        banned_users_data = forum_api.get_banned_users(
-            course_id=course_key,
-            scope=scope
-        )
+        try:
+            banned_users_data = forum_api.get_banned_users(
+                course_id=course_key,
+                scope=scope
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            _set_trace_outcome(status.HTTP_500_INTERNAL_SERVER_ERROR, "backend_error")
+            raise
 
         # Deduplicate by user_id (user may have both course-level and org-level bans)
         # Keep the first occurrence (most relevant ban record)
@@ -2746,10 +3175,12 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
                 seen_user_ids.add(user_id)
                 deduplicated_banned_users.append(ban)
 
-        return Response({
+        response = Response({
             'count': len(deduplicated_banned_users),
             'results': deduplicated_banned_users
         })
+        _set_trace_outcome(response.status_code)
+        return response
 
     @apidocs.schema(
         parameters=[

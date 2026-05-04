@@ -432,10 +432,7 @@ class RegistrationFormFactory:
 
     def _get_saml_provider_config(self):
         """
-        Get the SAML provider config for the current request's running pipeline.
-
-        Returns:
-            SAMLProviderConfig or None: The SAML provider config if found, None otherwise
+        Return the current SAMLProviderConfig for the running pipeline, or None.
         """
         if not self.request or not third_party_auth.is_enabled():
             return None
@@ -444,45 +441,19 @@ class RegistrationFormFactory:
         if not running_pipeline:
             return None
 
+        kwargs = running_pipeline.get('kwargs', {})
+        # idp_name may live in kwargs directly, in kwargs['details'], or in kwargs['response']
+        saml_provider_name = (
+            kwargs.get('idp_name') or
+            kwargs.get('details', {}).get('idp_name') or
+            kwargs.get('response', {}).get('idp_name')
+        )
+        if not saml_provider_name:
+            return None
+
         try:
-            # idp_name can be in kwargs directly, in kwargs['details'], or in kwargs['response']
-            saml_provider_name = running_pipeline.get('kwargs', {}).get('idp_name')
-            if not saml_provider_name:
-                saml_provider_name = (
-                    running_pipeline.get('kwargs', {})
-                    .get('details', {})
-                    .get('idp_name')
-                )
-            if not saml_provider_name:
-                saml_provider_name = (
-                    running_pipeline.get('kwargs', {})
-                    .get('response', {})
-                    .get('idp_name')
-                )
-
-            if not saml_provider_name:
-                return None
-
-            try:
-                # Try to find the SAML provider config
-                # First try with current_set(), then fall back to direct query
-                try:
-                    return SAMLProviderConfig.objects.current_set().get(
-                        slug=saml_provider_name
-                    )
-                except SAMLProviderConfig.DoesNotExist:
-                    # Fallback to direct query without current_set()
-                    return SAMLProviderConfig.objects.get(
-                        slug=saml_provider_name
-                    )
-            except SAMLProviderConfig.DoesNotExist:
-                log.debug(
-                    "SAML provider config not found for idp_name: %s",
-                    saml_provider_name
-                )
-                return None
-        except Exception as exc:  # pylint: disable=broad-except
-            log.debug("Error getting SAML provider config: %s", str(exc))
+            return SAMLProviderConfig.objects.current_set().get(slug=saml_provider_name)
+        except SAMLProviderConfig.DoesNotExist:
             return None
 
     def get_registration_form(self, request):
@@ -564,6 +535,7 @@ class RegistrationFormFactory:
                 if field['name'] == 'confirm_email':
                     del form_desc.fields[index]
                     break
+
         return form_desc
 
     def _get_registration_submit_url(self, request):
@@ -1250,19 +1222,14 @@ class RegistrationFormFactory:
                         if field_name not in field_overrides:
                             continue
 
-                        # Special handling for marketing_emails_opt_in:
-                        # If SAML provider config has skip_registration_optional_checkboxes=True,
-                        # don't let the provider's get_register_form_data override the default
-                        skip_override = False
-                        if field_name == 'marketing_emails_opt_in':
-                            saml_config = self._get_saml_provider_config()
-                            if saml_config and saml_config.skip_registration_optional_checkboxes:
-                                log.debug(
-                                    "Skipping provider override for marketing_emails_opt_in "
-                                    "due to SAML config for provider: %s",
-                                    saml_config.slug
-                                )
-                                skip_override = True
+                        skip_override = (
+                            # Only suppress the IdP default for this specific field
+                            field_name == 'marketing_emails_opt_in' and
+                            # OAuth2 providers don't have this flag, so guard the attribute access
+                            isinstance(current_provider, SAMLProviderConfig) and
+                            # Provider is configured to opt users out of marketing emails silently
+                            current_provider.skip_registration_optional_checkboxes
+                        )
 
                         if not skip_override:
                             form_desc.override_field_properties(
@@ -1282,6 +1249,20 @@ class RegistrationFormFactory:
                                     label="",
                                     instructions="",
                                 )
+
+                    if (
+                        isinstance(current_provider, SAMLProviderConfig) and
+                        current_provider.disable_email_editing and
+                        field_overrides.get("email")
+                    ):
+                        form_desc.override_field_properties(
+                            "email",
+                            restrictions={
+                                "readonly": "readonly",
+                                "min_length": accounts.EMAIL_MIN_LENGTH,
+                                "max_length": accounts.EMAIL_MAX_LENGTH,
+                            },
+                        )
 
                     # Hide the confirm_email field
                     form_desc.override_field_properties(

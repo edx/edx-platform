@@ -37,6 +37,13 @@ if t.TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _UpstreamKeyString(String):
+    """
+    A String field variant that never serializes a None value as an XML child element.
+    """
+    none_to_xml = False
+
+
 class UpstreamLinkException(Exception):
     """
     Raised whenever we try to inspect, sync-from, fetch-from, or delete a block's link to upstream content.
@@ -433,7 +440,7 @@ class UpstreamSyncMixin(XBlockMixin):
     """
 
     # Upstream synchronization metadata fields
-    upstream = String(
+    upstream = _UpstreamKeyString(
         help=(
             "The usage key or container key of the source block/container (generally within a content library) "
             "which serves as a source of upstream updates for this block, or None if there is no such upstream. "

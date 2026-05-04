@@ -21,7 +21,6 @@ from edx_rest_framework_extensions.auth.session.authentication import SessionAut
 from lms.djangoapps.discussion.rest_api.permissions import (
     CanMuteUsers
 )
-from common.djangoapps.student.roles import CourseStaffRole, CourseInstructorRole, GlobalStaff
 from lms.djangoapps.discussion.rest_api.serializers import (
     MuteRequestSerializer,
     UnmuteRequestSerializer,
@@ -79,12 +78,10 @@ def _get_target_user_and_data(request_data, course_id):
 
 
 def _is_privileged_user(user, course_key):
-    """Check if user has privileged permissions."""
+    """Check if user has discussion moderation privileges."""
     return (
         has_discussion_privileges(user, course_key) or
-        GlobalStaff().has_user(user) or
-        CourseStaffRole(course_key).has_user(user) or
-        CourseInstructorRole(course_key).has_user(user)
+        user.is_staff
     )
 
 

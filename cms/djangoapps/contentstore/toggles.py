@@ -2,7 +2,6 @@
 CMS feature toggles.
 """
 from edx_toggles.toggles import SettingDictToggle, WaffleFlag
-from openedx.core.djangoapps.content.search import api as search_api
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 
 
@@ -65,6 +64,30 @@ def bypass_olx_failure_enabled():
     Check if bypass is enabled for course olx validation errors.
     """
     return BYPASS_OLX_FAILURE.is_enabled()
+
+
+# .. toggle_name: contentstore.enable_audio_description
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Enables the audio description (AD) upload UI in the
+#   Studio video editor and the corresponding studio_audio_description XBlock
+#   handler. When disabled, course authors cannot upload, replace, or delete
+#   audio description files for video blocks. Playback of AD files that were
+#   already uploaded is NOT gated by this flag and continues to work in the
+#   LMS -- disable the playback path with a separate flag if needed.
+# .. toggle_use_cases: open_edx
+# .. toggle_creation_date: 2026-04-07
+ENABLE_AUDIO_DESCRIPTION = CourseWaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.enable_audio_description',
+    __name__,
+)
+
+
+def audio_description_enabled(course_key):
+    """
+    Return True if the audio description upload UI and handler are enabled.
+    """
+    return ENABLE_AUDIO_DESCRIPTION.is_enabled(course_key)
 
 
 # .. toggle_name: legacy_studio.exam_settings
@@ -612,6 +635,7 @@ def libraries_v2_enabled():
 
     Requires the ENABLE_CONTENT_LIBRARIES feature flag to be enabled, plus Meilisearch.
     """
+    from openedx.core.djangoapps.content.search import api as search_api  # pylint: disable=import-outside-toplevel
     return (
         ENABLE_CONTENT_LIBRARIES.is_enabled() and
         search_api.is_meilisearch_enabled() and

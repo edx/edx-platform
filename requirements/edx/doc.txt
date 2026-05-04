@@ -563,7 +563,7 @@ edx-drf-extensions==10.6.0
     #   edxval
     #   enterprise-integrated-channels
     #   openedx-learning
-edx-enterprise==6.8.6
+edx-enterprise==7.0.6
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/base.txt
@@ -662,7 +662,7 @@ enmerkar==0.7.1
     #   enmerkar-underscore
 enmerkar-underscore==2.4.0
     # via -r requirements/edx/base.txt
-enterprise-integrated-channels==0.1.56
+enterprise-integrated-channels==0.1.57
     # via -r requirements/edx/base.txt
 event-tracking==4.0.0
     # via
@@ -884,6 +884,7 @@ lxml[html-clean]==5.3.2
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/base.txt
+    #   edx-enterprise
     #   edx-i18n-tools
     #   edxval
     #   lti-consumer-xblock
@@ -1016,7 +1017,7 @@ openedx-events==10.5.0
     #   edx-name-affirmation
     #   event-tracking
     #   ora2
-openedx-filters==2.1.0
+openedx-filters==3.3.0
     # via
     #   -r requirements/edx/base.txt
     #   edx-enterprise

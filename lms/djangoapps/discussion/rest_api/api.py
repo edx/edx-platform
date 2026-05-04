@@ -21,7 +21,7 @@ from django.db.models import Q
 from django.http import Http404
 from django.urls import reverse
 from django.utils.html import strip_tags
-from edx_django_utils.monitoring import function_trace
+from edx_django_utils.monitoring import function_trace, set_custom_attribute
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.locator import CourseKey
 from pytz import UTC
@@ -1905,6 +1905,7 @@ def create_thread(request, thread_data):
         )
     serializer.save()
     cc_thread = serializer.instance
+    set_custom_attribute("forum.entity_id", str(cc_thread.id))
     # Use send_signal_after_commit() to ensure the signal is sent only after the transaction commits.
     send_signal_after_commit(
         lambda: thread_created.send(sender=None, user=user, post=cc_thread, notify_all_learners=notify_all_learners)
@@ -1982,6 +1983,7 @@ def create_comment(request, comment_data):
     context["cc_requester"].follow(cc_thread)
     serializer.save()
     cc_comment = serializer.instance
+    set_custom_attribute("forum.entity_id", str(cc_comment.id))
     send_signal_after_commit(
         lambda: comment_created.send(sender=None, user=request.user, post=cc_comment)
     )
@@ -2232,11 +2234,14 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
             DiscussionEntity.comment,
         )
 
-        comments_count = len(paged_response_comments)
+        total_comments_count = len(response_comments)
         num_pages = (
-            (comments_count + page_size - 1) // page_size if comments_count else 1
+            (total_comments_count + page_size - 1) // page_size
+            if total_comments_count else 1
         )
-        paginator = DiscussionAPIPagination(request, page, num_pages, comments_count)
+        paginator = DiscussionAPIPagination(
+            request, page, num_pages, total_comments_count
+        )
         return paginator.get_paginated_response(results)
     except CommentClientRequestError as err:
         raise CommentNotFoundError("Comment not found") from err
