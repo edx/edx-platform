@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from bson.objectid import ObjectId
-from django.test import TestCase
+from django.test import TestCase, skipUnlessDBFeature
 from opaque_keys.edx.keys import CourseKey
 
 from common.djangoapps.split_modulestore_django.models import SplitModulestoreCourseIndex
@@ -12,6 +12,7 @@ from xmodule.modulestore import ModuleStoreEnum  # lint-amnesty, pylint: disable
 class SplitModulestoreCourseIndexTest(TestCase):
     """ Unit tests for SplitModulestoreCourseIndex """
 
+    @skipUnlessDBFeature('supports_collation_on_charfield')
     def test_course_id_case_sensitive(self):
         """
         Make sure the course_id column is case sensitive.
