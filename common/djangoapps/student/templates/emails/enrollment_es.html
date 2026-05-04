@@ -522,8 +522,7 @@
                                 <h2 class="heading text">Te has inscrito,&nbsp;</h2>
                               </td>
                               <td class="td-display-block">
-                                <h2 class="heading text" style="color: #f0cc00;">{{ user_name|default:"Restless Learner"
-                                  }}!</h2>
+                                <h2 class="heading text" style="color: #f0cc00;">{{ user_name|default:"Restless Learner" }}!</h2>
                               </td>
                             </tr>
                           </table>
@@ -551,7 +550,7 @@
                                 </div>
                                 {% else %}
                                 <div class="main-section-left-tile-banner-img-div">
-                                  <img src="{{ original_banner_image }}" width="272" height="100" style="width:100%; display:block;" />
+                                  <img src="{{ banner_default }}" width="272" height="100" style="width:100%; display:block;" />
                                   {% if partner_image_url %}
                                   <div class="main-section-left-tile-partner-img-div">
                                     <img align="left" class='main-section-left-tile-partner-img'
@@ -595,7 +594,7 @@
                                                   <td width="6"></td>
                                                   <td width="24" valign="middle">
                                                     <img width="16" height="16" class="start-my-course-btn-img"
-                                                      src="{{ arrow_icon_image }}" />
+                                                      src="{{ arrow_icon_es }}" />
                                                   </td>
                                                 </tr>
                                                 <tr height="10"></tr>
@@ -634,7 +633,7 @@
                           <table style="margin-top: auto; margin-bottom: auto;">
                             <tr>
                               <td>
-                                <img width="24" height="24" src="{{ timer_icon_image }}" alt="Duration Icon" class="meta-data-icon" />
+                                <img width="24" height="24" src="{{ timer_icon_es }}" alt="Duration Icon" class="meta-data-icon" />
                               </td>
                               <td width="7"></td>
                               <td>
@@ -680,7 +679,7 @@
                           <table>
                             <tr>
                               <td>
-                                <img width="24" height="24" src="{{ person_icon_image }}" alt="Pacing Icon" class="meta-data-icon" />
+                                <img width="24" height="24" src="{{ person_icon_es }}" alt="Pacing Icon" class="meta-data-icon" />
                               </td>
                               <td width="7"></td>
                               <td>
@@ -720,7 +719,7 @@
                           <table>
                             <tr>
                               <td>
-                                <img width="24" height="24" src="{{ white_dollar_image }}" alt="Price Icon" class="meta-data-icon" />
+                                <img width="24" height="24" src="{{ dollar_icon_es }}" alt="Price Icon" class="meta-data-icon" />
                               </td>
                               <td width="7"></td>
                               <td>
@@ -811,7 +810,7 @@
                                 <td width="23"></td>
                                 <td>
                                   <img width="24" height="24" style="width: 24px; height: 24px;"
-                                    src="{{ white_flag_icon_image }}" />
+                                    src="{{ flag_icon_white_es }}" />
                                 </td>
                                 <td width="14"></td>
                                 <td width="68">
@@ -842,7 +841,7 @@
                                 <td width="23"></td>
                                 <td>
                                   <img width="24" height="24" style="width: 24px; height: 24px;"
-                                    src="{{ grey_flag_icon_image }}" />
+                                    src="{{ flag_icon_grey_es }}" />
                                 </td>
                                 <td width="14"></td>
                                 <td width="68">
@@ -873,7 +872,7 @@
                                 <td width="23"></td>
                                 <td>
                                   <img width="24" height="24" style="width: 24px; height: 24px;"
-                                    src="{{ black_flag_icon_image }}" />
+                                    src="{{ flag_icon_black_en_es }}" />
                                 </td>
                                 <td width="14"></td>
                                 <td width="68">
@@ -1264,7 +1263,7 @@
                               <tr align="center">
                                 <td width="20" valign="middle">
                                   <img width="20" height="20" class="schedule-btn-img"
-                                    src="{{ calender_icon_image }}" alt="Calendar Icon"/>
+                                    src="{{ calendar_icon_es }}" alt="Calendar Icon"/>
                                 </td>
                                 <td width="6"></td>
                                 <td valign="middle">
@@ -1294,88 +1293,53 @@
                 <tr height="56">
                   <td colspan="5">
                     <table width="100%" height="100%">
+                      <!-- Braze-aligned Community Section -->
                       <tr>
                         <td width="32" class="width_24"></td>
-                        <td align="center" class="width_100percent td-display-block">
-                          <table width="100%">
-                            <tr>
-                              <td align="center" style="display: inline-block;"
-                                class="community-section-heading width_100percent">
-                                Interactúa con una
-                              </td>
-                            </tr>
-                            <tr>
-                              <td align="center" style="display: inline-block; color: #f0cc00;"
-                                class="community-section-heading width_100percent">
-                                comunidad global
+                        <td align="center" colspan="2">
+                          <h2 class="community-section-heading">Únete a la comunidad</h2>
+                        </td>
+                        <td width="32" class="width_24"></td>
+                      </tr>
+                      <tr height="16"></tr>
+                      <tr>
+                        <td width="32" class="width_24"></td>
+                        <td colspan="2" align="center">
+                          <p class="community-section-content">Conéctate con otros estudiantes, haz preguntas y comparte tus experiencias en los foros de discusión del curso.</p>
+                        </td>
+                        <td width="32" class="width_24"></td>
+                      </tr>
+                      <tr height="24"></tr>
+                      <tr>
+                        <td width="32" class="width_24"></td>
+                        <td align="center" colspan="2">
+                          <table width="228" class="width_100percent" cellpadding="0" cellspacing="0" border="0">
+                            <tr height="36">
+                              <td bgcolor="#d23228">
+                                <a class="community-a-tag"
+                                  href="{{ lms_base_url }}/courses/{{ course_run_key }}/discussion/forum/#posts">
+                                  <table width="100%">
+                                    <tr height="10"></tr>
+                                    <tr align="center">
+                                      <td valign="middle">
+                                        <span class="community-btn-txt">Ir al foro de discusión</span>
+                                      </td>
+                                      <td width="6"></td>
+                                      <td width="24" valign="middle">
+                                        <img width="20" height="20" class="community-btn-img" src="{{ forum_icon_es }}" />
+                                      </td>
+                                    </tr>
+                                    <tr height="10"></tr>
+                                  </table>
+                                </a>
                               </td>
                             </tr>
                           </table>
                         </td>
-                        <td width="16" height="100%" class="hide-for-small td-display-block width_100percent"> </td>
-                        <td class="hide-for-small td-display-block width_100percent">
-                          <img src="{{ slant_line_es_image }}" width="16" height="56" style="display:block;" alt="Divider" />
-                        </td>
-                  </td>
-                  <td width="16" class="hide-for-small td-display-block width_100percent"></td>
-                  <td class="td-display-block width_100percent">
-                    <table width="100%">
-                      <tr>
-                        <td align="center" style="display: inline-block;"
-                          class="community-section-content td-display-block width_100percent">Conoce a los</td>
-                        <td align="center" width="4" style="display: inline-block;"
-                          class="hide-for-small td-display-block width_100percent"></td>
-                        <td align="center" style="display: inline-block;"
-                          class="community-section-content-numeric td-display-block width_100percent">
-                          {% if learners_count %}{{ learners_count }}{% else %}otros{% endif %}
-                        </td>
-                        <td align="center" style="display: inline-block;" width="4"
-                          class="hide-for-small td-display-block width_100percent"></td>
-                        <td align="center" style="display: inline-block;"
-                          class="community-section-content td-display-block width_100percent">estudiantes en tu
-                          curso.</td>
+                        <td width="32" class="width_24"></td>
                       </tr>
-                    </table>
-                  </td>
-                  <td width="0" class="width_24"></td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr height="32" class="height_24"></tr>
-          <tr>
-            <td width="32" class="height_24"></td>
-            <td align="center">
-              <table width="228" class="width_100percent" cellpadding="0" cellspacing="0" border="0">
-                <tr height="36">
-                  <td bgcolor="#d23228">
-                    <a class="community-a-tag"
-                      href="{{ lms_base_url }}/courses/{{ course_run_key }}/discussion/forum/#posts">
-                      <table width="100%">
-                        <tr height="8"></tr>
-                        <tr align="center">
-                          <td width="20" valign="middle">
-                            <img width="20" height="20" class="community-btn-img" src="{{ profiles_image }}" alt="Community Icon" />
-                          </td>
-                          <td width="6"></td>
-                          <td valign="middle">
-                            <span class="community-btn-txt">Únete al foro de discusión</span>
-                          </td>
-                        </tr>
-                        <tr height="8"></tr>
-                      </table>
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-
-            <td width="32" class="height_24"></td>
-          </tr>
-          <tr height="32" class="height_24"></tr>
-        </table>
-
-        <!-- Full-width Section w/ community section end -->
+                      <tr height="32" class="height_24"></tr>
+                      <!-- Full-width Section w/ community section END -->
 
         <!-- Footer start -->
         <!-- Footer -->
