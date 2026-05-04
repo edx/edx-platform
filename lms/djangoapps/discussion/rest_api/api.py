@@ -2234,11 +2234,14 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
             DiscussionEntity.comment,
         )
 
-        comments_count = len(paged_response_comments)
+        total_comments_count = len(response_comments)
         num_pages = (
-            (comments_count + page_size - 1) // page_size if comments_count else 1
+            (total_comments_count + page_size - 1) // page_size
+            if total_comments_count else 1
         )
-        paginator = DiscussionAPIPagination(request, page, num_pages, comments_count)
+        paginator = DiscussionAPIPagination(
+            request, page, num_pages, total_comments_count
+        )
         return paginator.get_paginated_response(results)
     except CommentClientRequestError as err:
         raise CommentNotFoundError("Comment not found") from err
