@@ -138,7 +138,13 @@ cryptography<46.0.0
 pact-python<3.0.0
 
 # Date 2026-02-05
-# sphinx-autoapi==3.6.1 is incompatible with astroid==4.x under python 3.11. Since we (2U) currently
-# deploy edxapp to edx.org using python 3.11, we must pin sphinx-autoapi to avoid dependency
-# conflicts. Remove this constraint once we migrate to python 3.12.
-sphinx-autoapi<3.6.1
+# Pin astroid to 4.0.4 for compatibility with sphinx-autoapi and pylint under Python 3.11
+# sphinx-autoapi<3.6.1 is incompatible with astroid>=4.1.2, so we pin astroid to 4.0.x series
+# to ensure all dependencies can resolve properly.
+# Remove this constraint once we migrate to Python 3.12.
+astroid==4.0.4
+
+# Date: 2026-05-04
+# lti-consumer-xblock 11.x introduced breaking changes that are not yet
+# compatible with this branch. Pin to 9.14.5 until we move officially to python 3.12. 
+lti-consumer-xblock==9.14.5

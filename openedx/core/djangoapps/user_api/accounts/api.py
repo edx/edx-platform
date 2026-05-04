@@ -22,6 +22,7 @@ from common.djangoapps.student.models import (
     email_exists_or_retired,
     username_exists_or_retired
 )
+from common.djangoapps.third_party_auth.utils import get_saml_provider_for_user
 from common.djangoapps.util.model_utils import emit_settings_changed_event
 from common.djangoapps.util.password_policy_validators import validate_password
 from lms.djangoapps.certificates.api import get_certificates_for_user
