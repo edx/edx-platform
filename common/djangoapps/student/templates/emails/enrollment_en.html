@@ -1,0 +1,1749 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>edX</title>
+  <style type="text/css">
+    * {
+      margin-top: 0;
+      margin-bottom: 0;
+      padding: 0;
+      border: none;
+      outline: none;
+      -webkit-text-size-adjust: none;
+    }
+
+    body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      -webkit-text-size-adjust: 100% !important;
+      -ms-text-size-adjust: 100% !important;
+      -webkit-font-smoothing: antialiased !important;
+    }
+
+    table {
+      border-collapse: collapse;
+      mso-table-lspace: 0;
+      mso-table-rspace: 0;
+    }
+
+    td {
+      border-collapse: collapse;
+      mso-line-height-rule: exactly;
+    }
+
+    img {
+      display: block !important;
+      outline: none !important;
+      height: auto;
+      border: 0;
+      line-height: 100%;
+    }
+
+    a[x-apple-data-detectors] {
+      color: inherit !important;
+      text-decoration: none !important;
+      font-size: inherit !important;
+      font-family: inherit !important;
+      font-weight: inherit !important;
+      line-height: inherit !important;
+    }
+
+    @media only screen and (max-width: 480px) {
+      .width_100percent {
+        width: 100% !important;
+      }
+
+      .mobile_min_width {
+        min-width: 320px !important;
+      }
+
+      .width_2 {
+        width: 2px !important;
+      }
+
+      .width_14 {
+        width: 14px !important;
+      }
+
+      .width_30 {
+        width: 30px !important;
+      }
+
+      .width_24 {
+        width: 24px !important;
+      }
+
+      .width_20 {
+        width: 20px !important;
+      }
+
+      .width_18 {
+        width: 18px !important;
+      }
+
+      .width_16 {
+        width: 16px !important;
+      }
+
+      .width_12 {
+        width: 12px !important;
+      }
+
+      .width_10 {
+        width: 10px !important;
+      }
+
+      .height_32 {
+        height: 32px !important;
+      }
+
+      .height_22 {
+        height: 22px !important;
+      }
+
+      .height_24 {
+        height: 24px !important;
+      }
+
+      .height_20 {
+        height: 20px !important;
+      }
+
+      .height_18 {
+        height: 18px !important;
+      }
+
+      .height_12 {
+        height: 12px !important;
+      }
+
+      .height_8 {
+        height: 8px !important;
+      }
+
+      .height_4 {
+        height: 4px !important;
+      }
+    }
+
+    .main-section {
+      background-color: #ffffff;
+    }
+
+    .text {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+    }
+
+    .heading {
+      font-size: 32px;
+      line-height: 36px;
+      text-decoration: none;
+      color: #ffffff;
+      font-weight: 700;
+      display: inline;
+      margin: 0;
+    }
+
+    .main-section-content {
+      /* display: flex; removed for email compatibility */
+    }
+
+    .main-section-left-tile {
+      border-radius: 6px;
+      min-width: 272px;
+      width: 272px;
+    }
+
+    .main-section-right-tile {
+      position: relative;
+      margin-top: auto;
+      margin-bottom: auto;
+    }
+
+    .main-section-left-tile-banner-img-div {
+      height: 100px;
+      min-width: 272px;
+      border-radius: 6px 6px 0px 0px;
+      background-color: #d5dde7;
+      background-image: url(https://prod-discovery.edx-cdn.org/media/course/image/da1b2400-322b-459b-97b0-0c557f05d017-a3d1899c3344.png);
+      background-size: cover;
+      background-repeat: no-repeat;
+      position: relative;
+      z-index: 2;
+    }
+
+    .main-section-left-tile-partner-img-div {
+      padding-top: 54px;
+      padding-left: 24px;
+      width: 116px;
+      position: absolute;
+      top: 0;
+      height: 100%;
+    }
+
+    .main-section-left-tile-partner-img {
+      width: 116px;
+      height: 66px;
+      background: #ffffff;
+      border: 1px solid #dcdbdb;
+      box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.15), 0px 1px 4px rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+    }
+
+    .main-section-left-tile-title-div {
+      background: #ffffff;
+      min-width: 272px;
+      min-height: 96px;
+      height: auto;
+      border-radius: 0px 0px 6px 6px;
+      border: 2px solid #F3F1ED;
+    }
+
+    .main-section-organization-div {
+      background: #ffffff;
+      color: #73706e;
+      height: auto;
+      font-weight: 500;
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      padding: 10px 24px 0px;
+    }
+
+    .main-section-left-tile-title {
+      color: #002121;
+      font-weight: bold;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      padding: 50px 24px 10px !important;
+      margin: 0;
+      text-align: left;
+    }
+
+    .course-description {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      font-size: 14px;
+      line-height: 24px;
+      color: #eae6e5;
+      font-weight: 400;
+      display: inline;
+      text-align: justify;
+    }
+
+    .start-my-course-a-tag {
+      width: 100%;
+      height: 100%;
+      text-decoration: none;
+    }
+
+    .start-my-course-btn-txt {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      text-decoration: none;
+      color: #ffffff;
+      font-weight: 500;
+      font-size: 18px;
+      line-height: 24px;
+    }
+
+    .start-my-course-btn-img {
+      width: 16px;
+      height: 16px;
+    }
+
+    @media screen and (max-width: 440px) {
+      .main-section-left-tile {
+        width: 100% !important;
+      }
+
+      .td-display-block {
+        display: block !important;
+      }
+
+      .hide-for-small {
+        display: none !important;
+      }
+    }
+
+    .meta-left-padding {
+      padding-left: 26px;
+    }
+
+    .meta-data-icon {
+      width: 24px;
+      height: 24px;
+      padding-top: 7px;
+    }
+
+    @media screen and (max-width: 440px) {
+      .meta-left-padding {
+        padding-left: 0 !important;
+      }
+
+      .meta-data-icon {
+        padding-top: 18px !important;
+        padding-bottom: 18px !important;
+        padding-left: 26px !important;
+      }
+
+      .meta-content {
+        padding-top: 0 !important;
+      }
+    }
+
+    .content-heading {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      font-size: 32px;
+      line-height: 36px;
+      margin: 0;
+      text-decoration: none;
+      color: #03c7e8;
+      font-weight: 700;
+    }
+
+    .content-para {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      font-size: 14px !important;
+      line-height: 24px;
+      text-decoration: none;
+      color: #002b2b;
+      font-weight: 400;
+    }
+
+    .goal-btn {
+      background: #ffffff;
+      border: 2px solid #dcdbdb;
+      border-radius: 6px;
+    }
+
+    .instructor-section-header {
+      text-align: left;
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      font-weight: 400;
+      font-size: 14px;
+      line-height: 0px;
+      color: #454545;
+    }
+
+    .instructor-img {
+      width: 93px;
+      height: 93px;
+      border-radius: 50%;
+    }
+
+    .instructor-name {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      font-weight: 700;
+      font-size: 18px;
+      line-height: 28px;
+      color: #00262b;
+    }
+
+    .instructor-institute {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      font-weight: 400;
+      font-size: 14px;
+      line-height: 24px;
+      color: #707070;
+    }
+
+    .instructor-single-img-td {
+      text-align: center;
+    }
+
+    .schedule-a-tag {
+      border: 1px solid #f2f0ef;
+    }
+
+    .schedule-btn-txt {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      text-decoration: none;
+      color: #d23228;
+      font-weight: 500;
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    .schedule-btn-img {
+      width: 20px;
+      height: 20px;
+    }
+
+    @media screen and (max-width: 440px) {
+      .main-section-left-tile {
+        width: 100% !important;
+      }
+
+      .td-display-block {
+        display: block !important;
+      }
+
+      .start-course-btn-table {
+        width: 100% !important;
+      }
+
+      .hide-for-small {
+        display: none !important;
+      }
+    }
+
+    .schedule-date {
+      font-size: 18px;
+      line-height: 20px;
+      text-decoration: none;
+      color: #002b2b;
+      font-weight: 400;
+    }
+
+    .schedule-date-subheading {
+      font-style: normal;
+      font-size: 14px;
+      line-height: 20px;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .schedule-today-btn {
+      line-height: 16px;
+      padding: 5px;
+      font-size: 14px;
+      border-radius: 5px;
+      color: white;
+      background-color: #ebc72c;
+    }
+
+    .schedule-circle {
+      border: 1px solid black;
+      height: 10px;
+      width: 10px;
+      border-radius: 50%;
+      background-color: white;
+    }
+
+    .community-a-tag {
+      width: 100%;
+      height: 100%;
+      text-decoration: none;
+    }
+
+    .community-btn-txt {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      text-decoration: none;
+      color: #ffffff;
+      font-weight: 500;
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    .community-btn-img {
+      width: 20px;
+      height: 20px;
+    }
+
+    .community-section-heading {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      font-size: 22px;
+      line-height: 28px;
+      text-decoration: none;
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .community-section-content {
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      font-style: normal;
+      font-size: 14px;
+      line-height: 24px;
+      text-decoration: none;
+      color: #ffffff;
+      font-weight: 400;
+    }
+
+    .community-section-content-numeric {
+      font-size: 32px;
+      color: #03c7e8;
+      font-family: 'Inter', Arial, Helvetica, sans-serif;
+      line-height: 26px;
+      font-style: normal;
+      font-weight: 700;
+    }
+
+    @media screen and (max-width: 440px) {
+      .schedule-today-btn {
+        padding: 5px 1px 5px 1px !important;
+      }
+    }
+
+    @media screen and (max-width: 480px) {
+
+      .width_24,
+      .width_32 {
+        width: 0 !important;
+      }
+
+      td.width_100percent,
+      td[style*="text-align: center"]>table {
+        width: 100% !important;
+        display: block !important;
+        padding: 0 10px;
+        margin: 0 auto;
+      }
+
+      .width_14 {
+        width: 0 !important;
+      }
+
+      .instructor-img {
+        display: block !important;
+        margin: 0 auto !important;
+      }
+
+      td[style*="text-align: center"],
+      td.width_100percent {
+        text-align: center !important;
+      }
+
+      .height_24.hide-for-small {
+        display: none !important;
+      }
+
+      table[cellpadding="0"][cellspacing="0"][align="center"] {
+        margin: 0 auto !important;
+        width: auto !important;
+      }
+
+      tr+tr>td>table {
+        margin-top: 24px !important;
+      }
+
+      td.width_100percent+td.width_100percent {
+        margin-top: 24px !important;
+      }
+
+      .width_30 {
+        width: 16px !important;
+      }
+
+      .width_32 {
+        width: 16px !important;
+      }
+
+      .width_14 {
+        width: 12px !important;
+      }
+
+      .width_18 {
+        width: 0px !important;
+      }
+
+      .height_24 {
+        height: 16px !important;
+      }
+
+      .height_32 {
+        height: 20px !important;
+      }
+
+      .height_12 {
+        height: 10px !important;
+      }
+
+      td[width="172"] {
+        width: 100px !important;
+      }
+
+      img[width="172"] {
+        width: 100px !important;
+        height: 100px !important;
+      }
+
+      td[style*="font-size: 40px"] {
+        font-size: 24px !important;
+        line-height: 30px !important;
+      }
+
+      td[style*="font-size: 16px"] {
+        font-size: 14px !important;
+        line-height: 20px !important;
+      }
+
+      .button-container {
+        width: 100% !important;
+        text-align: center !important;
+      }
+
+      .button-container td.button-cell {
+        width: 50% !important;
+        display: block !important;
+        margin: 0 auto !important;
+        max-width: 200px !important;
+      }
+
+      .button-container td[width="18"] {
+        height: 18px !important;
+        width: 100% !important;
+        display: block !important;
+        min-height: 18px !important;
+      }
+
+      .button-table {
+        width: 100% !important;
+        max-width: 200px !important;
+      }
+
+      .goals-engage-table {
+        max-width: 330px !important;
+        margin: 0 auto !important;
+      }
+
+      .image-cell {
+        width: 100px !important;
+      }
+
+      .image-table {
+        width: 80px !important;
+        height: auto !important;
+      }
+
+      .community-image {
+        width: 80px !important;
+        height: auto !important;
+      }
+
+      [data-ogsc] .button-cell,
+      [data-ogsb] .button-cell {
+        width: 100% !important;
+        display: block !important;
+      }
+    }
+  </style>
+  <!--[if (mso)|(mso 16)]>
+      <style type="text/css">
+        body, table, td, a, span { font-family: Arial, Helvetica, sans-serif !important; }
+        a { text-decoration: none; }
+        .mso-goal-btn { background: #ffffff; border: 2px solid #dcdbdb; }
+        .goal-btn td { border: 2px solid #dcdbdb; }
+      </style>
+    <![endif]-->
+  <!--[if mso]>
+    <style type="text/css">
+      .fallback_font { font-family: Helvetica, Arial, sans-serif; }
+      .mso-goal-btn { background: #ffffff; border: 2px solid #dcdbdb; }
+      .goal-btn td { border: 2px solid #dcdbdb; }
+    </style>
+    <![endif]-->
+</head>
+
+<body>
+  <!-- Background table start -->
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" bgcolor="#F5F5F5">
+    <tr>
+      <td valign="top" align="center">
+        <!-- Container table start -->
+        <table width="600" cellpadding="0" cellspacing="0" align="center" class="width_100percent">
+          <tr>
+            <td valign="top" align="center" style="min-width: 640px;" class="mobile_min_width">
+
+              <!-- Header start -->
+              {% include "emails/partials/header_en.html" %}
+              <!-- Header end -->
+
+              <!-- HERO start -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="width: 100%; max-width: 600px;">
+                <tr>
+                  <td align="left" valign="top">
+                    <img src="{{ you_are_enrolled_image }}" width="100%" border="0"
+                      style="display: block; height: auto; max-width: 600px;"
+                      alt="You're enrolled, Restless Learner!" />
+                  </td>
+                </tr>
+              </table>
+              <!-- HERO end -->
+
+              <!-- Full-width Section w/ Introductory text and CTA start -->
+              <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF"
+                style="width: 100%; max-width: 600px;">
+                <tr height="30" style="line-height: 1px; font-size: 1px;" class="height_30">
+                  <td colspan="3"></td>
+                </tr>
+                <tr>
+                  <td width="30" class="width_30"> </td>
+                  <!-- Main content -->
+                  <td align="left" valign="top">
+                    <table width="100%" cellpadding="0" cellspacing="0" class="main-section">
+                      <tr>
+                        <td align="left" valign="top">
+                          <table class="main-section-content" width="100%">
+                            <tr>
+                              <td class="main-section-left-tile td-display-block">
+
+                                <!-- Non-Outlook clients -->
+                                <!--[if !mso]><!-->
+                                <div class="main-section-left-tile-banner-img-div" style="background-color:#d5dde7;">
+
+                                  {% if banner_image_url %}
+                                  <img src="{{ banner_image_url }}" width="272" height="100"
+                                    style="display:block; width:100%; height:100px; object-fit:cover;"
+                                    alt="Course Banner" />
+                                  {% else %}
+                                  <img src="{{ original_banner_image }}" width="272" height="100"
+                                    style="display:block; width:100%; height:100px; object-fit:cover;"
+                                    alt="Course Banner" />
+                                  {% endif %}
+
+                                  {% if partner_image_url %}
+                                  <div class="main-section-left-tile-partner-img-div">
+                                    <img align="left" class="main-section-left-tile-partner-img"
+                                      src="{{ partner_image_url }}" alt="Partner Logo" />
+                                  </div>
+                                  {% endif %}
+
+                                </div>
+                                <div class="main-section-left-tile-title-div">
+                                  <h2 class="main-section-left-tile-title">{{ course_title }}</h2>
+                                  <p class="main-section-organization-div">{{ org_name }}</p>
+                                  <div
+                                    style="margin: 32px 24px 32px; height: 25px; width: 60px; text-align: center; background-color: #e2dddb; border-radius: 4px;">
+                                    <a href="{{ learning_base_url|rstrip:'/' }}/course/{{ course_run_key }}/home?start_course=1"
+                                      style="font-weight:500; color:black; text-decoration:none; display:inline-block; font-size: 10px; font-family: 'Inter', Arial, sans-serif; height: 25px;">Course
+                                    </a>
+                                  </div>
+                                </div>
+                                <!--<![endif]-->
+
+                                <!-- Outlook-specific simpler layout -->
+                                <!--[if mso]>
+                                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                    <tr>
+                                      {% if partner_image_url %}
+                                        <td width="100" style="padding-right: 10px;">
+                                          <img src="{{ partner_image_url }}" width="100"
+                                               style="width: 100px; height: auto;" alt="Partner Image" />
+                                        </td>
+                                      {% endif %}
+                                      <td style="vertical-align: top;">
+                                        <h2 style="margin: 0; padding: 0; font-size: 16px;">{{ course_title }}</h2>
+                                        <p class="main-section-organization-div">{{ org_name }}</p>
+                                        <div style="margin: 24px 24px 40px; height: 25px; width: 60px; text-align: center; background-color: #e2dddb; border-radius: 4px;">
+                                          <a href="{{ learning_base_url|rstrip:'/' }}/course/{{ course_run_key }}/home?start_course=1"
+                                             style="font-weight:500; color:black; text-decoration:none; display:inline-block; padding-top: 6px; font-size: 10px; font-family: Arial, sans-serif; height: 25px;">Course
+                                          </a>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  </table>
+                                  <![endif]-->
+
+                              </td>
+                              <td width="20" class="width_20"
+                                style="width:20px; min-width:20px; max-width:20px; font-size:0px; line-height:0px; display:block;">
+                              </td>
+                              <td class="main-section-right-tile td-display-block"
+                                style="max-width:252px; width:252px;">
+                                <table width="100%" style="max-width:252px;">
+                                  <tr height="24" style="line-height: 1px; font-size: 1px;"></tr>
+                                  <tr>
+                                    <td style="vertical-align:top; max-width:252px;">
+
+                                      <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                        width="100%">
+                                        <tr>
+                                          <td>
+                                            <h3
+                                              style="font-size:10px; line-height:16px; font-weight:700; text-transform:uppercase; margin:0;">
+                                              {{ org_name }}
+                                            </h3>
+                                          </td>
+                                        </tr>
+                                        <tr>
+                                          <td height="4" style="line-height: 1px; font-size: 1px;"> </td>
+                                        </tr>
+                                        <tr>
+                                          <td>
+                                            <h2 style="font-size:16px; font-weight:700;">{{ course_title }}</h2>
+                                          </td>
+                                        </tr>
+                                        <tr>
+                                          <td height="8" style="line-height: 1px; font-size: 1px;"> </td>
+                                        </tr>
+                                        <tr>
+                                          <td>
+                                            <p style="font-size:12px; line-height:19px; font-weight:500;">
+                                              {{ short_description }}
+                                            </p>
+                                          </td>
+                                        </tr>
+                                      </table>
+
+                                      <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                        width="100%">
+                                        <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12">
+                                        </tr>
+                                        <!-- Duration row -->
+                                        <tr>
+                                          <td width="20" style="vertical-align:top;">
+                                            <img src="{{ timer_icon_image }}" width="20" height="20" alt="Duration" />
+                                          </td>
+                                          <td width="12" class="width_16"> </td>
+                                          <td style="font-size:12px; font-weight:700;">
+                                            Estimated {{ weeks_to_complete }} weeks<br />
+                                            <span style="font-weight:500;">
+                                              {% if min_effort and max_effort %}
+                                              {{ min_effort }} - {{ max_effort }} hours per week
+                                              {% elif min_effort %}
+                                              {% if min_effort > 1 %}
+                                              {{ min_effort }} hours per week
+                                              {% else %}
+                                              {{ min_effort }} hour per week
+                                              {% endif %}
+                                              {% elif max_effort %}
+                                              {% if max_effort > 1 %}
+                                              {{ max_effort }} hours per week
+                                              {% else %}
+                                              {{ max_effort }} hour per week
+                                              {% endif %}
+                                              {% endif %}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                        <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12">
+                                        </tr>
+                                        <!-- Pacing row -->
+                                        <tr>
+                                          <td width="20" style="vertical-align:top;">
+                                            <img src="{{ person_icon_image }}" width="20" height="20" alt="Schedule" />
+                                          </td>
+                                          <td width="12" class="width_16"> </td>
+                                          <td style="font-size:12px; font-weight:700;">
+                                            {% if pacing_type == 'instructor_paced' %}
+                                            Instructor-led
+                                            {% else %}
+                                            Self-paced
+                                            {% endif %}<br />
+                                            <span style="font-weight:500;">
+                                              {% if pacing_type == 'instructor_paced' %}
+                                              On a course schedule
+                                              {% else %}
+                                              Progress at your own speed
+                                              {% endif %}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                        <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12">
+                                        </tr>
+                                        <!-- Price row -->
+                                        <tr>
+                                          <td width="20" style="vertical-align:top;">
+                                            <img src="{{ black_dollar_image }}" width="20" height="20" alt="Price" />
+                                          </td>
+                                          <td width="12" class="width_16"> </td>
+                                          <td style="font-size:12px; font-weight:700;">
+                                            {% if course_price == 0 %}
+                                            Free
+                                            {% else %}
+                                            ${{ course_price }}
+                                            {% endif %}<br />
+                                            <span style="font-weight:500;">
+                                              {% if course_price == 0 %}
+                                              Optional upgrade available
+                                              {% endif %}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      </table>
+
+                                      <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                        <tr height="20" style="line-height: 1px; font-size: 1px;" class="height_20">
+                                        </tr>
+                                        <tr>
+                                          <td
+                                            style="background:#ED5C13; border-radius:45px; text-align:center; width:92px; height:25px;">
+                                            <a href="{{ learning_base_url }}/course/{{ course_run_key }}/home?start_course=1"
+                                              style="font-size:10px; font-weight:500; color:white; text-decoration:none; display:inline-block; line-height:25px;">Start
+                                              my course</a>
+                                          </td>
+                                        </tr>
+                                      </table>
+
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <!-- Right margin -->
+                  <td width="30" class="width_30" style="width:30px; min-width:30px; font-size:0px; line-height:0px;">
+                  </td>
+                </tr>
+              </table>
+              <!-- Full-width Section w/ Introductory text and CTA end -->
+
+              <!-- Full-width Section w/ Instructors Section -->
+              {% if instructors %}
+              <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF"
+                style="background-color: #FFFFFF; width: 100%; max-width: 600px;">
+                <tr height="24" style="line-height: 1px; font-size: 1px;" class="height_24">
+                  <td colspan="3"></td>
+                </tr>
+                <tr>
+                  <td width="30" class="width_30"> </td>
+                  <td>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td
+                          style="color: #000000; font-size: 16px; font-family: Arial, sans-serif; font-weight: 700; line-height: 24px; word-wrap: break-word;">
+                          {% if instructors|length == 1 %}
+                          Meet your instructor:
+                          {% else %}
+                          Meet your instructors:
+                          {% endif %}
+                        </td>
+                      </tr>
+                      <tr height="24" style="line-height: 1px; font-size: 1px;" class="height_24"></tr>
+
+                      {% if not instructors|length|divisibleby:2 %}
+                      {% with instructors.0 as first_instructor %}
+                      <tr>
+                        <td>
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td style="text-align: center;">
+                                <table cellpadding="0" cellspacing="0" align="center">
+                                  <tr>
+                                    <!-- <td width="100" style="width: 100px;">
+                                      <a href="{{ first_instructor.bio_url }}" style="text-decoration: none;">
+                                        <img width="100" height="100" class="instructor-img"
+                                          src="{{ first_instructor.profile_image_url }}" style="border-radius: 50%;" />
+                                      </a>
+                                    </td> -->
+                                    <td width="14" style="line-height: 1px; font-size: 1px;" class="width_14"> </td>
+                                    <td>
+                                      <table width="100%" cellpadding="0" cellspacing="0">
+                                        <tr>
+                                          <td
+                                            style="color: #000000; font-size: 16px; font-family: Arial, sans-serif; font-weight: 700; line-height: 16px; word-wrap: break-word;">
+                                            <a href="{{ first_instructor.bio_url }}"
+                                              style="text-decoration: none; color: #000000;">{{ first_instructor.name
+                                              }}</a>
+                                          </td>
+                                        </tr>
+                                        <tr height="4" style="line-height: 1px; font-size: 1px;" class="height_4"></tr>
+                                        <tr>
+                                          <td
+                                            style="color: #000000; font-size: 10px; font-family: Arial, sans-serif; font-weight: 700; text-transform: uppercase; line-height: 16px; word-wrap: break-word;">
+                                            {{ first_instructor.organization_name }}
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              {% for instructor in instructors %}
+                              {% if not forloop.first %}
+                              <td width="250" class="width_100percent" style="width: 250px; text-align: center;">
+                                <table width="100%" cellpadding="0" cellspacing="0">
+                                  <tr height="24" style="line-height: 1px; font-size: 1px;"
+                                    class="height_24 hide-for-small"></tr>
+                                  <tr>
+                                    <td>
+                                      <table cellpadding="0" cellspacing="0" align="center">
+                                        <tr>
+                                          <!-- <td width="100" style="width: 100px;">
+                                            <a href="{{ instructor.bio_url }}" style="text-decoration: none;">
+                                              <img width="100" height="100" class="instructor-img"
+                                                src="{{ instructor.profile_image_url }}" style="border-radius: 50%;" />
+                                            </a>
+                                          </td> -->
+                                          <td width="14" style="line-height: 1px; font-size: 1px;" class="width_14">
+                                          </td>
+                                          <td>
+                                            <table width="100%" cellpadding="0" cellspacing="0">
+                                              <tr>
+                                                <td
+                                                  style="color: #000000; font-size: 16px; font-family: Arial, sans-serif; font-weight: 700; line-height: 16px; word-wrap: break-word;">
+                                                  <a href="{{ instructor.bio_url }}"
+                                                    style="text-decoration: none; color: #000000;">{{ instructor.name
+                                                    }}</a>
+                                                </td>
+                                              </tr>
+                                              <tr height="4" style="line-height: 1px; font-size: 1px;" class="height_4">
+                                              </tr>
+                                              <tr>
+                                                <td
+                                                  style="color: #000000; font-size: 10px; font-family: Arial, sans-serif; font-weight: 700; text-transform: uppercase; line-height: 16px; word-wrap: break-word;">
+                                                  {{ instructor.organization_name }}
+                                                </td>
+                                              </tr>
+                                            </table>
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                              {% endif %}
+                              {% endfor %}
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      {% endwith %}
+
+                      {% else %}
+                      <!-- Outlook-specific simpler layout -->
+                      <!--[if mso]>
+                          <tr>
+                          <td>
+                          <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; margin: 0 auto;">
+                            {% for instructor in instructors %}
+                            {% if forloop.counter0|divisibleby:2 %}
+                            <tr>
+                            {% endif %}
+                              <td width="50%" style="padding: 10px; vertical-align: top;">
+                                <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                                 {# <tr>
+                                    <td style="padding: 10px;">
+                                      <a href="{{ instructor.bio_url }}">
+                                        <img src="{{ instructor.profile_image_url }}" alt="{{ instructor.name }}"
+                                             style="width: 100px; height: 100px; border-radius: 50%; display: block;" />
+                                      </a>
+                                    </td> 
+                                  </tr> #}
+                                  <tr>
+                                    <td style="padding: 10px;">
+                                      <a href="{{ instructor.bio_url }}" style="color: #000000; font-size: 16px; font-family: Arial, sans-serif; font-weight: 700; line-height: 16px; word-wrap: break-word;">{{ instructor.name }}</a>
+                                      <p style="color: #000000; font-size: 10px; font-family: Arial, sans-serif; font-weight: 700; text-transform: uppercase; line-height: 16px; word-wrap: break-word;">{{ instructor.organization_name }}</p>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                            {% if forloop.counter|divisibleby:2 or forloop.last %}
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                          </table>
+                          </td>
+                          </tr>
+                          <![endif]-->
+
+                      <!--[if !mso]><!-->
+                      <tr>
+                        <td>
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              {% for instructor in instructors %}
+                              <td width="250" class="width_100percent" style="width: 250px; text-align: center;">
+                                <table width="100%" cellpadding="0" cellspacing="0">
+                                  <tr height="24" style="line-height: 1px; font-size: 1px;"
+                                    class="height_24 hide-for-small"></tr>
+                                  <tr>
+                                    <td>
+                                      <table cellpadding="0" cellspacing="0" align="center">
+                                        <tr>
+                                          <td width="100" style="width: 100px;">
+                                            <a href="{{ instructor.bio_url }}" style="text-decoration: none;">
+                                              <!-- <img width="100" height="100" class="instructor-img"
+                                                src="{{ instructor.profile_image_url }}" style="border-radius: 50%;" /> -->
+                                            </a>
+                                          </td>
+                                          <td width="14" style="line-height: 1px; font-size: 1px;" class="width_14">
+                                          </td>
+                                          <td>
+                                            <table width="100%" cellpadding="0" cellspacing="0">
+                                              <tr>
+                                                <td
+                                                  style="color: #000000; font-size: 16px; font-family: Arial, sans-serif; font-weight: 700; line-height: 16px; word-wrap: break-word;">
+                                                  <a href="{{ instructor.bio_url }}"
+                                                    style="text-decoration: none; color: #000000;">{{ instructor.name
+                                                    }}</a>
+                                                </td>
+                                              </tr>
+                                              <tr height="4" style="line-height: 1px; font-size: 1px;" class="height_4">
+                                              </tr>
+                                              <tr>
+                                                <td
+                                                  style="color: #000000; font-size: 10px; font-family: Arial, sans-serif; font-weight: 700; text-transform: uppercase; line-height: 16px; word-wrap: break-word;">
+                                                  {{ instructor.organization_name }}
+                                                </td>
+                                              </tr>
+                                            </table>
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                              {% endfor %}
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <!--<![endif]-->
+                      {% endif %}
+
+                    </table>
+                  </td>
+                  <td width="32" class="width_32"> </td>
+                </tr>
+                <tr>
+                  <td colspan="3"></td>
+                </tr>
+              </table>
+              {% endif %}
+              <!-- Full-width Section w/ Instructors Section END -->
+
+              <!-- Full-width Section w/ Goals Section -->
+              {% if goals_enabled %}
+              <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF"
+                style="width: 100%; max-width: 600px;">
+                <tr height="24" style="line-height: 1px; font-size: 1px;" class="height_24">
+                  <td colspan="3"></td>
+                </tr>
+                <tr>
+                  <td width="30" class="width_30"> </td>
+                  <td align="left" valign="top">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color: #F3F1ED; max-width: 540px; border-radius: 8px;" bgcolor="#F3F1ED"
+                      class="goals-engage-table" align="left">
+                      <tr>
+                        <td>
+                          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td>
+                                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                  <!-- Header Section -->
+                                  <tr>
+                                    <td>
+                                      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                        <tr>
+                                          <!-- Bulb/Pencil Image Column -->
+                                          <td width="172" style="padding: 0; margin: 0;" align="left" valign="top">
+                                            <table cellpadding="0" cellspacing="0" border="0"
+                                              style="margin: 0; padding: 0;">
+                                              <tr>
+                                                <td style="padding: 0; margin: 0; line-height: 0;">
+                                                  <img src="{{ bulb_pencil_icon_image }}" width="172" height="172"
+                                                    alt="Message Icon"
+                                                    style="display: block; border: 0; margin: 0; padding: 0;">
+                                                </td>
+                                              </tr>
+                                            </table>
+                                          </td>
+                                          <!-- Spacer -->
+                                          <td width="14" class="width_14" style="line-height: 1px; font-size: 14px;">
+                                          </td>
+                                          <!-- Title Column -->
+                                          <td align="left" valign="top">
+                                            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                              <tr height="32" style="line-height: 1px; font-size: 1px;"
+                                                class="height_32"></tr>
+                                              <tr>
+                                                <td
+                                                  style="color: #1F453D; font-size: 40px; font-family: Arial, sans-serif; font-weight: 900; line-height: 48px;">
+                                                  Set your learning goal
+                                                </td>
+                                              </tr>
+                                            </table>
+                                          </td>
+                                          <td width="32" class="width_32" style="line-height: 1px; font-size: 32px;">
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                  <tr height="22" style="line-height: 1px; font-size: 1px;" class="height_22"></tr>
+                                  <!-- Description Section -->
+                                  <tr>
+                                    <td>
+                                      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                        <tr>
+                                          <td width="32" class="width_32" style="line-height: 1px; font-size: 32px;">
+                                          </td>
+                                          <td
+                                            style="color: #000000; font-size: 16px; font-family: Arial, sans-serif; font-weight: 400; line-height: 24px;">
+                                            Setting a goal helps you find the motivation to keep up with coursework and
+                                            make it to the finish line. If we notice you're not quite at your goal,
+                                            we'll send you an email reminder. Set your goal today.
+                                          </td>
+                                          <td width="32" class="width_32" style="line-height: 1px; font-size: 32px;">
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                  <tr height="22" style="line-height: 1px; font-size: 1px;" class="height_22"></tr>
+
+                                  <!-- Goal Buttons - Non-Outlook -->
+                                  <!--[if !mso]><!-->
+                                  <tr>
+                                    <td>
+                                      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                        <tr>
+                                          <td>
+                                            <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                                              class="button-container">
+                                              <tr>
+                                                <!-- Casual -->
+                                                <td width="33%" class="button-cell" style="padding: 0.75rem">
+                                                  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                                                    style="background-color: #FFFFFF; border-radius: 8px; box-shadow: 0px 1px 2px rgba(0,0,0,0.15);"
+                                                    bgcolor="#FFFFFF" class="button-table">
+                                                    <tr height="12" style="line-height: 1px; font-size: 1px;"
+                                                      class="height_12">
+                                                      <td colspan="20"></td>
+                                                    </tr>
+                                                    <tr>
+                                                      <td width="12" class="width_12"> </td>
+                                                      <td width="33" align="left" valign="middle">
+                                                        <img src="{{ pink_flag_icon_image }}" width="33" height="33"
+                                                          alt="Casual Icon" style="display: block; border: 0;">
+                                                      </td>
+                                                      <td width="14" class="width_14"
+                                                        style="line-height: 1px; font-size: 14px;"> </td>
+                                                      <td align="left" valign="middle">
+                                                        <a href="{{ learning_base_url|rstrip:'/' }}/course/{{ course_run_key }}/home?weekly_goal=1"
+                                                          style="text-decoration: none; color: #000000; display: block;">
+                                                          <table cellpadding="0" cellspacing="0" border="0">
+                                                            <tr>
+                                                              <td
+                                                                style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 700; line-height: 14px; text-decoration: none;">
+                                                                Casual<br>
+                                                              </td>
+                                                            </tr>
+                                                            <tr>
+                                                              <td
+                                                                style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 500; line-height: 14px; text-decoration: none;">
+                                                                1 day a week
+                                                              </td>
+                                                            </tr>
+                                                          </table>
+                                                        </a>
+                                                      </td>
+                                                      <td width="12" class="width_12"
+                                                        style="line-height: 1px; font-size: 12px;"> </td>
+                                                    </tr>
+                                                    <tr height="12" style="line-height: 1px; font-size: 1px;"
+                                                      class="height_12"></tr>
+                                                  </table>
+                                                </td>
+                                                <!-- Regular -->
+                                                <td width="33%" class="button-cell" style="padding: 0.75rem">
+                                                  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                                                    style="background-color: #FFFFFF; border-radius: 8px; box-shadow: 0px 1px 2px rgba(0,0,0,0.15);"
+                                                    bgcolor="#FFFFFF" class="button-table">
+                                                    <tr height="12" style="line-height: 1px; font-size: 1px;"
+                                                      class="height_12">
+                                                      <td colspan="20"></td>
+                                                    </tr>
+                                                    <tr>
+                                                      <td width="12" class="width_12"> </td>
+                                                      <td width="33" align="left" valign="middle">
+                                                        <img src="{{ black_flag_icon_image }}" width="33" height="33"
+                                                          alt="Regular Icon" style="display: block; border: 0;">
+                                                      </td>
+                                                      <td width="12" class="width_12"
+                                                        style="line-height: 1px; font-size: 12px;"> </td>
+                                                      <td align="left" valign="middle">
+                                                        <a href="{{ learning_base_url|rstrip:'/' }}/course/{{ course_run_key }}/home?weekly_goal=3"
+                                                          style="text-decoration: none; color: #000000; display: block;">
+                                                          <table cellpadding="0" cellspacing="0" border="0">
+                                                            <tr>
+                                                              <td
+                                                                style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 700; line-height: 14px; text-decoration: none;">
+                                                                Regular<br>
+                                                              </td>
+                                                            </tr>
+                                                            <tr>
+                                                              <td
+                                                                style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 500; line-height: 14px; text-decoration: none;">
+                                                                3 days a week
+                                                              </td>
+                                                            </tr>
+                                                          </table>
+                                                        </a>
+                                                      </td>
+                                                      <td width="12" class="width_12"
+                                                        style="line-height: 1px; font-size: 12px;"> </td>
+                                                    </tr>
+                                                    <tr height="12" style="line-height: 1px; font-size: 1px;"
+                                                      class="height_12"></tr>
+                                                  </table>
+                                                </td>
+                                                <!-- Intense -->
+                                                <td width="33%" class="button-cell" style="padding: 0.75rem">
+                                                  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                                                    style="background-color: #FFFFFF; border-radius: 8px; box-shadow: 0px 1px 2px rgba(0,0,0,0.15);"
+                                                    bgcolor="#FFFFFF" class="button-table">
+                                                    <tr height="12" style="line-height: 1px; font-size: 1px;"
+                                                      class="height_12">
+                                                      <td colspan="20"></td>
+                                                    </tr>
+                                                    <tr>
+                                                      <td width="12" class="width_12"> </td>
+                                                      <td width="33" align="left" valign="middle">
+                                                        <img src="{{ orange_flag_image }}" width="33" height="33"
+                                                          alt="Intense Icon" style="display: block; border: 0;">
+                                                      </td>
+                                                      <td width="12" class="width_12"
+                                                        style="line-height: 1px; font-size: 12px;"> </td>
+                                                      <td align="left" valign="middle">
+                                                        <a href="{{ learning_base_url|rstrip:'/' }}/course/{{ course_run_key }}/home?weekly_goal=5"
+                                                          style="text-decoration: none; color: #000000; display: block;">
+                                                          <table cellpadding="0" cellspacing="0" border="0">
+                                                            <tr>
+                                                              <td
+                                                                style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 700; line-height: 14px; text-decoration: none;">
+                                                                Intense<br>
+                                                              </td>
+                                                            </tr>
+                                                            <tr>
+                                                              <td
+                                                                style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 500; line-height: 14px; text-decoration: none;">
+                                                                5 days a week
+                                                              </td>
+                                                            </tr>
+                                                          </table>
+                                                        </a>
+                                                      </td>
+                                                      <td width="12" class="width_12"
+                                                        style="line-height: 1px; font-size: 12px;"> </td>
+                                                    </tr>
+                                                    <tr height="12" style="line-height: 1px; font-size: 1px;"
+                                                      class="height_12"></tr>
+                                                  </table>
+                                                </td>
+                                              </tr>
+                                            </table>
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                  <!--<![endif]-->
+
+                                  <!-- Goal Buttons - Outlook specific -->
+                                  <!--[if mso]>
+                                    <tr>
+                                      <td>
+                                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                          <tr>
+                                            <td width="32" class="width_32" style="line-height: 1px; font-size: 32px;"> </td>
+                                            <td>
+                                              <table width="100%" cellpadding="0" cellspacing="0" border="0" class="button-container">
+                                                <tr>
+                                                  <td width="33%" class="button-cell">
+                                                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FFFFFF; border-radius: 8px;" bgcolor="#FFFFFF" class="button-table">
+                                                      <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12"><td colspan="20"></td></tr>
+                                                      <tr>
+                                                        <td width="12" class="width_12"> </td>
+                                                        <td width="33" align="left" valign="middle">
+                                                          <img src="{{ pink_flag_icon_image }}" width="33" height="33" alt="Casual Icon" style="display: block; border: 0;">
+                                                        </td>
+                                                        <td width="14" class="width_14" style="line-height: 1px; font-size: 14px;"> </td>
+                                                        <td align="left" valign="middle">
+                                                          <a href="{{ learning_base_url|rstrip:'/' }}/course/{{ course_run_key }}/home?weekly_goal=1" style="text-decoration: none; color: #000000; display: block;">
+                                                            <p style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 700; line-height: 14px; margin: 0;">Casual</p>
+                                                            <p style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 500; line-height: 14px; margin: 0;">1 day a week</p>
+                                                          </a>
+                                                        </td>
+                                                        <td width="12" class="width_12" style="line-height: 1px; font-size: 12px;"> </td>
+                                                      </tr>
+                                                      <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12"></tr>
+                                                    </table>
+                                                  </td>
+                                                  <td width="18" class="width_18" style="line-height: 1px; font-size: 18px; min-width: 18px;"> </td>
+                                                  <td width="33%" class="button-cell">
+                                                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FFFFFF; border-radius: 8px;" bgcolor="#FFFFFF" class="button-table">
+                                                      <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12"><td colspan="20"></td></tr>
+                                                      <tr>
+                                                        <td width="12" class="width_12"> </td>
+                                                        <td width="33" align="left" valign="middle">
+                                                          <img src="{{ black_flag_icon_image }}" width="33" height="33" alt="Regular Icon" style="display: block; border: 0;">
+                                                        </td>
+                                                        <td width="12" class="width_12" style="line-height: 1px; font-size: 12px;"> </td>
+                                                        <td align="left" valign="middle">
+                                                          <a href="{{ learning_base_url|rstrip:'/' }}/course/{{ course_run_key }}/home?weekly_goal=3" style="text-decoration: none; color: #000000; display: block;">
+                                                            <p style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 700; line-height: 14px; margin: 0;">Regular</p>
+                                                            <p style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 500; line-height: 14px; margin: 0;">3 days a week</p>
+                                                          </a>
+                                                        </td>
+                                                        <td width="12" class="width_12" style="line-height: 1px; font-size: 12px;"> </td>
+                                                      </tr>
+                                                      <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12"></tr>
+                                                    </table>
+                                                  </td>
+                                                  <td width="18" class="width_18" style="line-height: 1px; font-size: 18px; min-width: 18px;"> </td>
+                                                  <td width="33%" class="button-cell">
+                                                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FFFFFF; border-radius: 8px;" bgcolor="#FFFFFF" class="button-table">
+                                                      <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12"><td colspan="20"></td></tr>
+                                                      <tr>
+                                                        <td width="12" class="width_12"> </td>
+                                                        <td width="33" align="left" valign="middle">
+                                                          <img src="{{ orange_flag_image }}" width="33" height="33" alt="Intense Icon" style="display: block; border: 0;">
+                                                        </td>
+                                                        <td width="12" class="width_12" style="line-height: 1px; font-size: 12px;"> </td>
+                                                        <td align="left" valign="middle">
+                                                          <a href="{{ learning_base_url|rstrip:'/' }}/course/{{ course_run_key }}/home?weekly_goal=5" style="text-decoration: none; color: #000000; display: block;">
+                                                            <p style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 700; line-height: 14px; margin: 0;">Intense</p>
+                                                            <p style="color: #000000; font-size: 12px; font-family: Arial, sans-serif; font-weight: 500; line-height: 14px; margin: 0;">5 days a week</p>
+                                                          </a>
+                                                        </td>
+                                                        <td width="12" class="width_12" style="line-height: 1px; font-size: 12px;"> </td>
+                                                      </tr>
+                                                      <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12"></tr>
+                                                    </table>
+                                                  </td>
+                                                </tr>
+                                              </table>
+                                            </td>
+                                            <td width="32" class="width_32" style="line-height: 1px; font-size: 32px;"> </td>
+                                          </tr>
+                                        </table>
+                                      </td>
+                                    </tr>
+                                    <![endif]-->
+
+                                  <tr height="32" style="line-height: 1px; font-size: 1px;" class="height_32"></tr>
+                                </table>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              {% endif %}
+              <!-- Full-width Section w/ Goals Section END -->
+
+              <!-- Full-width Section w/ Schedule Section -->
+
+              <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF"
+                style="background-color: #ffffff; border-collapse: collapse; width: 100%; max-width: 600px;">
+                <tr height="24" style="line-height: 1px; font-size: 1px;" class="height_24">
+                  <td colspan="5"></td>
+                </tr>
+                <tr>
+                  <td width="30" style="width: 30px;"> </td>
+                  <td align="center">
+                    <table width="100%" cellpadding="0" cellspacing="0" class="main-section" style="max-width: 600px;">
+                      <tr>
+                        <!-- Left column: heading + button -->
+                        <td width="235" style="width: 235px; max-width: 235px;" valign="top" class="td-display-block">
+                          <table width="235" cellpadding="0" cellspacing="0" style="width: 235px; max-width: 235px;">
+                            <tr>
+                              <td
+                                style="color: #1F453D; font-size: 26px; font-family: Arial; font-weight: 700; line-height: 28px; word-wrap: break-word;">
+                                Stay on track with your personalized course schedule
+                              </td>
+                            </tr>
+                            <tr height="16" style="line-height: 1px; font-size: 1px;"></tr>
+                            <tr>
+                              <td
+                                style="color: black; font-size: 16px; font-family: Arial; font-weight: 400; line-height: 24px; word-wrap: break-word;">
+                                Track important dates, assignments, and more.
+                              </td>
+                            </tr>
+                            <tr height="16" style="line-height: 1px; font-size: 1px;"></tr>
+                            <tr>
+                              <td>
+                                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                  <tr height="20" style="line-height: 1px; font-size: 1px;" class="height_20"></tr>
+                                  <tr>
+                                    <td
+                                      style="background:#ED5C13; border-radius:45px; text-align:center; width:97px; height:25px;">
+                                      <a href="{{ learning_base_url }}/course/{{ course_run_key }}/home?start_course=1"
+                                        style="font-size:10px; font-weight:500; color:white; text-decoration:none; display:inline-block; line-height:25px;">View
+                                        my schedule</a>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                        <!-- Right column: date blocks -->
+                        <td width="202" valign="top" style="width: 202px;" class="td-display-block">
+                          <table width="100%" cellpadding="0" cellspacing="0"
+                            style="padding: 22px 51px 19px 27px; border-radius: 8px;">
+
+                            <!-- Past Due -->
+                            {% if course_date_blocks|length > 0 and course_date_blocks.0.due_date %}
+                            <tr>
+                              <td
+                                style="color: black; font-size: 12px; font-family: Arial; font-weight: 700; line-height: 30px; word-wrap: break-word;">
+                                Past due</td>
+                            </tr>
+                            <tr height="8" style="line-height: 1px; font-size: 1px;" class="height_8"></tr>
+                            <tr>
+                              <td>
+                                <table width="100%" cellpadding="0" cellspacing="0">
+                                  <tr>
+                                    <td width="8" style="width: 8px;">
+                                      <img src="{{ white_line_image }}" alt="Vertical Line" width="8" height="28">
+                                    </td>
+                                    <td width="12" class="width_12"> </td>
+                                    <td>
+                                      <table width="100%" cellpadding="0" cellspacing="0">
+                                        <tr>
+                                          <td
+                                            style="color: #737373; font-size: 8px; font-family: Arial, sans-serif; font-weight: 500; line-height: 10px; word-wrap: break-word;">
+                                            {{ course_date_blocks.0.due_date }}
+                                          </td>
+                                        </tr>
+                                        <tr height="4" style="line-height: 1px; font-size: 1px;" class="height_4"></tr>
+                                        <tr>
+                                          <td
+                                            style="color: black; font-size: 10px; font-family: Arial; font-weight: 700; line-height: 10px; word-wrap: break-word;">
+                                            {{ course_date_blocks.0.title }}
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                            </tr>
+                            <tr height="20" style="line-height: 1px; font-size: 1px;" class="height_20"></tr>
+                            {% endif %}
+
+                            <!-- Today -->
+                            <tr>
+                              <td
+                                style="color: black; font-size: 12px; font-family: Arial; font-weight: 700; line-height: 30px; word-wrap: break-word;">
+                                Today</td>
+                            </tr>
+                            <tr height="8" style="line-height: 1px; font-size: 1px;" class="height_8"></tr>
+                            <tr>
+                              <td>
+                                <table width="100%" cellpadding="0" cellspacing="0">
+                                  <tr>
+                                    <td width="8" style="width: 8px;">
+                                      <img src="{{ orange_line_image }}" alt="Vertical Line" width="8" height="28">
+                                    </td>
+                                    <td width="12" class="width_12"> </td>
+                                    <td>
+                                      <table width="100%" cellpadding="0" cellspacing="0">
+                                        <tr>
+                                          <td
+                                            style="color: #737373; font-size: 8px; font-family: Arial, sans-serif; font-weight: 500; line-height: 10px; word-wrap: break-word;">
+                                            {% if course_date_blocks|length > 1 %}
+                                            {{ course_date_blocks.1.due_date }}
+                                            {% endif %}
+                                          </td>
+                                        </tr>
+                                        <tr height="4" style="line-height: 1px; font-size: 1px;" class="height_4"></tr>
+                                        <tr>
+                                          <td
+                                            style="color: black; font-size: 10px; font-family: Arial; font-weight: 700; line-height: 10px; word-wrap: break-word;">
+                                            {% if course_date_blocks|length > 1 and course_date_blocks.1.title %}
+                                            {{ course_date_blocks.1.title }}
+                                            {% else %}
+                                            No assignments due today
+                                            {% endif %}
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                            </tr>
+                            <tr height="20" style="line-height: 1px; font-size: 1px;" class="height_20"></tr>
+
+                            <!-- Due Next -->
+                            <tr>
+                              <td
+                                style="color: black; font-size: 12px; font-family: Arial; font-weight: 700; line-height: 30px; word-wrap: break-word;">
+                                Due next</td>
+                            </tr>
+                            <tr height="12" style="line-height: 1px; font-size: 1px;" class="height_12"></tr>
+                            <tr>
+                              <td>
+                                <table width="100%" cellpadding="0" cellspacing="0">
+                                  <tr>
+                                    <td width="8" style="width: 8px;">
+                                      <img src="{{ black_line_icon_image }}" alt="Vertical Line" width="8" height="28">
+                                    </td>
+                                    <td width="12" class="width_12"> </td>
+                                    <td>
+                                      <table width="100%" cellpadding="0" cellspacing="0">
+                                        <tr>
+                                          <td
+                                            style="color: #737373; font-size: 8px; font-family: Arial, sans-serif; font-weight: 500; line-height: 10px; word-wrap: break-word;">
+                                            {% if course_date_blocks|length > 2 and course_date_blocks.2.title %}
+                                            {{ course_date_blocks.2.due_date }}
+                                            {% endif %}
+                                          </td>
+                                        </tr>
+                                        <tr height="4" style="line-height: 1px; font-size: 1px;" class="height_4"></tr>
+                                        <tr>
+                                          <td
+                                            style="color: black; font-size: 10px; font-family: Arial; font-weight: 700; line-height: 10px; word-wrap: break-word;">
+                                            {% if course_date_blocks|length > 2 and course_date_blocks.2.title %}
+                                            {{ course_date_blocks.2.title }}
+                                            {% else %}
+                                            No upcoming assignments
+                                            {% endif %}
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                            </tr>
+
+                          </table>
+                        </td>
+                        <td width="30" style="width: 30px;"> </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              {% endif %}
+              <!-- Full-width Section w/ Schedule Section END -->
+
+              <!-- Full-width Section w/ Community section -->
+              <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF"
+                style="width: 100%; max-width: 600px;">
+                <tr height="24" style="line-height: 1px; font-size: 1px;" class="height_24">
+                  <td colspan="3"></td>
+                </tr>
+                <tr>
+                  <td width="30" class="width_30"> </td>
+                  <td align="left" valign="top">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color: #F3F1ED; max-width: 540px; border-radius: 8px;" bgcolor="#F3F1ED"
+                      class="goals-engage-table" align="left">
+                      <tr>
+                        <td>
+                          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr height="20" style="line-height: 1px; font-size: 1px;" class="height_20"></tr>
+                            <tr>
+                              <td width="30" style="line-height: 1px; font-size: 30px;" class="width_30"> </td>
+                              <td>
+                                <table width="100%" cellpadding="0" cellspacing="0">
+                                  <tr>
+                                    <!-- Left content -->
+                                    <td style="vertical-align: top;">
+                                      <table width="100%" cellpadding="0" cellspacing="0">
+                                        <tr>
+                                          <td
+                                            style="color: #1F453D; font-size: 20px; font-family: Arial; font-weight: 700; line-height: 30px; word-wrap: break-word;">
+                                            Engage with a global community
+                                          </td>
+                                        </tr>
+                                        <tr height="18" style="line-height: 1px; font-size: 1px;" class="height_18">
+                                        </tr>
+                                        <tr>
+                                          <td>
+                                            <table width="100%" cellpadding="0" cellspacing="0">
+                                              <tr>
+                                                <td
+                                                  style="color: black; font-size: 16px; font-family: Arial; font-weight: 400; line-height: 24px; word-wrap: break-word;">
+                                                  Meet the
+                                                </td>
+                                                <td width="4"></td>
+                                                <td
+                                                  style="color: black; font-size: 16px; font-family: Arial; font-weight: 700; line-height: 24px; word-wrap: break-word;">
+                                                  {% if learners_count %}{{ learners_count }}{% else %}fellow{% endif %}
+                                                </td>
+                                                <td width="4"></td>
+                                                <td
+                                                  style="color: black; font-size: 16px; font-family: Arial; font-weight: 400; line-height: 24px; word-wrap: break-word;">
+                                                  learners in your course
+                                                </td>
+                                              </tr>
+                                            </table>
+                                          </td>
+                                        </tr>
+                                        <tr height="18" style="line-height: 1px; font-size: 1px;" class="height_18">
+                                        </tr>
+                                        <tr>
+                                          <td>
+                                            <a href="{{ lms_base_url|rstrip:'/' }}/courses/{{ course_run_key }}/discussion/forum/#posts"
+                                              style="color: #ED5C13; font-size: 12px; font-family: Arial; font-weight: 500; text-decoration: underline; line-height: 12.36px; word-wrap: break-word;">
+                                              Join the discussion
+                                            </a>
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                    <!-- Gap -->
+                                    <td width="29" style="line-height: 1px; font-size: 29px;"> </td>
+                                    <!-- Community image -->
+                                    <td width="137" style="vertical-align: top;" class="image-cell">
+                                      <table width="137" height="80" cellpadding="0" cellspacing="0"
+                                        class="image-table">
+                                        <tr>
+                                          <td>
+                                            <img width="136" height="80" src="{{ course_cards_icon_image }}" alt="Community illustration"
+                                              style="display: block; border: 0;" class="community-image" />
+                                          </td>
+                                        </tr>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                              <td width="30" style="line-height: 1px; font-size: 30px;" class="width_30"> </td>
+                            </tr>
+                            <tr height="20" style="line-height: 1px; font-size: 1px;" class="height_20"></tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td width="30" class="width_30" style="line-height: 1px; font-size: 30px;"> </td>
+                </tr>
+                <tr height="24" style="line-height: 1px; font-size: 1px;" class="height_24"></tr>
+              </table>
+              <!-- Full-width Section w/ Community section end -->
+
+              <!-- Footer start -->
+              {% include "emails/partials/footer_en.html" %}
+              <!-- Footer end -->
+
+            </td>
+          </tr>
+        </table>
+        <!-- Container table end -->
+      </td>
+    </tr>
+  </table>
+  <!-- Background table end -->
+</body>
+
+</html>
