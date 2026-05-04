@@ -35,7 +35,7 @@ class TestEdXSAMLIdentityProvider(SAMLTestCase):
 
     def test_get_user_details(self):
         """ test get_attr and get_user_details of EdXSAMLIdentityProvider"""
-        edx_saml_identity_provider = EdXSAMLIdentityProvider('demo', **mock_conf)
+        edx_saml_identity_provider = EdXSAMLIdentityProvider(mock.Mock(), 'demo', **mock_conf)
         assert edx_saml_identity_provider.get_user_details(mock_attributes) == expected_user_details
 
 

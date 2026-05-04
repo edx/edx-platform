@@ -2,7 +2,8 @@
 from datetime import datetime
 
 from bson.objectid import ObjectId
-from django.test import TestCase
+from django.db import connection
+from django.test import TestCase, skipUnlessDBFeature
 from opaque_keys.edx.keys import CourseKey
 
 from common.djangoapps.split_modulestore_django.models import SplitModulestoreCourseIndex
@@ -12,6 +13,7 @@ from xmodule.modulestore import ModuleStoreEnum  # lint-amnesty, pylint: disable
 class SplitModulestoreCourseIndexTest(TestCase):
     """ Unit tests for SplitModulestoreCourseIndex """
 
+    @skipUnlessDBFeature('supports_collation_on_charfield')
     def test_course_id_case_sensitive(self):
         """
         Make sure the course_id column is case sensitive.
@@ -23,6 +25,8 @@ class SplitModulestoreCourseIndexTest(TestCase):
         sensitive too. The system still tries to prevent creation of courses that differ only by course (that hasn't
         changed), but now the MySQL version won't break if that has somehow happened.
         """
+        if connection.vendor != 'mysql':
+            self.skipTest("Requires MySQL utf8_bin case-sensitive collation")
         course_index_common = {
             "course": "TL101",
             "run": "2015",

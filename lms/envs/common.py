@@ -3706,7 +3706,7 @@ RECAPTCHA_SITE_KEYS = {
 RECAPTCHA_PROJECT_ID = None
 
 # .. setting_name: OPEN_EDX_FILTERS_CONFIG
-# .. setting_default: {}
+# .. setting_default: {"org.openedx.learning.account.settings.read_only_fields.requested.v1": {"fail_silently": true, "pipeline": ["enterprise.filters.accounts.AccountSettingsReadOnlyFieldsStep"]}}
 # .. setting_description: Configuration dict for openedx-filters pipeline steps.
 #    Keys are filter type strings; values are dicts with 'fail_silently' (bool) and
 #    'pipeline' (list of dotted-path strings to PipelineStep subclasses).

@@ -30,7 +30,8 @@ def test_get_submission_params(xqueue_service):
     """
     header = json.dumps({
         'lms_callback_url': 'http://example.com/callback',
-        'queue_name': 'default'
+        'queue_name': 'default',
+        'lms_key': 'test_queue_key'
     })
     payload = json.dumps({
         'student_info': json.dumps({'anonymous_student_id': 'student_id'}),
@@ -38,7 +39,7 @@ def test_get_submission_params(xqueue_service):
         'grader_payload': json.dumps({'grader': 'test.py'})
     })
 
-    student_item, student_answer, queue_name, grader_file_name, points_possible = (
+    student_item, student_answer, queue_name, queue_key, grader_file_name, points_possible = (
         xqueue_service.get_submission_params(header, payload)
     )
 
@@ -50,6 +51,7 @@ def test_get_submission_params(xqueue_service):
     }
     assert student_answer == 'student_answer'
     assert queue_name == 'default'
+    assert queue_key == 'test_queue_key'
     assert grader_file_name == 'test.py'
     assert points_possible == 10
 
@@ -65,6 +67,7 @@ def test_send_to_submission(mock_create_external_grader_detail, xqueue_service):
             'http://example.com/courses/course-v1:test_org+test_course+test_run/xqueue/5/'
             'block-v1:test_org+test_course+test_run+type@problem+block@ExampleProblem/'
         ),
+        'lms_key': 'test_queue_key'
     })
     body = json.dumps({
         'student_info': json.dumps({'anonymous_student_id': 'student_id'}),
@@ -87,6 +90,7 @@ def test_send_to_submission(mock_create_external_grader_detail, xqueue_service):
         },
         'student_answer',
         queue_name='default',
+        queue_key='test_queue_key',
         grader_file_name='test.py',
         points_possible=10,
         files=None

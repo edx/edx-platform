@@ -287,21 +287,23 @@ class EdXSAMLIdentityProvider(SAMLIdentityProvider):
         })
         return details
 
-    def get_attr(self, attributes, conf_key, default_attribute):
+    def get_attr(self, attributes, conf_key, default_attributes, *, validate_defaults=False):
         """
         Internal helper method.
-        Get the attribute 'default_attribute' out of the attributes,
+        Get the attribute 'default_attributes' out of the attributes,
         unless self.conf[conf_key] overrides the default by specifying
         another attribute to use.
         """
-        key = self.conf.get(conf_key, default_attribute)
-        if key in attributes:
+        key = self.conf.get(conf_key)
+        if key is None:
+            key = next((attr for attr in default_attributes if attr in attributes), None)
+        if key is not None and key in attributes:
             try:
                 return attributes[key][0]
             except IndexError:
                 log.warning('[THIRD_PARTY_AUTH] SAML attribute value not found. '
                             'SamlAttribute: {attribute}'.format(attribute=key))
-        return self.conf['attr_defaults'].get(conf_key) or None
+        return self.conf.get('attr_defaults', {}).get(conf_key) or None
 
     @property
     def saml_sp_configuration(self):

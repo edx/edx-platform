@@ -50,6 +50,7 @@ class XQueueInterfaceSubmission:
         payload = self._parse_json(payload, "payload")
 
         queue_name = header.get('queue_name', 'default')
+        queue_key = header.get('lms_key', '')
 
         if not self.block:
             raise GetSubmissionParamsError()
@@ -83,7 +84,7 @@ class XQueueInterfaceSubmission:
             'student_id': student_id
         }
 
-        return student_dict, student_answer, queue_name, grader_file_name, points_possible
+        return student_dict, student_answer, queue_name, queue_key, grader_file_name, points_possible
 
     def send_to_submission(self, header, body, files_to_upload=None):
         """
@@ -91,13 +92,14 @@ class XQueueInterfaceSubmission:
         """
         try:
             from submissions.api import create_external_grader_detail
-            student_item, answer, queue_name, grader_file_name, points_possible = (
+            student_item, answer, queue_name, queue_key, grader_file_name, points_possible = (
                 self.get_submission_params(header, body)
             )
             return create_external_grader_detail(
                 student_item,
                 answer,
                 queue_name=queue_name,
+                queue_key=queue_key,
                 grader_file_name=grader_file_name,
                 points_possible=points_possible,
                 files=files_to_upload

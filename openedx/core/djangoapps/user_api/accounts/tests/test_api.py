@@ -17,6 +17,7 @@ from django.test import TestCase
 from django.test.client import RequestFactory
 from django.urls import reverse
 from pytz import UTC
+from social_django.models import UserSocialAuth
 
 from common.djangoapps.student.models import (
     AccountRecovery,
