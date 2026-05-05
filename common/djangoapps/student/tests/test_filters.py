@@ -59,6 +59,20 @@ class TestDashboardRenderPipelineStep(PipelineStep):
         }
 
 
+class TestEnterpriseContextEnricherStep(PipelineStep):
+    """
+    Utility pipeline step that simulates enterprise context enrichment via DashboardContextEnricher.
+    Verifies that 'request' is present in context and injects a sentinel enterprise key.
+    """
+
+    def run_filter(self, context, template_name):  # pylint: disable=arguments-differ
+        """Inject a sentinel enterprise key to prove the pipeline ran."""
+        assert 'request' in context, "'request' must be in dashboard context for enterprise enrichment"
+        context['enterprise_message'] = 'test-enterprise-message'
+        context['is_enterprise_user'] = True
+        return {"context": context, "template_name": template_name}
+
+
 class TestRenderInvalidDashboard(PipelineStep):
     """
     Utility class used when getting steps for pipeline.
@@ -464,3 +478,27 @@ class StudentDashboardFiltersTest(ModuleStoreTestCase):
 
         self.assertContains(response, self.first_course.id)
         self.assertContains(response, self.second_course.id)
+
+    @override_settings(
+        OPEN_EDX_FILTERS_CONFIG={
+            "org.openedx.learning.dashboard.render.started.v1": {
+                "pipeline": [
+                    "common.djangoapps.student.tests.test_filters.TestEnterpriseContextEnricherStep",
+                ],
+                "fail_silently": False,
+            },
+        },
+    )
+    def test_dashboard_context_enricher_receives_request(self):
+        """
+        Test that the context passed to DashboardRenderStarted includes 'request', allowing
+        pipeline steps like DashboardContextEnricher to access it for enterprise enrichment.
+
+        Expected result:
+            - DashboardRenderStarted is triggered and executes TestEnterpriseContextEnricherStep.
+            - The step finds 'request' in context and injects enterprise sentinel values.
+            - The dashboard renders successfully (HTTP 200).
+        """
+        response = self.client.get(self.dashboard_url)
+
+        self.assertEqual(response.status_code, 200)

@@ -48,11 +48,6 @@ from openedx.core.djangoapps.util.maintenance_banner import add_maintenance_bann
 from openedx.core.djangolib.markup import HTML, Text
 from openedx.features.content_type_gating.models import ContentTypeGatingConfig
 from openedx.features.course_duration_limits.access import get_user_course_duration, get_user_course_expiration_date
-from openedx.features.enterprise_support.api import (
-    get_dashboard_consent_notification,
-    get_enterprise_learner_portal_context,
-)
-from openedx.features.enterprise_support.utils import is_enterprise_learner
 
 from common.djangoapps.student.api import COURSE_DASHBOARD_PLUGIN_VIEW_NAME
 from common.djangoapps.student.helpers import cert_info, check_verify_status_by_course, get_resume_urls_for_enrollments
@@ -617,8 +612,6 @@ def student_dashboard(request):  # lint-amnesty, pylint: disable=too-many-statem
             link_end=HTML("</a>"),
         )
 
-    enterprise_message = get_dashboard_consent_notification(request, user, course_enrollments)
-
     recovery_email_message = recovery_email_activation_message = None
     if is_secondary_email_feature_enabled():
         try:
@@ -799,7 +792,7 @@ def student_dashboard(request):  # lint-amnesty, pylint: disable=too-many-statem
     context = {
         'urls': urls,
         'programs_data': programs_data,
-        'enterprise_message': enterprise_message,
+        'request': request,
         'consent_required_courses': consent_required_courses,
         'enrollment_message': enrollment_message,
         'redirect_message': Text(redirect_message),
@@ -850,13 +843,7 @@ def student_dashboard(request):  # lint-amnesty, pylint: disable=too-many-statem
         'course_info': get_dashboard_course_info(user, course_enrollments),
         # TODO START: clean up as part of REVEM-199 (END)
         'disable_unenrollment': disable_unenrollment,
-        # TODO: clean when experiment(Merchandise 2U LOBs - Dashboard) would be stop. [VAN-1097]
-        'is_enterprise_user': is_enterprise_learner(user),
     }
-
-    # Include enterprise learner portal metadata and messaging
-    enterprise_learner_portal_context = get_enterprise_learner_portal_context(request)
-    context.update(enterprise_learner_portal_context)
 
     context_from_plugins = get_plugins_view_context(
         ProjectType.LMS,

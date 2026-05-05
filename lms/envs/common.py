@@ -3717,3 +3717,15 @@ SSL_AUTH_EMAIL_DOMAIN = "MIT.EDU"
 SSL_AUTH_DN_FORMAT_STRING = (
     "/C=US/ST=Massachusetts/O=Massachusetts Institute of Technology/OU=Client CA v1/CN={0}/emailAddress={1}"
 )
+
+# .. setting_name: OPEN_EDX_FILTERS_CONFIG
+# .. setting_default: {}
+# .. setting_description: Configuration dict for openedx-filters pipeline steps.
+#    Keys are filter type strings; values are dicts with 'fail_silently' (bool) and
+#    'pipeline' (list of dotted-path strings to PipelineStep subclasses).
+OPEN_EDX_FILTERS_CONFIG = {
+    "org.openedx.learning.dashboard.render.started.v1": {
+        "fail_silently": True,
+        "pipeline": [],
+    },
+}
