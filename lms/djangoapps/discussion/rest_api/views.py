@@ -38,7 +38,13 @@ from lms.djangoapps.discussion.django_comment_client.utils import (
     get_group_id_for_comments_service,
 )
 from lms.djangoapps.discussion.rate_limit import is_content_creation_rate_limited
-from lms.djangoapps.discussion.rest_api.permissions import IsAllowedToBulkDelete, IsAllowedToRestore
+from lms.djangoapps.discussion.rest_api.permissions import (
+    IsAllowedToBulkDelete,
+    IsAllowedToRestore,
+    IsStaffOrAdmin,
+    IsStaffOrCourseTeamOrEnrolled,
+    can_take_action_on_spam,
+)
 from lms.djangoapps.discussion.rest_api.tasks import (
     delete_course_post_for_user,
     restore_course_post_for_user,
@@ -103,13 +109,16 @@ from ..rest_api.forms import (
     UserCommentListGetForm,
     UserOrdering,
 )
-from ..rest_api.permissions import IsStaffOrAdmin, IsStaffOrCourseTeamOrEnrolled
 from ..rest_api.serializers import (
     CourseMetadataSerailizer,
     DiscussionRolesListSerializer,
     DiscussionRolesSerializer,
     DiscussionTopicSerializerV2,
     TopicOrdering,
+)
+from common.djangoapps.student.roles import GlobalStaff
+from openedx.core.djangoapps.django_comment_common.models import (
+    FORUM_ROLE_ADMINISTRATOR,
 )
 from .utils import (
     create_blocks_params,
@@ -2439,30 +2448,44 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
         Check if user has permission to ban at the specified scope.
 
         Returns Response object on permission denied, None if permitted.
+
+        Course-level bans: Discussion Admin, Discussion Moderator, Global Staff
+        Org-level bans: Discussion Admin, Global Staff (NOT Moderators)
         """
-        from lms.djangoapps.discussion.rest_api.permissions import can_take_action_on_spam
-        from common.djangoapps.student.roles import GlobalStaff
-
-        if ban_scope == 'course':
-            if not can_take_action_on_spam(request.user, course_key):
-                return Response(
-                    {'error': 'You do not have permission to ban users in this course'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        else:
-            if not (GlobalStaff().has_user(request.user) or request.user.is_staff):
-                return Response(
-                    {'error': 'Organization-level bans require global staff permissions'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-
+        # Feature flag check first (fail fast)
         if not ENABLE_DISCUSSION_BAN.is_enabled(course_key):
             return Response(
                 {'error': 'Discussion ban feature is not enabled for this course'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        return None
+        # Course-level permissions
+        if ban_scope == 'course':
+            if not can_take_action_on_spam(request.user, course_key):
+                return Response(
+                    {'error': 'You do not have permission to ban users in this course'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            return None
+
+        # Organization-level permissions
+        # Allow: Global Staff, Discussion Admins ONLY (NOT Moderators)
+        if GlobalStaff().has_user(request.user):
+            return None
+
+        if Role.objects.filter(
+            users=request.user,
+            course_id=course_key,
+            name=FORUM_ROLE_ADMINISTRATOR
+        ).exists():
+            return None
+
+        return Response(
+            {
+                'error': 'Organization-level bans require Discussion Admin or Global Staff permissions'
+            },
+            status=status.HTTP_403_FORBIDDEN
+        )
 
     def _get_or_create_ban(self, user, course_key, ban_scope, reason, request):
         """
@@ -2531,7 +2554,7 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
             }
             ```
 
-            Organization-level ban (requires global staff):
+            Organization-level ban (requires global staff, discussion admin):
             ```json
             {
                 "username": "spammer123",
@@ -2555,7 +2578,8 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
 
             * Creates ban without deleting existing posts
             * Course-level bans require course moderation permissions
-            * Organization-level bans require global staff permissions
+              (Discussion Admin, Discussion Moderator, Global Staff)
+            * Organization-level bans require Discussion Admin, Global Staff permissions
             * Reactivates existing inactive bans if found
             * All ban actions are logged in ModerationAuditLog
         """
@@ -2747,7 +2771,8 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
 
             * Deactivates the ban without deleting the record
             * Course-level unbans require course moderation permissions
-            * Organization-level unbans require global staff permissions
+              (Discussion Admin, Discussion Moderator, Global Staff)
+            * Organization-level unbans require Discussion Admin, Global Staff permissions
             * All unban actions are logged in ModerationAuditLog
         """
         from forum import api as forum_api
@@ -3113,7 +3138,6 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
             * New bans of staff are prevented by validation in ban endpoints
         """
         from forum import api as forum_api
-        from lms.djangoapps.discussion.rest_api.permissions import can_take_action_on_spam
 
         _set_moderation_trace_context(
             request,
@@ -3268,7 +3292,6 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
             * All unban actions are logged in ModerationAuditLog
         """
         from forum import api as forum_api
-        from lms.djangoapps.discussion.rest_api.permissions import can_take_action_on_spam
 
         # Get ban using forum API
         try:
@@ -3298,9 +3321,6 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
                     {'error': f'Invalid course_id: {course_id}'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-
-        # Import dependencies
-        from common.djangoapps.student.roles import GlobalStaff
 
         # Permission check: depends on ban type and what user is trying to do
         ban_course_id = ban.get('course_id')
