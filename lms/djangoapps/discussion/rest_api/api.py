@@ -146,7 +146,6 @@ from .utils import (
     get_usernames_from_search_string,
     is_captcha_enabled,
     send_signal_after_commit,
-    set_attribute,
     is_posting_allowed,
 )
 
@@ -1449,7 +1448,6 @@ def get_learner_active_thread_list(request, course_key, query_params):
 
     try:
         threads, page, num_pages = comment_client_user.active_threads(query_params)
-        threads = set_attribute(threads, "pinned", False)
 
         if include_muted:
             filtered_threads = threads
