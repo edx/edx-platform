@@ -747,7 +747,7 @@ edx-drf-extensions==10.6.0
     #   edxval
     #   enterprise-integrated-channels
     #   openedx-learning
-edx-enterprise==8.0.4
+edx-enterprise==8.0.6
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/doc.txt
@@ -1743,6 +1743,7 @@ python3-saml==1.16.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
+    #   edx-enterprise
 pytz==2025.2
     # via
     #   -r requirements/edx/doc.txt
