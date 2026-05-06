@@ -703,6 +703,14 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
 
         * raw_body: The thread's raw body text without any rendering applied
 
+        * author: The username of the thread's author, or None if the
+            thread is anonymous
+
+        * author_id: The user ID of the thread's author. For non-anonymous
+            threads, this is visible to all users. For anonymous threads, this
+            is always null to preserve anonymity. The backend still tracks
+            authorship internally for permission checks like can_delete.
+
         * pinned: Boolean indicating whether the thread has been pinned
 
         * closed: Boolean indicating whether the thread has been closed
@@ -1155,6 +1163,11 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
 
         * author: The username of the comment's author, or None if the
           comment is anonymous
+
+        * author_id: The user ID of the comment's author. For non-anonymous
+            comments, this is visible to all users. For anonymous comments, this
+            is always null to preserve anonymity. The backend still tracks
+            authorship internally for permission checks like can_delete.
 
         * author_label: A label indicating whether the author has a special
           role in the course, either "Staff" for moderators and

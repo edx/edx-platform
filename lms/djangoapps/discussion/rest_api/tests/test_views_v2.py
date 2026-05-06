@@ -188,6 +188,12 @@ class ThreadViewSetPartialUpdateTest(
         super().setUp()
         self.url = reverse("thread-detail", kwargs={"thread_id": "test_thread"})
 
+    def test_patch_unsupported_media_type(self):
+        """Override to add necessary test setup."""
+        self.register_get_user_response(self.user)
+        self.register_thread()
+        super().test_patch_unsupported_media_type()
+
     def test_basic(self):
         self.register_get_user_response(self.user)
         self.register_thread(
@@ -342,6 +348,7 @@ class ThreadViewSetPartialUpdateTest(
         expected_data = self.expected_thread_data(
             {
                 "author": str(thread_owner_user.username),
+                "author_id": str(thread_owner_user.id),
                 "comment_count": 1,
                 "can_delete": False,
                 "read": True,
@@ -373,6 +380,12 @@ class CommentViewSetPartialUpdateTest(
         self.register_get_user_response(self.user)
         self.url = reverse("comment-detail", kwargs={"comment_id": "test_comment"})
 
+    def test_patch_unsupported_media_type(self):
+        """Override to add necessary test setup."""
+        self.register_thread()
+        self.register_comment()
+        super().test_patch_unsupported_media_type()
+
     def expected_response_data(self, overrides=None):
         """
         create expected response data from comment update endpoint
@@ -382,6 +395,7 @@ class CommentViewSetPartialUpdateTest(
             "thread_id": "test_thread",
             "parent_id": None,
             "author": self.user.username,
+            "author_id": str(self.user.id),
             "author_label": None,
             "is_author_banned": False,
             "author_ban_scope": None,
@@ -583,6 +597,7 @@ class ThreadViewSetListTest(
                     "unread_comment_count": 3,
                     "voted": True,
                     "author": self.author.username,
+                    "author_id": str(self.author.id),
                     "editable_fields": [
                         "abuse_flagged",
                         "copy_link",
@@ -1557,6 +1572,7 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         ]
         self.add_keys = [
             {"key": "author", "value": self.author.username},
+            {"key": "author_id", "value": str(self.author.id)},
             {"key": "abuse_flagged", "value": False},
             {"key": "author_label", "value": None},
             {"key": "can_delete", "value": True},
