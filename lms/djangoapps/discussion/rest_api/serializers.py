@@ -279,16 +279,21 @@ class _ContentSerializer(serializers.Serializer):
 
         # For anonymous_to_peers posts
         if obj.get("anonymous_to_peers", False):
-            # Authors should always see their own posts as anonymous
-            if obj.get("user_id") and int(obj["user_id"]) == user_id:
-                return True
-
-            # Only moderators and global staff can see the author (not CTAs)
             is_privileged_staff = (
                 user_id in self.context["moderator_user_ids"]
                 or self.context.get("is_global_staff", False)
             )
-            return not is_privileged_staff
+
+            if is_privileged_staff:
+                # Privileged users can see all author names, including their own
+                return False
+
+            # Non-privileged authors should see their own posts as anonymous
+            if obj.get("user_id") and int(obj["user_id"]) == user_id:
+                return True
+
+            # Everyone else sees anonymous
+            return True
 
         return False
 
