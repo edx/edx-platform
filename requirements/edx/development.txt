@@ -747,7 +747,7 @@ edx-drf-extensions==10.6.0
     #   edxval
     #   enterprise-integrated-channels
     #   openedx-learning
-edx-enterprise==8.0.6
+edx-enterprise==8.0.8
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/doc.txt
