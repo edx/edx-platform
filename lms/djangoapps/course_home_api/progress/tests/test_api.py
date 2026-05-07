@@ -188,4 +188,4 @@ class ProgressApiTests(TestCase):
                 assert row['average_grade'] == expected['avg']
                 assert row['weighted_grade'] == expected['weighted']
                 assert row['has_hidden_contribution'] == expected['hidden']
-                assert row['num_droppable'] == policy['drop_count']
+                assert row['num_droppable'] == int(policy['drop_count'])
