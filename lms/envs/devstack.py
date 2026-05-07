@@ -408,7 +408,7 @@ DISCUSSION_SPAM_URLS = []
 
 ############## Docker based devstack settings #######################
 
-AUTOMATIC_AUTH_FOR_TESTING = True
+AUTOMATIC_AUTH_FOR_TESTING = False
 ENABLE_DISCUSSION_SERVICE = True
 SHOW_HEADER_LANGUAGE_SELECTOR = True
 
