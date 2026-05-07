@@ -113,14 +113,16 @@ class ForumMuteUserView(DeveloperErrorViewMixin, APIView):
             raise ValidationError(serializer.errors)
 
         course_key = CourseKey.from_string(course_id)
+        scope = data.get('scope', 'personal')
 
-        # Check self-mute and permissions
-        if request.user.id == target_user.id:
-            raise ValidationError("Users cannot mute themselves")
-
-        # For course-wide actions, user must have permissions to mute at course level
-        if not CanMuteUsers.can_mute(request.user, target_user, course_key, data.get('scope', 'personal')):
+        # Check permissions (includes self-mute validation)
+        if not CanMuteUsers.can_mute(request.user, target_user, course_key, scope):
             raise PermissionDenied("Permission denied")
+
+        # Determine privilege level for forum backend
+        # If scope is 'course', user must be privileged (verified by can_mute)
+        # If scope is 'personal', check if user has moderation privileges
+        requester_is_privileged = (scope == 'course') or _is_privileged_user(request.user, course_key)
 
         # Call forum API
         try:
@@ -128,9 +130,9 @@ class ForumMuteUserView(DeveloperErrorViewMixin, APIView):
                 muted_user_id=str(target_user.id),
                 muter_id=str(request.user.id),
                 course_id=str(course_key),
-                scope=data.get('scope', 'personal'),
+                scope=scope,
                 reason=data.get('reason', ''),
-                requester_is_privileged=_is_privileged_user(request.user, course_key)
+                requester_is_privileged=requester_is_privileged
             )
             return Response(result, status=status.HTTP_201_CREATED)
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -174,10 +176,13 @@ class ForumUnmuteUserView(DeveloperErrorViewMixin, APIView):
         if not CanMuteUsers.can_unmute(request.user, target_user, course_key, scope):
             raise PermissionDenied("Permission denied")
 
+        # Determine privilege level for forum backend
+        # If scope is 'course', user must be privileged (verified by can_unmute)
+        # If scope is 'personal', check if user has moderation privileges
+        requester_is_privileged = (scope == 'course') or _is_privileged_user(request.user, course_key)
+
         # Handle muter_id for personal unmutes
-        muter_id = None
-        if scope == 'personal':
-            muter_id = request.user.id
+        muter_id = str(request.user.id) if scope == 'personal' else None
 
         # Call forum API
         try:
@@ -186,7 +191,8 @@ class ForumUnmuteUserView(DeveloperErrorViewMixin, APIView):
                 unmuted_by_id=str(request.user.id),
                 course_id=str(course_key),
                 scope=scope,
-                muter_id=str(muter_id) if muter_id else None
+                muter_id=muter_id,
+                requester_is_privileged=requester_is_privileged
             )
             return Response(result)
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -262,13 +268,16 @@ class ForumMuteAndReportView(DeveloperErrorViewMixin, APIView):
         if not serializer.is_valid():
             raise ValidationError(serializer.errors)
 
-        # Check self-mute and permissions
-        if request.user.id == target_user.id:
-            raise ValidationError("Users cannot mute themselves")
+        scope = data.get('scope', 'personal')
 
-        # For course-wide actions, user must have permissions to mute at course level
-        if not CanMuteUsers.can_mute(request.user, target_user, course_key, data.get('scope', 'personal')):
+        # Check permissions (includes self-mute validation)
+        if not CanMuteUsers.can_mute(request.user, target_user, course_key, scope):
             raise PermissionDenied("Permission denied")
+
+        # Determine privilege level for forum backend
+        # If scope is 'course', user must be privileged (verified by can_mute)
+        # If scope is 'personal', check if user has moderation privileges
+        requester_is_privileged = (scope == 'course') or _is_privileged_user(request.user, course_key)
 
         # Call forum API
         try:
@@ -276,12 +285,12 @@ class ForumMuteAndReportView(DeveloperErrorViewMixin, APIView):
                 muted_user_id=str(target_user.id),
                 muter_id=str(request.user.id),
                 course_id=str(course_key),
-                scope=data.get('scope', 'personal'),
+                scope=scope,
                 reason=data.get('reason', ''),
                 thread_id=data.get('thread_id', ''),
                 comment_id=data.get('comment_id', ''),
                 request=request,
-                requester_is_privileged=_is_privileged_user(request.user, course_key)
+                requester_is_privileged=requester_is_privileged
             )
             return Response(result, status=status.HTTP_201_CREATED)
         except Exception as e:  # pylint: disable=broad-exception-caught
