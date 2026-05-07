@@ -194,6 +194,11 @@ def can_take_action_on_spam(user, course_id):
     """
     Returns if the user has access to take action against forum spam posts.
 
+    Grants permission to:
+    - Global Staff
+    - Discussion Administrators
+    - Discussion Moderators
+
     Parameters:
         user: User object
         course_id: CourseKey or string of course_id
@@ -202,12 +207,13 @@ def can_take_action_on_spam(user, course_id):
         bool: True if user can take action on spam, False otherwise
     """
     # Global staff have universal access
-    if GlobalStaff().has_user(user) or user.is_staff:
+    if GlobalStaff().has_user(user):
         return True
 
     if isinstance(course_id, str):
         course_id = CourseKey.from_string(course_id)
 
+    # Check for Discussion Admin or Moderator roles
     user_roles = set(
         Role.objects.filter(
             users=user,

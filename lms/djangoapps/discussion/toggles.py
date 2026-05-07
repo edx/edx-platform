@@ -43,8 +43,9 @@ ENABLE_RATE_LIMIT_IN_DISCUSSION = CourseWaffleFlag(f'{WAFFLE_FLAG_NAMESPACE}.ena
 # .. toggle_implementation: CourseWaffleFlag
 # .. toggle_default: False
 # .. toggle_description: Waffle flag to enable ban user functionality in discussion moderation.
-#    When enabled, moderators can ban users from discussions at course or organization level
-#    during bulk delete operations. This addresses crypto spam attacks and harassment.
+#    Course-level bans: Discussion Admin, Discussion Moderator, Global Staff
+#    Organization-level bans: Discussion Admin, Global Staff (excludes Moderators)
+#    This addresses crypto spam attacks and harassment.
 # .. toggle_use_cases: opt_in
 # .. toggle_creation_date: 2024-11-24
 # .. toggle_target_removal_date: 2025-06-01
