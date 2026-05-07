@@ -272,26 +272,44 @@ class _ContentSerializer(serializers.Serializer):
         the requester.
         """
         user_id = self.context["request"].user.id
-        is_user_staff = (
-            user_id in self.context["moderator_user_ids"]
-            or user_id in self.context["ta_user_ids"]
-            or self.context.get("is_global_staff", False)
-        )
 
-        return obj["anonymous"] or obj["anonymous_to_peers"] and not is_user_staff
+        # Fully anonymous posts are always anonymous to everyone
+        if obj.get("anonymous", False):
+            return True
+
+        # For anonymous_to_peers posts
+        if obj.get("anonymous_to_peers", False):
+            is_privileged_staff = (
+                user_id in self.context["moderator_user_ids"]
+                or self.context.get("is_global_staff", False)
+            )
+
+            if is_privileged_staff:
+                # Privileged users can see all author names, including their own
+                return False
+
+            # Non-privileged authors should see their own posts as anonymous
+            if obj.get("user_id") and int(obj["user_id"]) == user_id:
+                return True
+
+            # Everyone else sees anonymous
+            return True
+
+        return False
 
     def get_author(self, obj):
         """
-        Returns the author's username, or None if the content is anonymous.
-        Always returns None for anonymous posts to preserve anonymity.
+        Returns the author's username, or None if the content is anonymous to the viewer.
+        For anonymous_to_peers posts, staff/moderators/admins can see the author.
         """
-        return None if self._is_content_anonymous(obj) else obj["username"]
+        return None if self._is_anonymous(obj) else obj["username"]
 
     def get_author_id(self, obj):
         """
         Returns the author's user ID.
         - For non-anonymous posts: available to everyone
-        - For anonymous posts: always null to preserve anonymity
+        - For anonymous posts: null to preserve anonymity
+        - For anonymous_to_peers posts: available to staff/moderators/admins
 
         Note: The backend still has access to the actual author_id through the
         raw content object (obj["user_id"]) for permission checks like can_delete,
@@ -301,9 +319,8 @@ class _ContentSerializer(serializers.Serializer):
         if user_id is None:
             return None
 
-        # For anonymous posts, always hide the author_id to preserve anonymity
-        # Use _is_content_anonymous to check raw flags, not viewer-dependent _is_anonymous
-        if self._is_content_anonymous(obj):
+        # For posts anonymous to the viewer, hide the author_id
+        if self._is_anonymous(obj):
             return None
 
         return str(user_id)
@@ -343,9 +360,10 @@ class _ContentSerializer(serializers.Serializer):
     def get_author_label(self, obj):
         """
         Returns the role label for the content author.
-        Always returns None for anonymous posts to preserve anonymity.
+        Returns None for posts that are anonymous to the viewer.
+        For anonymous_to_peers posts, staff/moderators/admins can see the label.
         """
-        if self._is_content_anonymous(obj) or obj["user_id"] is None:
+        if self._is_anonymous(obj) or obj["user_id"] is None:
             return None
         else:
             user_id = int(obj["user_id"])

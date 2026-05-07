@@ -583,9 +583,9 @@ class SerializerTestMixin(UrlResetMixin, ForumMockUtilsMixin):
 
     @ddt.data(
         (FORUM_ROLE_ADMINISTRATOR, True, False, True),
-        (FORUM_ROLE_ADMINISTRATOR, False, True, True),
+        (FORUM_ROLE_ADMINISTRATOR, False, True, False),
         (FORUM_ROLE_MODERATOR, True, False, True),
-        (FORUM_ROLE_MODERATOR, False, True, True),
+        (FORUM_ROLE_MODERATOR, False, True, False),
         (FORUM_ROLE_COMMUNITY_TA, True, False, True),
         (FORUM_ROLE_COMMUNITY_TA, False, True, True),
         (FORUM_ROLE_STUDENT, True, False, True),
@@ -596,8 +596,9 @@ class SerializerTestMixin(UrlResetMixin, ForumMockUtilsMixin):
         """
         Test that content is properly made anonymous.
 
-        Content is always anonymous if the anonymous field is true or the
-        anonymous_to_peers field is true, regardless of viewer privileges.
+        Content is always anonymous if the anonymous field is true, regardless of viewer privileges.
+        For anonymous_to_peers posts, privileged users (administrators and moderators) can see the author,
+        but other users (community TAs and students) see it as anonymous.
 
         role_name is the name of the requester's role.
         anonymous is the value of the anonymous field in the content.
@@ -605,7 +606,7 @@ class SerializerTestMixin(UrlResetMixin, ForumMockUtilsMixin):
           content.
         expected_serialized_anonymous is whether the content should actually be
           anonymous in the API output when requested by a user with the given
-          role (now always True when anonymous or anonymous_to_peers is True).
+          role.
         """
         self.register_get_user_response(self.user)
         self.create_role(role_name, [self.user])
