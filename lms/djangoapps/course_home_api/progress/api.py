@@ -129,10 +129,10 @@ class _AssignmentTypeGradeAggregator:
         policy_map = {}
         for policy in self.grading_policy.get('GRADER', []):
             policy_map[policy.get('type')] = {
-                'weight': policy.get('weight', 0.0),
+                'weight': float(policy.get('weight', 0.0) or 0.0),
                 'short_label': policy.get('short_label', ''),
-                'num_droppable': policy.get('drop_count', 0),
-                'num_total': policy.get('min_count', 0),
+                'num_droppable': int(policy.get('drop_count', 0) or 0),
+                'num_total': int(policy.get('min_count', 0) or 0),
             }
         return policy_map
 
