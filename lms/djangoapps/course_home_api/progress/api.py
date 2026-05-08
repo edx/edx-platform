@@ -17,6 +17,7 @@ User = get_user_model()
 
 
 def _to_float(value, default=0.0) -> float:
+    """Parse a grading policy value as a float, returning default for any unparseable input."""
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -24,6 +25,13 @@ def _to_float(value, default=0.0) -> float:
 
 
 def _to_int(value, default=0) -> int:
+    """
+    Parse a grading policy value as an int, returning default for non-integer or unparseable input.
+
+    Accepts string representations of both integers ('2') and whole-number floats ('2.0').
+    Returns default for non-finite values (nan/inf), fractional floats ('2.9'), and
+    anything that cannot be parsed as a number.
+    """
     try:
         parsed = float(value)
     except (TypeError, ValueError):
