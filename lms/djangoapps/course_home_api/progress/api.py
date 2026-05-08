@@ -16,6 +16,34 @@ from dataclasses import dataclass, field
 User = get_user_model()
 
 
+def _to_float(value, default=0.0) -> float:
+    """Parse a grading policy value as a float, returning default for any unparseable input."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _to_int(value, default=0) -> int:
+    """
+    Parse a grading policy value as an int, returning default for non-integer or unparseable input.
+
+    Accepts string representations of both integers ('2') and whole-number floats ('2.0').
+    Returns default for non-finite values (nan/inf), fractional floats ('2.9'), and
+    anything that cannot be parsed as a number.
+    """
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not parsed.is_integer():
+        return default
+    try:
+        return int(parsed)
+    except (OverflowError, ValueError):
+        return default
+
+
 @dataclass
 class _AssignmentBucket:
     """Holds scores and visibility info for one assignment type.
@@ -129,10 +157,10 @@ class _AssignmentTypeGradeAggregator:
         policy_map = {}
         for policy in self.grading_policy.get('GRADER', []):
             policy_map[policy.get('type')] = {
-                'weight': float(policy.get('weight', 0.0) or 0.0),
+                'weight': _to_float(policy.get('weight')),
                 'short_label': policy.get('short_label', ''),
-                'num_droppable': int(policy.get('drop_count', 0) or 0),
-                'num_total': int(policy.get('min_count', 0) or 0),
+                'num_droppable': _to_int(policy.get('drop_count')),
+                'num_total': _to_int(policy.get('min_count')),
             }
         return policy_map
 
