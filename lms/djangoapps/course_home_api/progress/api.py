@@ -20,11 +20,20 @@ def _to_float(value, default=0.0) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
-        return default
+        return float(default)
 
 
 def _to_int(value, default=0) -> int:
-    return int(_to_float(value, default))
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not parsed.is_integer():
+        return default
+    try:
+        return int(parsed)
+    except (OverflowError, ValueError):
+        return default
 
 
 @dataclass
