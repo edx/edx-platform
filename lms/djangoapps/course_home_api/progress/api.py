@@ -16,6 +16,17 @@ from dataclasses import dataclass, field
 User = get_user_model()
 
 
+def _to_float(value, default=0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(value, default=0) -> int:
+    return int(_to_float(value, default))
+
+
 @dataclass
 class _AssignmentBucket:
     """Holds scores and visibility info for one assignment type.
@@ -129,10 +140,10 @@ class _AssignmentTypeGradeAggregator:
         policy_map = {}
         for policy in self.grading_policy.get('GRADER', []):
             policy_map[policy.get('type')] = {
-                'weight': float(policy.get('weight', 0.0) or 0.0),
+                'weight': _to_float(policy.get('weight')),
                 'short_label': policy.get('short_label', ''),
-                'num_droppable': int(policy.get('drop_count', 0) or 0),
-                'num_total': int(policy.get('min_count', 0) or 0),
+                'num_droppable': _to_int(policy.get('drop_count')),
+                'num_total': _to_int(policy.get('min_count')),
             }
         return policy_map
 
