@@ -778,7 +778,7 @@ class ForumMockUtilsMixin(MockForumApiMixin):
         self.set_mock_return_value("delete_comment", {})
 
     def register_user_active_threads(self, user_id, response):
-        self.set_mock_return_value("get_user_active_threads", response)
+        self.set_mock_return_value("get_user_threads", response)
 
     def register_get_subscriptions(self, thread_id, response):
         self.set_mock_return_value("get_thread_subscriptions", response)
