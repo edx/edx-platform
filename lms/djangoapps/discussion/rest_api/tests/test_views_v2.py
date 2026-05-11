@@ -1552,6 +1552,17 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         Sets up the test case
         """
         super().setUp()
+        # Patch forum_api in api module to use the same mock as the mixin
+        self.api_patcher = mock.patch(
+            'lms.djangoapps.discussion.rest_api.api.forum_api',
+            self.mock_forum_api
+        )
+        self.api_patcher.start()
+        self.addCleanup(self.api_patcher.stop)
+
+        # Set up default mock return values for muted users
+        self.set_mock_return_value("get_all_muted_users_for_course", {"muted_users": []})
+
         self.author = self.user
         self.remove_keys = [
             "abuse_flaggers",
@@ -1740,17 +1751,20 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         )
         assert response.status_code == 200
         params = {
-            "user_id": str(self.user.id),
             "course_id": str(self.course.id),
+            "author_id": str(self.user.id),
+            "user_id": str(self.user.id),
+            "context": "course",
             "page": 1,
             "per_page": 10,
+            "group_id": None,
+            "count_flagged": False,
             "thread_type": thread_type,
             "sort_key": 'activity',
-            "count_flagged": False,
             "show_deleted": False,
         }
 
-        self.check_mock_called_with("get_user_active_threads", -1, **params)
+        self.check_mock_called_with("get_user_threads", -1, **params)
 
     @ddt.data(
         ("last_activity_at", "activity"),
@@ -1797,15 +1811,19 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         )
         assert response.status_code == 200
         params = {
-            "user_id": str(self.user.id),
             "course_id": str(self.course.id),
+            "author_id": str(self.user.id),
+            "user_id": str(self.user.id),
+            "context": "course",
             "page": 1,
             "per_page": 10,
-            "sort_key": cc_query,
+            "group_id": None,
             "count_flagged": False,
+            "thread_type": None,
+            "sort_key": cc_query,
             "show_deleted": False,
         }
-        self.check_mock_called_with("get_user_active_threads", -1, **params)
+        self.check_mock_called_with("get_user_threads", -1, **params)
 
     @ddt.data("flagged", "unanswered", "unread", "unresponded")
     def test_status_by(self, post_status):
@@ -1850,16 +1868,20 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         else:
             assert response.status_code == 200
             params = {
-                "user_id": str(self.user.id),
                 "course_id": str(self.course.id),
+                "author_id": str(self.user.id),
+                "user_id": str(self.user.id),
+                "context": "course",
                 "page": 1,
                 "per_page": 10,
+                "group_id": None,
+                "count_flagged": False,
+                "thread_type": None,
                 post_status: True,
                 "sort_key": 'activity',
-                "count_flagged": False,
                 "show_deleted": False,
             }
-            self.check_mock_called_with("get_user_active_threads", -1, **params)
+            self.check_mock_called_with("get_user_threads", -1, **params)
 
 
 @ddt.ddt
