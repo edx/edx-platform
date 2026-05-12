@@ -3779,6 +3779,10 @@ RECAPTCHA_PROJECT_ID = None
 #    Keys are filter type strings; values are dicts with 'fail_silently' (bool) and
 #    'pipeline' (list of dotted-path strings to PipelineStep subclasses).
 OPEN_EDX_FILTERS_CONFIG = {
+    "org.openedx.learning.account.settings.read_only_fields.requested.v1": {
+        "fail_silently": False,
+        "pipeline": ["enterprise.filters.accounts.AccountSettingsEnterpriseReadOnlyFieldsStep"],
+    },
     "org.openedx.learning.dashboard.render.started.v1": {
         "fail_silently": False,
         "pipeline": ["enterprise.filters.dashboard.DashboardContextEnricher"],

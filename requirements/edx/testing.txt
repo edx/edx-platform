@@ -1050,7 +1050,7 @@ openedx-events==10.5.0
     #   edx-name-affirmation
     #   event-tracking
     #   ora2
-openedx-filters==2.1.0
+openedx-filters==3.3.0
     # via
     #   -r requirements/edx/base.txt
     #   edx-enterprise
