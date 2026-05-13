@@ -21,7 +21,7 @@ from django.db.models import Q
 from django.http import Http404
 from django.urls import reverse
 from django.utils.html import strip_tags
-from edx_django_utils.monitoring import function_trace
+from edx_django_utils.monitoring import function_trace, set_custom_attribute
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.locator import CourseKey
 from pytz import UTC
@@ -1905,6 +1905,7 @@ def create_thread(request, thread_data):
         )
     serializer.save()
     cc_thread = serializer.instance
+    set_custom_attribute("forum.entity_id", str(cc_thread.id))
     # Use send_signal_after_commit() to ensure the signal is sent only after the transaction commits.
     send_signal_after_commit(
         lambda: thread_created.send(sender=None, user=user, post=cc_thread, notify_all_learners=notify_all_learners)

@@ -18,7 +18,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models.signals import post_save
 from django.urls import reverse
 from django.utils import translation
-from elasticsearch.exceptions import ConnectionError  # lint-amnesty, pylint: disable=redefined-builtin
+from elasticsearch.exceptions import ConnectionError, TransportError  # lint-amnesty, pylint: disable=redefined-builtin
 from rest_framework.test import APIClient, APITestCase
 from search.search_engine_base import SearchEngine
 
@@ -2808,6 +2808,23 @@ class TestElasticSearchErrors(TeamAPITestCase):
             data={'description': 'new description'},
             user='staff'
         )
+
+    def test_list_teams_search_failure(self):
+        """Test that search() failures return a 503 when Elasticsearch query fails.
+
+        This test covers failures that occur during the actual search operation,
+        not just during engine initialization (which is covered by test_list_teams).
+        """
+        search_error = TransportError(500, 'internal server error', {})
+        with patch.object(SearchEngine, 'get_search_engine') as mock_get_engine:
+            mock_engine = mock_get_engine.return_value
+            mock_engine.search.side_effect = search_error
+
+            self.get_teams_list(
+                expected_status=503,
+                data={'course_id': str(self.test_course_1.id), 'text_search': 'engineering'},
+                user='staff'
+            )
 
 
 @ddt.ddt
