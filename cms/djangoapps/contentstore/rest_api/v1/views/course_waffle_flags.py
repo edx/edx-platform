@@ -63,7 +63,8 @@ class CourseWaffleFlagsView(APIView):
             "use_new_textbooks_page": true,
             "use_new_group_configurations_page": true,
             "use_react_markdown_editor": true,
-            "use_video_gallery_flow": true
+            "use_video_gallery_flow": true,
+            "enable_audio_description": false
         }
         ```
         """

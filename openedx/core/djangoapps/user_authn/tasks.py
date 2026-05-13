@@ -18,8 +18,23 @@ from common.djangoapps.track import segment
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_authn.utils import check_pwned_password
 from openedx.core.lib.celery.task_utils import emulate_http_request
+from edx_toggles.toggles import WaffleFlag
 
 log = logging.getLogger('edx.celery.task')
+
+# .. toggle_name: user_authn.enable_ses_for_account_activation
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Route account activation emails via SES using ACE.
+# .. toggle_use_cases: opt_in, temporary
+# .. toggle_creation_date: 2026-03-31
+# .. toggle_target_removal_date: None
+# .. toggle_warning: Controls SES routing for account activation emails.
+
+ENABLE_SES_FOR_ACCOUNT_ACTIVATION = WaffleFlag(
+    'user_authn.enable_ses_for_account_activation',
+    __name__,
+)
 
 
 @shared_task
@@ -60,6 +75,9 @@ def send_activation_email(self, msg_string, from_address=None, site_id=None):
     max_retries = settings.RETRY_ACTIVATION_EMAIL_MAX_ATTEMPTS
     retries = self.request.retries
 
+    if msg.options is None:
+        msg.options = {}
+
     if from_address is None:
         from_address = configuration_helpers.get_value('ACTIVATION_EMAIL_FROM_ADDRESS') or (
             configuration_helpers.get_value('email_from_address', settings.DEFAULT_FROM_EMAIL)
@@ -71,28 +89,63 @@ def send_activation_email(self, msg_string, from_address=None, site_id=None):
     site = Site.objects.get(id=site_id) if site_id else Site.objects.get_current()
     user = User.objects.get(id=msg.recipient.lms_user_id)
 
+    route_via_ses = ENABLE_SES_FOR_ACCOUNT_ACTIVATION.is_enabled()
+    sent_via_ses = False
+
+    if route_via_ses:
+        msg.options['override_default_channel'] = 'django_email'
+
     try:
         with emulate_http_request(site=site, user=user):
             ace.send(msg)
+            sent_via_ses = route_via_ses
+
     except RecoverableChannelDeliveryError:
-        log.info('Retrying sending email to user {dest_addr}, attempt # {attempt} of {max_attempts}'.format(
-            dest_addr=dest_addr,
-            attempt=retries,
-            max_attempts=max_retries
-        ))
-        try:
-            self.retry(countdown=settings.RETRY_ACTIVATION_EMAIL_TIMEOUT, max_retries=max_retries)
-        except MaxRetriesExceededError:
-            log.error(
-                'Unable to send activation email to user from "%s" to "%s"',
-                from_address,
+        if route_via_ses:
+            log.warning(
+                "SES send failed for %s, falling back to default ACE channel",
                 dest_addr,
-                exc_info=True
+                exc_info=True,
             )
+
+            msg.options.pop('override_default_channel', None)
+
+            with emulate_http_request(site=site, user=user):
+                ace.send(msg)
+                sent_via_ses = False
+
+        else:
+            log.info(
+                'Retrying sending email to user {dest_addr}, attempt # {attempt} of {max_attempts}'.format(
+                    dest_addr=dest_addr,
+                    attempt=retries,
+                    max_attempts=max_retries
+                )
+            )
+            try:
+                self.retry(
+                    countdown=settings.RETRY_ACTIVATION_EMAIL_TIMEOUT,
+                    max_retries=max_retries
+                )
+            except MaxRetriesExceededError:
+                log.error(
+                    'Unable to send activation email to user from "%s" to "%s"',
+                    from_address,
+                    dest_addr,
+                    exc_info=True
+                )
+            return
+
     except Exception:
         log.exception(
             'Unable to send activation email to user from "%s" to "%s"',
             from_address,
             dest_addr,
         )
-        raise Exception  # lint-amnesty, pylint: disable=raise-missing-from
+        raise
+
+    log.info(
+        'Activation email for %s sent via %s',
+        dest_addr,
+        'SES' if sent_via_ses else 'default ACE channel',
+    )
