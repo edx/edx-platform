@@ -257,7 +257,7 @@ def main(
         click.secho(f"    Done.", fg="green")
         # For Sass files without explicit RTL versions, generate
         # an RTL version of the CSS using the rtlcss library.
-        for sass_path in glob.glob(str(source_root) + "/**/*.scss"):
+        for sass_path in glob.glob(str(source_root) + "/**/*.scss", recursive=True):
             if Path(sass_path).name.startswith("_"):
                 # Don't generate RTL CSS for partials
                 continue

@@ -6,7 +6,7 @@ import logging
 
 from celery import shared_task
 from django.contrib.auth import get_user_model
-from edx_django_utils.monitoring import set_code_owner_attribute
+from edx_django_utils.monitoring import set_code_owner_attribute, set_custom_attribute
 from eventtracking import tracker
 from opaque_keys.edx.keys import CourseKey
 
@@ -145,6 +145,14 @@ def delete_course_post_for_user(  # pylint: disable=too-many-statements
         reason: Ban reason (NEW)
     """
     event_data = event_data or {}
+    if event_data.get("course_key"):
+        set_custom_attribute("forum.operation", "bulk_delete_user_posts.execute")
+        set_custom_attribute("forum.entity_type", "user")
+        set_custom_attribute("forum.entity_id", str(user_id or ""))
+        set_custom_attribute("forum.actor_id", str(event_data.get("triggered_by_user_id", "")))
+        set_custom_attribute("forum.course_id", str(event_data.get("course_key", "")))
+        set_custom_attribute("forum.scope", str(event_data.get("course_or_org", "")))
+        set_custom_attribute("forum.course_count", str(len(course_ids or [])))
     log.info(
         f"<<Bulk Delete>> Deleting all posts for {username} in course {course_ids}"
     )
@@ -156,6 +164,10 @@ def delete_course_post_for_user(  # pylint: disable=too-many-statements
     comments_deleted = Comment.delete_user_comments(
         user_id, course_ids, deleted_by=deleted_by_user_id
     )
+    if event_data.get("course_key"):
+        set_custom_attribute("forum.threads_deleted", str(threads_deleted))
+        set_custom_attribute("forum.comments_deleted", str(comments_deleted))
+        set_custom_attribute("forum.result", "success")
     log.info(
         f"<<Bulk Delete>> Deleted {threads_deleted} posts and {comments_deleted} comments for {username} "
         f"in course {course_ids}"
@@ -253,6 +265,14 @@ def restore_course_post_for_user(user_id, username, course_ids, event_data=None)
     Restores all soft-deleted posts for user in a course by setting is_deleted=False.
     """
     event_data = event_data or {}
+    if event_data.get("course_key"):
+        set_custom_attribute("forum.operation", "bulk_restore_user_posts.execute")
+        set_custom_attribute("forum.entity_type", "user")
+        set_custom_attribute("forum.entity_id", str(user_id or ""))
+        set_custom_attribute("forum.actor_id", str(event_data.get("triggered_by_user_id", "")))
+        set_custom_attribute("forum.course_id", str(event_data.get("course_key", "")))
+        set_custom_attribute("forum.scope", str(event_data.get("course_or_org", "")))
+        set_custom_attribute("forum.course_count", str(len(course_ids or [])))
     log.info(
         "<<Bulk Restore>> Restoring all posts for %s in course %s", username, course_ids
     )
@@ -264,6 +284,10 @@ def restore_course_post_for_user(user_id, username, course_ids, event_data=None)
     comments_restored = Comment.restore_user_deleted_comments(
         user_id, course_ids, restored_by=restored_by_user_id
     )
+    if event_data.get("course_key"):
+        set_custom_attribute("forum.threads_restored", str(threads_restored))
+        set_custom_attribute("forum.comments_restored", str(comments_restored))
+        set_custom_attribute("forum.result", "success")
     log.info(
         "<<Bulk Restore>> Restored %s posts and %s comments for %s in course %s",
         threads_restored,

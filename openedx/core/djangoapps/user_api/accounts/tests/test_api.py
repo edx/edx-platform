@@ -472,6 +472,25 @@ class TestAccountApi(UserSettingsEventTestMixin, EmailTemplateTagMixin, CreateAc
         assert 'Email address changes have been disabled' in context_manager.value.developer_message
 
     @patch.dict(settings.FEATURES, dict(ALLOW_EMAIL_ADDRESS_CHANGE=True))
+    def test_email_changes_blocked_by_saml_provider(self):
+        """
+        Test that email changes are rejected when the user's SAML provider has disable_email_editing=True.
+        """
+        from common.djangoapps.third_party_auth.tests.factories import SAMLProviderConfigFactory
+        saml_config = SAMLProviderConfigFactory(disable_email_editing=True)
+        UserSocialAuth.objects.create(
+            user=self.user,
+            provider='tpa-saml',
+            uid=f'{saml_config.slug}:remote-user-id',
+        )
+
+        with pytest.raises(AccountValidationError) as context_manager:
+            update_account_settings(self.user, {"email": "new@example.com"})
+        field_errors = context_manager.value.field_errors
+        assert 'email' in field_errors
+        assert 'Email address changes are disabled' in field_errors['email']['developer_message']
+
+    @patch.dict(settings.FEATURES, dict(ALLOW_EMAIL_ADDRESS_CHANGE=True))
     def test_email_changes_blocked_on_retired_email(self):
         """
         Test that email address changes are rejected when an email associated with a *partially* retired account is

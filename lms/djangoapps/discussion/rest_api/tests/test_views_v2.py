@@ -188,6 +188,12 @@ class ThreadViewSetPartialUpdateTest(
         super().setUp()
         self.url = reverse("thread-detail", kwargs={"thread_id": "test_thread"})
 
+    def test_patch_unsupported_media_type(self):
+        """Override to add necessary test setup."""
+        self.register_get_user_response(self.user)
+        self.register_thread()
+        super().test_patch_unsupported_media_type()
+
     def test_basic(self):
         self.register_get_user_response(self.user)
         self.register_thread(
@@ -342,6 +348,7 @@ class ThreadViewSetPartialUpdateTest(
         expected_data = self.expected_thread_data(
             {
                 "author": str(thread_owner_user.username),
+                "author_id": str(thread_owner_user.id),
                 "comment_count": 1,
                 "can_delete": False,
                 "read": True,
@@ -373,6 +380,12 @@ class CommentViewSetPartialUpdateTest(
         self.register_get_user_response(self.user)
         self.url = reverse("comment-detail", kwargs={"comment_id": "test_comment"})
 
+    def test_patch_unsupported_media_type(self):
+        """Override to add necessary test setup."""
+        self.register_thread()
+        self.register_comment()
+        super().test_patch_unsupported_media_type()
+
     def expected_response_data(self, overrides=None):
         """
         create expected response data from comment update endpoint
@@ -382,6 +395,7 @@ class CommentViewSetPartialUpdateTest(
             "thread_id": "test_thread",
             "parent_id": None,
             "author": self.user.username,
+            "author_id": str(self.user.id),
             "author_label": None,
             "is_author_banned": False,
             "author_ban_scope": None,
@@ -583,6 +597,7 @@ class ThreadViewSetListTest(
                     "unread_comment_count": 3,
                     "voted": True,
                     "author": self.author.username,
+                    "author_id": str(self.author.id),
                     "editable_fields": [
                         "abuse_flagged",
                         "copy_link",
@@ -1537,6 +1552,17 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         Sets up the test case
         """
         super().setUp()
+        # Patch forum_api in api module to use the same mock as the mixin
+        self.api_patcher = mock.patch(
+            'lms.djangoapps.discussion.rest_api.api.forum_api',
+            self.mock_forum_api
+        )
+        self.api_patcher.start()
+        self.addCleanup(self.api_patcher.stop)
+
+        # Set up default mock return values for muted users
+        self.set_mock_return_value("get_all_muted_users_for_course", {"muted_users": []})
+
         self.author = self.user
         self.remove_keys = [
             "abuse_flaggers",
@@ -1557,6 +1583,7 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         ]
         self.add_keys = [
             {"key": "author", "value": self.author.username},
+            {"key": "author_id", "value": str(self.author.id)},
             {"key": "abuse_flagged", "value": False},
             {"key": "author_label", "value": None},
             {"key": "can_delete", "value": True},
@@ -1724,17 +1751,20 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         )
         assert response.status_code == 200
         params = {
-            "user_id": str(self.user.id),
             "course_id": str(self.course.id),
+            "author_id": str(self.user.id),
+            "user_id": str(self.user.id),
+            "context": "course",
             "page": 1,
             "per_page": 10,
+            "group_id": None,
+            "count_flagged": False,
             "thread_type": thread_type,
             "sort_key": 'activity',
-            "count_flagged": False,
             "show_deleted": False,
         }
 
-        self.check_mock_called_with("get_user_active_threads", -1, **params)
+        self.check_mock_called_with("get_user_threads", -1, **params)
 
     @ddt.data(
         ("last_activity_at", "activity"),
@@ -1781,15 +1811,19 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         )
         assert response.status_code == 200
         params = {
-            "user_id": str(self.user.id),
             "course_id": str(self.course.id),
+            "author_id": str(self.user.id),
+            "user_id": str(self.user.id),
+            "context": "course",
             "page": 1,
             "per_page": 10,
-            "sort_key": cc_query,
+            "group_id": None,
             "count_flagged": False,
+            "thread_type": None,
+            "sort_key": cc_query,
             "show_deleted": False,
         }
-        self.check_mock_called_with("get_user_active_threads", -1, **params)
+        self.check_mock_called_with("get_user_threads", -1, **params)
 
     @ddt.data("flagged", "unanswered", "unread", "unresponded")
     def test_status_by(self, post_status):
@@ -1834,16 +1868,20 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
         else:
             assert response.status_code == 200
             params = {
-                "user_id": str(self.user.id),
                 "course_id": str(self.course.id),
+                "author_id": str(self.user.id),
+                "user_id": str(self.user.id),
+                "context": "course",
                 "page": 1,
                 "per_page": 10,
+                "group_id": None,
+                "count_flagged": False,
+                "thread_type": None,
                 post_status: True,
                 "sort_key": 'activity',
-                "count_flagged": False,
                 "show_deleted": False,
             }
-            self.check_mock_called_with("get_user_active_threads", -1, **params)
+            self.check_mock_called_with("get_user_threads", -1, **params)
 
 
 @ddt.ddt

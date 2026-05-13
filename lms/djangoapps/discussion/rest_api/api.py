@@ -21,7 +21,7 @@ from django.db.models import Q
 from django.http import Http404
 from django.urls import reverse
 from django.utils.html import strip_tags
-from edx_django_utils.monitoring import function_trace
+from edx_django_utils.monitoring import function_trace, set_custom_attribute
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.locator import CourseKey
 from pytz import UTC
@@ -48,7 +48,6 @@ from openedx.core.djangoapps.discussions.models import (
     Provider,
 )
 from openedx.core.djangoapps.discussions.utils import get_accessible_discussion_xblocks
-from openedx.core.djangoapps.django_comment_common import comment_client
 from openedx.core.djangoapps.django_comment_common.comment_client.comment import Comment
 from openedx.core.djangoapps.django_comment_common.comment_client.course import (
     get_course_commentable_counts,
@@ -146,7 +145,6 @@ from .utils import (
     get_usernames_from_search_string,
     is_captcha_enabled,
     send_signal_after_commit,
-    set_attribute,
     is_posting_allowed,
 )
 
@@ -1412,7 +1410,6 @@ def get_learner_active_thread_list(request, course_key, query_params):
     course = _get_course(course_key, request.user)
     context = get_context(course, request)
 
-    group_id = query_params.get("group_id", None)
     user_id = query_params.get("user_id", None)
     count_flagged = query_params.get("count_flagged", None)
     show_deleted = query_params.get("show_deleted", False)
@@ -1438,18 +1435,28 @@ def get_learner_active_thread_list(request, course_key, query_params):
             "show_deleted can only be set by users with moderation roles."
         )
 
-    if group_id is None:
-        comment_client_user = comment_client.User(id=user_id, course_id=course_key)
-    else:
-        comment_client_user = comment_client.User(
-            id=user_id, course_id=course_key, group_id=group_id
-        )
-
     include_muted = query_params.pop('include_muted', False)
 
     try:
-        threads, page, num_pages = comment_client_user.active_threads(query_params)
-        threads = set_attribute(threads, "pinned", False)
+        # Use forum v2 API for MySQL backend support
+        # Extract author_id (stored as user_id in query_params)
+        author_id = str(query_params.pop('user_id'))
+        course_id_str = str(course_key)
+
+        # Remove course_id if present since we pass it explicitly
+        query_params.pop('course_id', None)
+
+        response = forum_api.get_user_threads(
+            course_id=course_id_str,
+            author_id=author_id,
+            user_id=str(request.user.id),  # Current user viewing the threads (for read state)
+            context="course",
+            **query_params
+        )
+
+        threads = response.get("collection", [])
+        page = response.get("page", 1)
+        num_pages = response.get("num_pages", 1)
 
         if include_muted:
             filtered_threads = threads
@@ -1460,28 +1467,15 @@ def get_learner_active_thread_list(request, course_key, query_params):
                 threads
             )
 
-        # This portion below is temporary until we migrate to forum v2
+        # Filter by deletion status
         filtered_threads_with_deletion_status = []
         for thread in filtered_threads:
-            try:
-                forum_thread = forum_api.get_thread(
-                    thread.get("id"), course_id=str(course_key)
-                )
-                is_deleted = forum_thread.get("is_deleted", False)
+            is_deleted = thread.get("is_deleted", False)
 
-                if show_deleted and is_deleted:
-                    thread["is_deleted"] = True
-                    thread["deleted_at"] = forum_thread.get("deleted_at")
-                    thread["deleted_by"] = forum_thread.get("deleted_by")
-                    filtered_threads_with_deletion_status.append(thread)
-                elif not show_deleted and not is_deleted:
-                    filtered_threads_with_deletion_status.append(thread)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                log.warning(
-                    "Failed to check thread %s deletion status: %s", thread.get("id"), e
-                )
-                if not show_deleted:  # Fail safe: include thread for regular users
-                    filtered_threads_with_deletion_status.append(thread)
+            if show_deleted and is_deleted:
+                filtered_threads_with_deletion_status.append(thread)
+            elif not show_deleted and not is_deleted:
+                filtered_threads_with_deletion_status.append(thread)
 
         results = _serialize_discussion_entities(
             request,
@@ -1905,6 +1899,7 @@ def create_thread(request, thread_data):
         )
     serializer.save()
     cc_thread = serializer.instance
+    set_custom_attribute("forum.entity_id", str(cc_thread.id))
     # Use send_signal_after_commit() to ensure the signal is sent only after the transaction commits.
     send_signal_after_commit(
         lambda: thread_created.send(sender=None, user=user, post=cc_thread, notify_all_learners=notify_all_learners)
@@ -1982,6 +1977,7 @@ def create_comment(request, comment_data):
     context["cc_requester"].follow(cc_thread)
     serializer.save()
     cc_comment = serializer.instance
+    set_custom_attribute("forum.entity_id", str(cc_comment.id))
     send_signal_after_commit(
         lambda: comment_created.send(sender=None, user=request.user, post=cc_comment)
     )
@@ -2232,11 +2228,14 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
             DiscussionEntity.comment,
         )
 
-        comments_count = len(paged_response_comments)
+        total_comments_count = len(response_comments)
         num_pages = (
-            (comments_count + page_size - 1) // page_size if comments_count else 1
+            (total_comments_count + page_size - 1) // page_size
+            if total_comments_count else 1
         )
-        paginator = DiscussionAPIPagination(request, page, num_pages, comments_count)
+        paginator = DiscussionAPIPagination(
+            request, page, num_pages, total_comments_count
+        )
         return paginator.get_paginated_response(results)
     except CommentClientRequestError as err:
         raise CommentNotFoundError("Comment not found") from err

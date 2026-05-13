@@ -587,7 +587,7 @@ class SerializerTestMixin(UrlResetMixin, ForumMockUtilsMixin):
         (FORUM_ROLE_MODERATOR, True, False, True),
         (FORUM_ROLE_MODERATOR, False, True, False),
         (FORUM_ROLE_COMMUNITY_TA, True, False, True),
-        (FORUM_ROLE_COMMUNITY_TA, False, True, False),
+        (FORUM_ROLE_COMMUNITY_TA, False, True, True),
         (FORUM_ROLE_STUDENT, True, False, True),
         (FORUM_ROLE_STUDENT, False, True, True),
     )
@@ -596,9 +596,9 @@ class SerializerTestMixin(UrlResetMixin, ForumMockUtilsMixin):
         """
         Test that content is properly made anonymous.
 
-        Content should be anonymous if the anonymous field is true or the
-        anonymous_to_peers field is true and the requester does not have a
-        privileged role.
+        Content is always anonymous if the anonymous field is true, regardless of viewer privileges.
+        For anonymous_to_peers posts, privileged users (administrators and moderators) can see the author,
+        but other users (community TAs and students) see it as anonymous.
 
         role_name is the name of the requester's role.
         anonymous is the value of the anonymous field in the content.
@@ -723,6 +723,7 @@ class CommentSerializerTest(SerializerTestMixin, SharedModuleStoreTestCase):
             "thread_id": "test_thread",
             "parent_id": None,
             "author": self.author.username,
+            "author_id": str(self.author.id),
             "author_label": None,
             "created_at": "2015-04-28T00:00:00Z",
             "updated_at": "2015-04-28T11:11:11Z",
@@ -892,6 +893,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
         })
         expected = self.expected_thread_data({
             "author": self.author.username,
+            "author_id": str(self.author.id),
             "can_delete": False,
             "vote_count": 4,
             "comment_count": 6,
@@ -998,6 +1000,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
                                     'raw_body', 'title', 'topic_id', 'type'])
         expected = self.expected_thread_data({
             "author": author.username,
+            "author_id": str(author.id),
             "can_delete": can_delete,
             "vote_count": 4,
             "comment_count": 6,
@@ -1058,6 +1061,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
 
         expected = self.expected_thread_data({
             "author": author.username,
+            "author_id": str(author.id),
             "can_delete": can_delete,
             "vote_count": 4,
             "comment_count": 6,

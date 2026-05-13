@@ -38,6 +38,7 @@ from openedx.core.djangoapps.user_api.preferences.api import update_user_prefere
 from openedx.core.djangoapps.user_authn.utils import check_pwned_password
 from openedx.core.djangoapps.user_authn.views.registration_form import validate_name, validate_username
 from openedx.core.lib.api.view_utils import add_serializer_errors
+from common.djangoapps.third_party_auth.utils import get_saml_provider_for_user
 from openedx.features.enterprise_support.utils import get_enterprise_readonly_account_fields
 from openedx.features.name_affirmation_api.utils import is_name_affirmation_installed
 
@@ -212,6 +213,15 @@ def _validate_email_change(user, data, field_errors):
     # If user has requested to change email, we must call the multi-step process to handle this.
     # It is not handled by the serializer (which considers email to be read-only).
     if "email" not in data:
+        return
+
+    saml_provider = get_saml_provider_for_user(user)
+    if saml_provider and saml_provider.disable_email_editing:
+        field_errors["email"] = {
+            "developer_message": "Email address changes are disabled for this SSO provider.",
+            "user_message": _("Your email address is managed by your institution and cannot be changed here.")
+        }
+        del data["email"]
         return
 
     if not settings.FEATURES['ALLOW_EMAIL_ADDRESS_CHANGE']:

@@ -237,6 +237,10 @@ class ProviderConfig(ConfigurationModel):
         help_text="Use the presence of a profile from a trusted third party as proof of identity verification.",
     )
 
+    # Enterprise-only field: excludes this provider from the EnterpriseCustomer Django admin IDP
+    # dropdown. Added in ENT-1366 after social auth providers (Facebook, Google, etc.) were linked
+    # as enterprise IDPs, incorrectly associating all their users with an enterprise. Should ideally
+    # be migrated into the enterprise plugin.
     disable_for_enterprise_sso = models.BooleanField(
         default=False,
         verbose_name='Disabled for Enterprise TPA',
@@ -751,6 +755,15 @@ class SAMLProviderConfig(ProviderConfig):
             "If enabled, optional checkboxes (marketing emails opt-in, etc.) will not be rendered "
             "on the registration form for users registering via this provider. When these checkboxes "
             "are skipped, their values are inferred as False (opted out)."
+        ),
+    )
+    disable_email_editing = models.BooleanField(
+        default=False,
+        help_text=_(
+            "If enabled, and the identity provider supplies an email address, the email field "
+            "on the SSO registration form will be read-only and users will not be able to change "
+            "their email address in their account settings. If the identity provider does not "
+            "supply an email address, the field remains editable during registration."
         ),
     )
     other_settings = models.TextField(

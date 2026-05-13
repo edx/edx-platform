@@ -21,12 +21,9 @@ from social_django.models import UserSocialAuth
 from common.djangoapps import third_party_auth
 from common.djangoapps.student.helpers import get_next_url_for_login_page
 from lms.djangoapps.branding.api import get_privacy_url
-from openedx.core.djangoapps.geoinfo.api import country_code_from_ip
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_authn.cookies import standard_cookie_settings
 from openedx.core.djangolib.markup import HTML, Text
-from openedx.core.djangoapps.user_authn.views.utils import third_party_auth_context
-from ipware import get_client_ip
 
 ENTERPRISE_HEADER_LINKS = WaffleFlag('enterprise.enterprise_header_links', __name__)  # lint-amnesty, pylint: disable=toggle-missing-annotation
 
@@ -149,6 +146,37 @@ def get_enterprise_sidebar_context(enterprise_customer, is_proxy_login):
         'enterprise_branded_welcome_string': branded_welcome_string,
         'enterprise_slug': enterprise_customer.get('slug'),
         'platform_welcome_string': platform_welcome_string,
+    }
+
+
+def build_enterprise_branding_for_authn_mfe(enterprise_customer):
+    """Build the enterpriseBranding payload for Authn MFE context.
+
+    Args:
+        enterprise_customer (dict): Serialized enterprise customer for the request.
+
+    Returns:
+        dict or None: Branding fields for the MFE, or None if there is no
+        customer.
+    """
+    if not enterprise_customer:
+        return None
+
+    sidebar_context = get_enterprise_sidebar_context(
+        enterprise_customer,
+        is_proxy_login=False,
+    )
+
+    return {
+        'enterpriseName': sidebar_context.get('enterprise_name'),
+        'enterpriseLogoUrl': sidebar_context.get('enterprise_logo_url'),
+        'enterpriseBrandedWelcomeString': str(
+            sidebar_context.get('enterprise_branded_welcome_string', '')
+        ),
+        'platformWelcomeString': str(
+            sidebar_context.get('platform_welcome_string', '')
+        ),
+        'enterpriseSlug': sidebar_context.get('enterprise_slug') or enterprise_customer.get('slug'),
     }
 
 
@@ -500,42 +528,3 @@ def get_enterprise_dashboard_url(request, enterprise_customer):
     """
     base_url = settings.ENTERPRISE_LEARNER_PORTAL_BASE_URL
     return f"{base_url}/{enterprise_customer['slug']}"
-
-
-def get_mfe_context(request, redirect_to, tpa_hint=None):
-    """
-    Returns Authn MFE context.
-    """
-    # Import enterprise functions INSIDE the function to avoid circular import
-    from openedx.features.enterprise_support.api import enterprise_customer_for_request
-
-    ip_address = get_client_ip(request)[0]
-    country_code = country_code_from_ip(ip_address)
-    context = third_party_auth_context(request, redirect_to, tpa_hint)
-
-    enterprise_customer = enterprise_customer_for_request(request)
-    enterprise_branding = None
-
-    if enterprise_customer:
-        sidebar_context = get_enterprise_sidebar_context(
-            enterprise_customer,
-            is_proxy_login=False
-        )
-        if sidebar_context:
-            enterprise_branding = {
-                'enterpriseName': sidebar_context.get('enterprise_name'),
-                'enterpriseLogoUrl': sidebar_context.get('enterprise_logo_url'),
-                'enterpriseBrandedWelcomeString': str(
-                    sidebar_context.get('enterprise_branded_welcome_string', '')
-                ),
-                'platformWelcomeString': str(
-                    sidebar_context.get('platform_welcome_string', '')
-                ),
-            }
-
-    context.update({
-        'countryCode': country_code,
-        'enterpriseBranding': enterprise_branding,
-    })
-
-    return context

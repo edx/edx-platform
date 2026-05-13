@@ -483,7 +483,7 @@ edx-drf-extensions==10.6.0
     #   enterprise-integrated-channels
     #   openedx-authz
     #   openedx-learning
-edx-enterprise==6.8.6
+edx-enterprise==8.0.9
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/kernel.in
@@ -574,7 +574,7 @@ enmerkar==0.7.1
     # via enmerkar-underscore
 enmerkar-underscore==2.4.0
     # via -r requirements/edx/kernel.in
-enterprise-integrated-channels==0.1.56
+enterprise-integrated-channels==0.1.57
     # via -r requirements/edx/bundled.in
 event-tracking==3.3.0
     # via
@@ -732,6 +732,7 @@ lxml[html-clean]==5.3.2
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/kernel.in
+    #   edx-enterprise
     #   edx-i18n-tools
     #   edxval
     #   lti-consumer-xblock
@@ -1007,7 +1008,9 @@ python3-openid==3.2.0 ; python_version >= "3"
     #   -r requirements/edx/kernel.in
     #   social-auth-core
 python3-saml==1.16.0
-    # via -r requirements/edx/kernel.in
+    # via
+    #   -r requirements/edx/kernel.in
+    #   edx-enterprise
 pytz==2025.2
     # via
     #   -r requirements/edx/kernel.in
@@ -1136,9 +1139,7 @@ slumber==0.7.1
 sniffio==1.3.1
     # via anyio
 snowflake-connector-python==4.2.0
-    # via
-    #   edx-enterprise
-    #   enterprise-integrated-channels
+    # via enterprise-integrated-channels
 social-auth-app-django==5.4.1
     # via
     #   -c requirements/constraints.txt

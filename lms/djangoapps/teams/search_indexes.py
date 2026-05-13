@@ -10,7 +10,7 @@ from django.conf import settings
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils import translation
-from elasticsearch.exceptions import ConnectionError  # lint-amnesty, pylint: disable=redefined-builtin
+from elasticsearch.exceptions import ConnectionError, TransportError  # lint-amnesty, pylint: disable=redefined-builtin
 from search.search_engine_base import SearchEngine
 
 from lms.djangoapps.teams.models import CourseTeam
@@ -141,8 +141,8 @@ def course_team_post_save_callback(**kwargs):
     """
     try:
         CourseTeamIndexer.index(kwargs['instance'])
-    except ElasticSearchConnectionError:
-        pass
+    except (ElasticSearchConnectionError, TransportError):
+        logging.exception('Failed to index team %s in Elasticsearch', kwargs['instance'].team_id)
 
 
 @receiver(post_delete, sender=CourseTeam, dispatch_uid='teams.signals.course_team_post_delete_callback')
@@ -152,5 +152,5 @@ def course_team_post_delete_callback(**kwargs):
     """
     try:
         CourseTeamIndexer.remove(kwargs['instance'])
-    except ElasticSearchConnectionError:
-        pass
+    except (ElasticSearchConnectionError, TransportError):
+        logging.exception('Failed to remove team %s from Elasticsearch', kwargs['instance'].team_id)

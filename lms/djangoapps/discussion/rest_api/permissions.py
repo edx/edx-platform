@@ -194,6 +194,11 @@ def can_take_action_on_spam(user, course_id):
     """
     Returns if the user has access to take action against forum spam posts.
 
+    Grants permission to:
+    - Global Staff
+    - Discussion Administrators
+    - Discussion Moderators
+
     Parameters:
         user: User object
         course_id: CourseKey or string of course_id
@@ -202,12 +207,13 @@ def can_take_action_on_spam(user, course_id):
         bool: True if user can take action on spam, False otherwise
     """
     # Global staff have universal access
-    if GlobalStaff().has_user(user) or user.is_staff:
+    if GlobalStaff().has_user(user):
         return True
 
     if isinstance(course_id, str):
         course_id = CourseKey.from_string(course_id)
 
+    # Check for Discussion Admin or Moderator roles
     user_roles = set(
         Role.objects.filter(
             users=user,
@@ -265,6 +271,39 @@ class CanMuteUsers(permissions.BasePermission):
             GlobalStaff().has_user(user)
         )
 
+    @staticmethod
+    def has_course_wide_privilege(user, course_id):
+        """
+        Check if user has privileges for course-wide mute/unmute operations.
+
+        Only these roles can perform course-wide operations:
+        - Global Staff
+        - Discussion Admin (FORUM_ROLE_ADMINISTRATOR)
+        - Discussion Moderator (FORUM_ROLE_MODERATOR)
+
+        Explicitly EXCLUDES:
+        - Course Admin
+        - Course Staff
+        - Group Community TA (FORUM_ROLE_GROUP_MODERATOR)
+        - Community TA (FORUM_ROLE_COMMUNITY_TA)
+
+        Args:
+            user: User to check
+            course_id: Course context
+
+        Returns:
+            bool: True if user has course-wide privileges
+        """
+        # Check for allowed roles
+        return (
+            GlobalStaff().has_user(user) or
+            Role.objects.filter(
+                users=user,
+                course_id=course_id,
+                name__in=[FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR]
+            ).exists()
+        )
+
     def has_permission(self, request, view):
         """
         Check if user has permission to access mute/unmute endpoints.
@@ -306,22 +345,39 @@ class CanMuteUsers(permissions.BasePermission):
         if requesting_user.id == target_user.id:
             return False
 
-        # Check if target user has discussion privileges
+        # Check if target user has discussion privileges (any role)
         target_is_privileged = CanMuteUsers._is_privileged_user(target_user, course_id)
 
-        # Check if requesting user has discussion privileges
-        requesting_is_privileged = CanMuteUsers._is_privileged_user(requesting_user, course_id)
+        # For course-wide muting, check specific roles
+        if scope == 'course':
+            if not CanMuteUsers.has_course_wide_privilege(
+                requesting_user, course_id
+            ):
+                return False
+
+            # Learners cannot mute privileged users even course-wide
+            if target_is_privileged and not CanMuteUsers._is_privileged_user(requesting_user, course_id):
+                return False
+            return True
+
+        # For personal muting
+        # Check if user is Course Staff (allowed for personal mutes)
+        is_course_staff = CourseStaffRole(course_id).has_user(requesting_user)
 
         # Learners cannot mute discussion-privileged users
-        if target_is_privileged and not requesting_is_privileged:
+        if (
+            target_is_privileged and
+            not CanMuteUsers._is_privileged_user(requesting_user, course_id) and
+            not is_course_staff
+        ):
             return False
 
-        # For course-wide muting, user must have discussion privileges
-        if scope == 'course' and not requesting_is_privileged:
-            return False
+        # Course Staff can always do personal mutes
+        if is_course_staff:
+            return True
 
         # Non-privileged users must be enrolled in the course
-        if not requesting_is_privileged:
+        if not CanMuteUsers._is_privileged_user(requesting_user, course_id):
             try:
                 CourseEnrollment.objects.get(
                     user=requesting_user,
@@ -340,9 +396,8 @@ class CanMuteUsers(permissions.BasePermission):
 
         Rules:
         - Users cannot unmute themselves
-        - Staff (instructors, TAs, global staff) can unmute anyone at any scope
-        - Course-wide unmute is restricted to staff
-        - Personal unmute requires enrollment
+        - For course-wide unmute: Only Global Staff, Discussion Admin, Discussion Moderator
+        - For personal unmute: Enrolled users, Course Staff, and privileged users
 
         Args:
             requesting_user: User attempting to unmute
@@ -357,16 +412,16 @@ class CanMuteUsers(permissions.BasePermission):
         if requesting_user.id == target_user.id:
             return False
 
-        # Check if requesting user is staff or has discussion privileges (includes CTAs)
-        requesting_is_privileged = CanMuteUsers._is_privileged_user(requesting_user, course_id)
+        # For course-wide unmuting, only specific roles are allowed
+        if scope == 'course':
+            return CanMuteUsers.has_course_wide_privilege(
+                requesting_user, course_id
+            )
 
-        # Privileged users (staff, instructors, CTAs, moderators) can unmute anyone
-        if requesting_is_privileged:
+        # For personal unmuting
+        # Course Staff can always do personal unmutes
+        if CourseStaffRole(course_id).has_user(requesting_user):
             return True
-
-        # For course-wide unmuting, only privileged users are allowed
-        if scope == 'course' and not requesting_is_privileged:
-            return False
 
         # For personal unmuting, verify the user is enrolled in the course
         try:
@@ -377,7 +432,7 @@ class CanMuteUsers(permissions.BasePermission):
             )
             return True
         except CourseEnrollment.DoesNotExist:
-            return False
+            return CanMuteUsers._is_privileged_user(requesting_user, course_id)
 
 
 class IsAllowedToRestore(permissions.BasePermission):
