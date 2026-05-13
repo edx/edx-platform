@@ -16,6 +16,7 @@ from urllib.parse import urlencode, urlunparse
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.http import Http404
@@ -690,6 +691,96 @@ def get_non_courseware_topics(
     return non_courseware_topics, existing_topic_ids
 
 
+def filter_muted_thread_counts(
+    request_user,
+    course_key: CourseKey,
+    thread_counts: Dict[str, Dict[str, int]],
+) -> Dict[str, Dict[str, int]]:
+    """
+    Remove muted users' threads from topic counts.
+
+    This ensures counts match visible posts by excluding muted users based on:
+    - Personal mutes: Always excluded
+    - Course-wide mutes: Excluded for everyone
+
+    Args:
+        request_user: The user requesting the counts
+        course_key: The course key
+        thread_counts: Base thread counts
+
+    Returns:
+        Thread counts with muted users' content excluded
+    """
+
+    if not request_user or not request_user.is_authenticated:
+        return thread_counts
+
+    try:
+        _, muted_user_ids = filter_muted_content(
+            request_user,
+            course_key,
+            None,
+            return_muted_ids=True,
+        )
+
+        if not muted_user_ids:
+            return thread_counts
+
+        adjusted_counts = {
+            topic_id: counts.copy()
+            for topic_id, counts in thread_counts.items()
+        }
+
+        for user_id in muted_user_ids:
+            cache_key = f"muted_user_threads:{course_key}:{user_id}"
+            user_threads = cache.get(cache_key)
+
+            if user_threads is None:
+                try:
+                    user_threads = forum_api.get_user_threads(
+                        user_id=str(request_user.id),
+                        author_id=str(user_id),
+                        course_id=str(course_key),
+                        per_page=1000,
+                        page=1,
+                        context="course",
+                        is_deleted=False,
+                    )
+
+                    # Cache for 5 minutes to reduce repeated API calls
+                    cache.set(cache_key, user_threads, 300)
+
+                except Exception:  # pylint: disable=broad-except
+                    log.exception(
+                        "Failed to fetch threads for muted user_id=%s in course_key=%s",
+                        user_id,
+                        course_key,
+                    )
+                    continue
+
+            for thread in user_threads.get("collection", []):
+                topic_id = thread.get("commentable_id")
+                thread_type = thread.get("thread_type", "discussion")
+
+                if (
+                    topic_id in adjusted_counts
+                    and thread_type in adjusted_counts[topic_id]
+                ):
+                    adjusted_counts[topic_id][thread_type] = max(
+                        0,
+                        adjusted_counts[topic_id][thread_type] - 1,
+                    )
+
+        return adjusted_counts
+
+    except Exception:  # pylint: disable=broad-except
+        log.exception(
+            "Failed to filter muted thread counts for course_key=%s",
+            course_key,
+        )
+        return thread_counts
+
+
 def get_course_topics(
     request: Request, course_key: CourseKey, topic_ids: Optional[Set[str]] = None
 ):
@@ -712,6 +803,9 @@ def get_course_topics(
     """
     course = _get_course(course_key, request.user)
     thread_counts = get_course_commentable_counts(course.id)
+
+    # Adjust counts to exclude muted users' threads for this specific requester
+    thread_counts = filter_muted_thread_counts(request.user, course_key, thread_counts)
 
     courseware_topics, existing_courseware_topic_ids = get_courseware_topics(
         request, course_key, course, topic_ids, thread_counts
@@ -883,6 +977,8 @@ def get_course_topics_v2(
 
     if provider_type in [Provider.OPEN_EDX, Provider.LEGACY]:
         thread_counts = get_course_commentable_counts(course_key)
+        # Adjust counts to exclude muted users' threads for this specific requester
+        thread_counts = filter_muted_thread_counts(user, course_key, thread_counts)
     else:
         thread_counts = {}
         # For other providers we can't sort by activity since we don't have activity information.
