@@ -1,9 +1,6 @@
 """
 Utility functions for edx-ace.
 """
-import logging
-
-log = logging.getLogger(__name__)
 
 
 def setup_firebase_app(firebase_credentials, app_name='fcm-app'):
