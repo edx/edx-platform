@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import BadRequest, ValidationError
 from django.shortcuts import get_object_or_404
 from drf_yasg import openapi
+from edx_django_utils.monitoring import set_custom_attribute
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import (
     SessionAuthenticationAllowInactiveUser,
@@ -18,7 +19,11 @@ from edx_rest_framework_extensions.auth.session.authentication import (
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import permissions, status
 from rest_framework.authentication import SessionAuthentication
-from rest_framework.exceptions import ParseError, UnsupportedMediaType
+from rest_framework.exceptions import (
+    ParseError,
+    PermissionDenied,
+    UnsupportedMediaType,
+)
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -118,6 +123,30 @@ from .utils import (
 log = logging.getLogger(__name__)
 
 User = get_user_model()
+
+
+def _discussion_error_type(exc):
+    """Map common discussion exceptions to a stable Datadog error type."""
+    if isinstance(exc, PermissionError):
+        return "permission_denied"
+    if isinstance(exc, PermissionDenied):
+        return "permission_denied"
+    if isinstance(exc, InvalidKeyError):
+        return "validation_error"
+    if isinstance(exc, ValidationError):
+        return "validation_error"
+    if isinstance(exc, ParseError):
+        return "validation_error"
+    if isinstance(exc, UnsupportedMediaType):
+        return "validation_error"
+    return "backend_error"
+
+
+def _get_comment_trace_context(comment_id):
+    """Retrieve comment context needed for request-level telemetry."""
+    cc_comment = Comment(id=comment_id).retrieve()
+    course_id = get_course_id_from_thread_id(cc_comment["thread_id"])
+    return cc_comment, course_id
 
 
 @view_auth_classes()
@@ -713,52 +742,152 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         Implements the POST method for the list endpoint as described in the
         class docstring.
         """
-        if not request.data.get("course_id"):
-            raise ValidationError({"course_id": ["This field is required."]})
-        course_key_str = request.data.get("course_id")
-        course_key = CourseKey.from_string(course_key_str)
+        set_custom_attribute("forum.operation", "thread.create")
+        set_custom_attribute("forum.course_id", request.data.get("course_id", ""))
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
 
-        if is_content_creation_rate_limited(request, course_key=course_key):
-            return Response(
-                "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
-            )
+        if request.data.get("type"):
+            set_custom_attribute("forum.thread_type", request.data.get("type"))
+        if request.data.get("topic_id"):
+            set_custom_attribute("forum.commentable_id", request.data.get("topic_id"))
+        if request.data.get("group_id") is not None:
+            set_custom_attribute("forum.group_id", str(request.data.get("group_id")))
 
-        if is_captcha_enabled(course_key) and is_only_student(course_key, request.user):
-            captcha_token = request.data.get("captcha_token")
-            if not captcha_token:
-                raise ValidationError({"captcha_token": "This field is required."})
+        try:
+            if not request.data.get("course_id"):
+                raise ValidationError({"course_id": ["This field is required."]})
+            course_key_str = request.data.get("course_id")
+            course_key = CourseKey.from_string(course_key_str)
 
-            if not verify_recaptcha_token(captcha_token):
-                return Response({"error": "CAPTCHA verification failed."}, status=400)
+            if is_content_creation_rate_limited(request, course_key=course_key):
+                set_custom_attribute("forum.result", "error")
+                set_custom_attribute(
+                    "forum.http_status", str(status.HTTP_429_TOO_MANY_REQUESTS)
+                )
+                set_custom_attribute("forum.error_type", "rate_limited")
+                return Response(
+                    "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
 
-        if (
-            ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
-            and not request.user.is_active
-        ):
-            raise ValidationError(
-                {"detail": "Only verified users can post in discussions."}
-            )
+            if is_captcha_enabled(course_key) and is_only_student(
+                course_key, request.user
+            ):
+                captcha_token = request.data.get("captcha_token")
+                if not captcha_token:
+                    raise ValidationError({"captcha_token": "This field is required."})
 
-        data = request.data.copy()
-        data.pop("captcha_token", None)
-        return Response(create_thread(request, data))
+                if not verify_recaptcha_token(captcha_token):
+                    set_custom_attribute("forum.result", "error")
+                    set_custom_attribute(
+                        "forum.http_status", str(status.HTTP_400_BAD_REQUEST)
+                    )
+                    set_custom_attribute("forum.error_type", "validation_error")
+                    return Response(
+                        {"error": "CAPTCHA verification failed."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            if (
+                ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
+                and not request.user.is_active
+            ):
+                raise ValidationError(
+                    {"detail": "Only verified users can post in discussions."}
+                )
+
+            data = request.data.copy()
+            data.pop("captcha_token", None)
+            response = Response(create_thread(request, data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def partial_update(self, request, thread_id):
         """
         Implements the PATCH method for the instance endpoint as described in
         the class docstring.
         """
-        if request.content_type != MergePatchParser.media_type:
-            raise UnsupportedMediaType(request.content_type)
-        return Response(update_thread(request, thread_id, request.data))
+        voted_value = request.data.get("voted") if "voted" in request.data else None
+        if voted_value in (True, "true", "True", 1, "1"):
+            operation = "thread.vote"
+        elif voted_value in (False, "false", "False", 0, "0"):
+            operation = "thread.unvote"
+        else:
+            operation = "thread.update"
+
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.entity_id", thread_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            course_id = request.data.get("course_id") or get_course_id_from_thread_id(
+                thread_id
+            )
+            set_custom_attribute("forum.course_id", str(course_id))
+
+            update_fields = [
+                field
+                for field, value in request.data.items()
+                if value is not None and field != "voted"
+            ]
+            if update_fields and operation == "thread.update":
+                set_custom_attribute("forum.update_fields", ",".join(update_fields))
+
+            if request.data.get("type"):
+                set_custom_attribute("forum.thread_type", request.data.get("type"))
+            if request.data.get("topic_id"):
+                set_custom_attribute(
+                    "forum.commentable_id", request.data.get("topic_id")
+                )
+            if request.data.get("group_id") is not None:
+                set_custom_attribute(
+                    "forum.group_id", str(request.data.get("group_id"))
+                )
+
+            if request.content_type != MergePatchParser.media_type:
+                raise UnsupportedMediaType(request.content_type)
+
+            response = Response(update_thread(request, thread_id, request.data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def destroy(self, request, thread_id):
         """
         Implements the DELETE method for the instance endpoint as described in
         the class docstring
         """
-        delete_thread(request, thread_id)
-        return Response(status=204)
+        set_custom_attribute("forum.operation", "thread.delete")
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.entity_id", thread_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            course_id = get_course_id_from_thread_id(thread_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            set_custom_attribute("forum.delete_mode", "soft")
+
+            delete_thread(request, thread_id)
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(status.HTTP_204_NO_CONTENT))
+            return Response(status=204)
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
 
 class LearnerThreadView(APIView):
@@ -1117,52 +1246,150 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
         Implements the POST method for the list endpoint as described in the
         class docstring.
         """
-        if not request.data.get("thread_id"):
-            raise ValidationError({"thread_id": ["This field is required."]})
-        course_key_str = get_course_id_from_thread_id(request.data["thread_id"])
-        course_key = CourseKey.from_string(course_key_str)
+        operation = (
+            "comment.create_child"
+            if request.data.get("parent_id")
+            else "comment.create_parent"
+        )
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
 
-        if is_content_creation_rate_limited(request, course_key=course_key):
-            return Response(
-                "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
-            )
+        try:
+            if not request.data.get("thread_id"):
+                raise ValidationError({"thread_id": ["This field is required."]})
+            course_key_str = get_course_id_from_thread_id(request.data["thread_id"])
+            course_key = CourseKey.from_string(course_key_str)
+            set_custom_attribute("forum.course_id", str(course_key_str))
 
-        if is_captcha_enabled(course_key) and is_only_student(course_key, request.user):
-            captcha_token = request.data.get("captcha_token")
-            if not captcha_token:
-                raise ValidationError({"captcha_token": "This field is required."})
+            if request.data.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(request.data.get("parent_id"))
+                )
 
-            if not verify_recaptcha_token(captcha_token):
-                return Response({"error": "CAPTCHA verification failed."}, status=400)
+            if is_content_creation_rate_limited(request, course_key=course_key):
+                set_custom_attribute("forum.result", "error")
+                set_custom_attribute(
+                    "forum.http_status", str(status.HTTP_429_TOO_MANY_REQUESTS)
+                )
+                set_custom_attribute("forum.error_type", "rate_limited")
+                return Response(
+                    "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
 
-        if (
-            ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
-            and not request.user.is_active
-        ):
-            raise ValidationError(
-                {"detail": "Only verified users can post in discussions."}
-            )
+            if is_captcha_enabled(course_key) and is_only_student(
+                course_key, request.user
+            ):
+                captcha_token = request.data.get("captcha_token")
+                if not captcha_token:
+                    raise ValidationError({"captcha_token": "This field is required."})
 
-        data = request.data.copy()
-        data.pop("captcha_token", None)
-        return Response(create_comment(request, data))
+                if not verify_recaptcha_token(captcha_token):
+                    set_custom_attribute("forum.result", "error")
+                    set_custom_attribute(
+                        "forum.http_status", str(status.HTTP_400_BAD_REQUEST)
+                    )
+                    set_custom_attribute("forum.error_type", "validation_error")
+                    return Response(
+                        {"error": "CAPTCHA verification failed."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            if (
+                ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
+                and not request.user.is_active
+            ):
+                raise ValidationError(
+                    {"detail": "Only verified users can post in discussions."}
+                )
+
+            data = request.data.copy()
+            data.pop("captcha_token", None)
+            response = Response(create_comment(request, data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def destroy(self, request, comment_id):
         """
         Implements the DELETE method for the instance endpoint as described in
         the class docstring
         """
-        delete_comment(request, comment_id)
-        return Response(status=204)
+        set_custom_attribute("forum.operation", "comment.delete")
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.entity_id", comment_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            cc_comment, course_id = _get_comment_trace_context(comment_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            if cc_comment.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(cc_comment.get("parent_id"))
+                )
+            set_custom_attribute("forum.delete_mode", "soft")
+
+            delete_comment(request, comment_id)
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(status.HTTP_204_NO_CONTENT))
+            return Response(status=204)
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def partial_update(self, request, comment_id):
         """
         Implements the PATCH method for the instance endpoint as described in
         the class docstring.
         """
-        if request.content_type != MergePatchParser.media_type:
-            raise UnsupportedMediaType(request.content_type)
-        return Response(update_comment(request, comment_id, request.data))
+        voted_value = request.data.get("voted") if "voted" in request.data else None
+        if voted_value in (True, "true", "True", 1, "1"):
+            operation = "comment.vote"
+        elif voted_value in (False, "false", "False", 0, "0"):
+            operation = "comment.unvote"
+        else:
+            operation = "comment.update"
+
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.entity_id", comment_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            cc_comment, course_id = _get_comment_trace_context(comment_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            if cc_comment.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(cc_comment.get("parent_id"))
+                )
+
+            update_fields = [
+                field
+                for field, value in request.data.items()
+                if value is not None and field != "voted"
+            ]
+            if update_fields and operation == "comment.update":
+                set_custom_attribute("forum.update_fields", ",".join(update_fields))
+
+            if request.content_type != MergePatchParser.media_type:
+                raise UnsupportedMediaType(request.content_type)
+
+            response = Response(update_comment(request, comment_id, request.data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
 
 class UploadFileView(DeveloperErrorViewMixin, APIView):

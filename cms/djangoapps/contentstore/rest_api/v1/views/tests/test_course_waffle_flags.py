@@ -3,6 +3,7 @@ Unit tests for the course waffle flags view
 """
 
 from django.urls import reverse
+from edx_toggles.toggles.testutils import override_waffle_flag
 
 from cms.djangoapps.contentstore import toggles
 from cms.djangoapps.contentstore.tests.utils import CourseTestCase
@@ -40,6 +41,7 @@ class CourseWaffleFlagsViewTest(CourseTestCase):
         "enable_course_optimizer_check_prev_run_links": False,
         "enable_unit_expanded_view": False,
         "enable_outline_component_creation": False,
+        "enable_audio_description": False,
     }
 
     def setUp(self):
@@ -71,3 +73,14 @@ class CourseWaffleFlagsViewTest(CourseTestCase):
             "enable_course_optimizer": True,
             "enable_course_optimizer_check_prev_run_links": True,
         }
+
+    @override_waffle_flag(toggles.ENABLE_AUDIO_DESCRIPTION, active=True)
+    def test_audio_description_upload_flag_enabled(self):
+        """
+        When the global AD upload flag is on, the serializer should
+        report it as True regardless of which course (or no course) is
+        in the request.
+        """
+        url = reverse("cms.djangoapps.contentstore:v1:course_waffle_flags")
+        response = self.client.get(url)
+        assert response.data["enable_audio_description"] is True

@@ -14,6 +14,7 @@ from django.core.files.base import ContentFile
 from django.utils.timezone import now
 from edxval.api import create_external_video, create_or_update_video_transcript, delete_video_transcript
 from opaque_keys.edx.locator import CourseLocator, LibraryLocatorV2
+
 from webob import Response
 from xblock.core import XBlock
 from xblock.exceptions import JsonHandlerError
@@ -674,3 +675,72 @@ class VideoStudioViewHandlers:
         except (UnicodeDecodeError, TranscriptsGenerationException, NotFoundError):
             response = Response(status=404)
         return response
+
+    @XBlock.handler
+    def studio_audio_description(self, request, suffix=''):  # pylint: disable=unused-argument
+        """
+        Studio handler for audio description upload/delete/download.
+
+        Mirrors the transcript upload flow: the browser POSTs the file
+        directly, and it is saved via edx-val's Django storage backend.
+
+        - POST  multipart with file + file_name + content_type
+        - DELETE
+        - GET   returns {file_name, url}
+        """
+        # CMS-only imports: xmodule is shared between CMS and LMS, so these
+        # must stay inside the handler to avoid ImportError in LMS context.
+        from cms.djangoapps.contentstore.audio_description_storage_handlers import (  # pylint: disable=import-outside-toplevel
+            AudioDescriptionUploadError,
+            delete_audio_description,
+            get_audio_description_url,
+            upload_audio_description,
+        )
+        from cms.djangoapps.contentstore.toggles import audio_description_enabled  # pylint: disable=import-outside-toplevel
+
+        if not audio_description_enabled or not audio_description_enabled(self.course_id):
+            return Response(status=404)
+
+        if request.method == 'POST':
+            try:
+                file_obj = request.POST.get('file')
+                if file_obj is None:
+                    return Response(json={'error': 'file is required'}, status=400)
+
+                file_name = request.POST.get('file_name', getattr(file_obj, 'name', ''))
+                content_type = request.POST.get('content_type', getattr(file_obj, 'type', ''))
+
+                if not self.edx_video_id:
+                    # pylint: disable=attribute-defined-outside-init
+                    self.edx_video_id = create_external_video(display_name='external video')
+
+                url = upload_audio_description(
+                    edx_video_id=self.edx_video_id,
+                    file_name=file_name,
+                    content_type=content_type,
+                    file_data=file_obj.file,
+                )
+                # pylint: disable=attribute-defined-outside-init
+                self.audio_description = file_name
+                # Store the video_id separately so it is never reset by the Studio form.
+                self.audio_description_video_id = self.edx_video_id
+                return Response(json={'file_name': file_name, 'url': url}, status=201)
+            except AudioDescriptionUploadError as exc:
+                return Response(json={'error': str(exc)}, status=400)
+
+        if request.method == 'DELETE':
+            ad_video_id = getattr(self, 'audio_description_video_id', '') or self.edx_video_id
+            delete_audio_description(ad_video_id)
+            # pylint: disable=attribute-defined-outside-init
+            self.audio_description = ''
+            self.audio_description_video_id = ''
+            return Response(status=204)
+
+        if request.method == 'GET':
+            ad_video_id = getattr(self, 'audio_description_video_id', '') or self.edx_video_id
+            url = get_audio_description_url(ad_video_id)
+            if not url:
+                return Response(status=404)
+            return Response(json={'file_name': self.audio_description, 'url': url})
+
+        return Response(status=405)
