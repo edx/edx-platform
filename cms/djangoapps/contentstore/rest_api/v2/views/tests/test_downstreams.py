@@ -3,6 +3,7 @@ Unit tests for /api/contentstore/v2/downstreams/* JSON APIs.
 """
 import json
 from datetime import datetime, timezone
+from unittest import skip
 from unittest.mock import MagicMock, patch
 
 import ddt
@@ -58,6 +59,7 @@ def _get_upstream_link_bad(_downstream):
     raise BadUpstream(MOCK_UPSTREAM_ERROR)
 
 
+@skip("Skipped until we get onto libraries V2:https://2u-internal.atlassian.net/browse/TNL2-306")
 class _BaseDownstreamViewTestMixin:
     """
     Shared data and error test cases.
