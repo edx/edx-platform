@@ -6,7 +6,7 @@ on:
       branch:
         description: "Target branch to create requirements PR against"
         required: true
-        default: "master"
+        default: "release-ulmo"
         type: string
       package:
         description: "Name of package to upgrade"
@@ -37,7 +37,7 @@ jobs:
           ref: "${{ inputs.branch }}"
 
       - name: Set up Python environment
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 

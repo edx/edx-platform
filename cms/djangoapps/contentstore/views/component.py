@@ -43,6 +43,12 @@ from openedx.core.djangoapps.content_tagging.api import get_object_tags
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.exceptions import ItemNotFoundError  # lint-amnesty, pylint: disable=wrong-import-order
 
+try:
+    from games.toggles import is_games_xblock_enabled  # pylint: disable=import-error
+except ImportError:
+    def is_games_xblock_enabled():
+        return False
+
 __all__ = [
     'container_handler',
     'component_handler',
@@ -83,13 +89,29 @@ CONTAINER_TEMPLATES = [
 ]
 
 DEFAULT_ADVANCED_MODULES = [
+    'annotatable',
+    'done',
+    'split_test',
+    'freetextresponse',
     'google-calendar',
     'google-document',
+    'imagemodal',
+    'h5pxblock',
+    'invideoquiz',
     'lti_consumer',
+    'oppia',
+    'ubcpi',
     'poll',
-    'split_test',
+    'qualtricssurvey',
+    'scorm',
+    'edx_sga',
+    'submit-and-compare',
     'survey',
     'word_cloud',
+    'recommender',
+    'library_content',
+    'schoolyourself_lesson',
+    'schoolyourself_review',
 ]
 
 
@@ -295,6 +317,11 @@ def get_component_templates(courselike, library=False):  # lint-amnesty, pylint:
     # by the components in the order listed in COMPONENT_TYPES.
     component_types = COMPONENT_TYPES[:]
 
+    # Add games xblock if enabled (checked at request time)
+    if is_games_xblock_enabled():
+        component_types.append('games')
+        component_display_names['games'] = _("Games")
+
     # Libraries do not support discussions, drag-and-drop, and openassessment and other libraries
     component_not_supported_by_library = [
         'discussion',
@@ -439,12 +466,16 @@ def get_component_templates(courselike, library=False):  # lint-amnesty, pylint:
                         )
                         categories.add(component)
 
+        beta_types = BETA_COMPONENT_TYPES[:]
+        if is_games_xblock_enabled() and category == 'games':
+            beta_types.append('games')
+
         component_templates.append({
             "type": category,
             "templates": templates_for_category,
             "display_name": component_display_names[category],
             "support_legend": create_support_legend_dict(),
-            "beta": category in BETA_COMPONENT_TYPES,
+            "beta": category in beta_types,
         })
 
     # Libraries do not support advanced components at this time.

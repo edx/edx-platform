@@ -23,8 +23,6 @@ from cms.djangoapps.contentstore.video_storage_handlers import (
     videos_index_html as videos_index_html_source_function,
     videos_index_json as videos_index_json_source_function,
     videos_post as videos_post_source_function,
-    storage_service_bucket as storage_service_bucket_source_function,
-    storage_service_key as storage_service_key_source_function,
     send_video_status_update as send_video_status_update_source_function,
     is_status_update_request as is_status_update_request_source_function,
     get_course_youtube_edx_video_ids,
@@ -210,20 +208,6 @@ def videos_post(course, request):
     Exposes helper method without breaking existing bindings/dependencies
     """
     return videos_post_source_function(course, request)
-
-
-def storage_service_bucket():
-    """
-    Exposes helper method without breaking existing bindings/dependencies
-    """
-    return storage_service_bucket_source_function()
-
-
-def storage_service_key(bucket, file_name):
-    """
-    Exposes helper method without breaking existing bindings/dependencies
-    """
-    return storage_service_key_source_function(bucket, file_name)
 
 
 def send_video_status_update(updates):

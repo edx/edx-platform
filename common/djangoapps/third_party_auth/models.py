@@ -745,6 +745,14 @@ class SAMLProviderConfig(ProviderConfig):
             "immediately after authenticating with the third party instead of the login page."
         ),
     )
+    skip_registration_optional_checkboxes = models.BooleanField(
+        default=False,
+        help_text=_(
+            "If enabled, optional checkboxes (marketing emails opt-in, etc.) will not be rendered "
+            "on the registration form for users registering via this provider. When these checkboxes "
+            "are skipped, their values are inferred as False (opted out)."
+        ),
+    )
     other_settings = models.TextField(
         verbose_name="Advanced settings", blank=True,
         help_text=(
@@ -803,12 +811,26 @@ class SAMLProviderConfig(ProviderConfig):
 
     def is_active_for_pipeline(self, pipeline):
         """ Is this provider being used for the specified pipeline? """
-        return self.backend_name == pipeline['backend'] and self.slug == pipeline['kwargs']['response']['idp_name']
+        try:
+            return self.backend_name == pipeline['backend'] and self.slug == pipeline['kwargs']['response']['idp_name']
+        except KeyError:
+            return False
 
     def match_social_auth(self, social_auth):
         """ Is this provider being used for this UserSocialAuth entry? """
         prefix = self.slug + ":"
         return self.backend_name == social_auth.provider and social_auth.uid.startswith(prefix)
+
+    def get_remote_id_from_field_name(self, social_auth, field_name):
+        """ Given a UserSocialAuth object, return the user remote ID against the field name provided. """
+        if not self.match_social_auth(social_auth):
+            raise ValueError(
+                f"UserSocialAuth record does not match given provider {self.provider_id}"
+            )
+        field_value = social_auth.extra_data.get(field_name, None)
+        if field_value and isinstance(field_value, list):
+            return field_value[0]
+        return field_value
 
     def get_remote_id_from_social_auth(self, social_auth):
         """ Given a UserSocialAuth object, return the remote ID used by this provider. """
@@ -827,7 +849,7 @@ class SAMLProviderConfig(ProviderConfig):
             return other_settings[name]
         raise KeyError
 
-    def get_config(self):
+    def get_config(self, backend):
         """
         Return a SAMLIdentityProvider instance for use by SAMLAuthBackend.
 
@@ -887,7 +909,7 @@ class SAMLProviderConfig(ProviderConfig):
             SAMLConfiguration.current(self.site.id, 'default')
         )
         idp_class = get_saml_idp_class(self.identity_provider_type)
-        return idp_class(self.slug, **conf)
+        return idp_class(backend, self.slug, **conf)
 
 
 class SAMLProviderData(models.Model):

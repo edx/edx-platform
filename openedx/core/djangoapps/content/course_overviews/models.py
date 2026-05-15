@@ -7,8 +7,8 @@ import json
 import logging
 from datetime import datetime
 from urllib.parse import urlparse, urlunparse
+from zoneinfo import ZoneInfo
 
-import pytz
 from ccx_keys.locator import CCXLocator
 from config_models.models import ConfigurationModel
 from django.conf import settings
@@ -336,7 +336,7 @@ class CourseOverview(TimeStampedModel):
                         CourseOverviewImageSet.objects.filter(course_overview=course_overview).delete()
                         CourseOverviewImageSet.create(course_overview, course)
 
-                except IntegrityError:
+                except IntegrityError as e:
                     # There is a rare race condition that will occur if
                     # CourseOverview.get_from_id is called while a
                     # another identical overview is already in the process
@@ -346,9 +346,13 @@ class CourseOverview(TimeStampedModel):
                     # to save a duplicate.
                     # (see: https://openedx.atlassian.net/browse/TNL-2854).
                     log.info(
-                        "Multiple CourseOverviews for course %s requested "
-                        "simultaneously; will only save one.",
+                        (
+                            "IntegrityError when saving CourseOverview for course %s: %s. This is likely due to "
+                            "multiple CourseOverviews being requested simultaneously; will only save one."
+                        ),
                         course_id,
+                        e,
+                        exc_info=True
                     )
                 except Exception:
                     log.exception(
@@ -705,7 +709,7 @@ class CourseOverview(TimeStampedModel):
             course_overviews = course_overviews.filter(**filter_)
         if active_only:
             course_overviews = course_overviews.filter(
-                Q(end__isnull=True) | Q(end__gte=datetime.now().replace(tzinfo=pytz.UTC))
+                Q(end__isnull=True) | Q(end__gte=datetime.now().replace(tzinfo=ZoneInfo("UTC")))
             )
 
         return course_overviews
@@ -737,11 +741,11 @@ class CourseOverview(TimeStampedModel):
         """
         if active_only:
             return course_overviews.filter(
-                Q(end__isnull=True) | Q(end__gte=datetime.now().replace(tzinfo=pytz.UTC))
+                Q(end__isnull=True) | Q(end__gte=datetime.now().replace(tzinfo=ZoneInfo("UTC")))
             )
         if archived_only:
             return course_overviews.filter(
-                end__lt=datetime.now().replace(tzinfo=pytz.UTC)
+                end__lt=datetime.now().replace(tzinfo=ZoneInfo("UTC"))
             )
         return course_overviews
 

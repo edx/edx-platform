@@ -41,10 +41,8 @@ Conventions
 # pylint: disable=invalid-name
 
 import importlib.util
-import sys
 import os
 
-import django
 from corsheaders.defaults import default_headers as corsheaders_default_headers
 from path import Path as path
 from django.utils.translation import gettext_lazy as _
@@ -2678,9 +2676,8 @@ OPTIONAL_APPS = [
     # edxval
     ('edxval', 'openedx.core.djangoapps.content.course_overviews.apps.CourseOverviewsConfig'),
 
-    # Enterprise Apps (http://github.com/openedx/edx-enterprise)
-    ('enterprise', None),
-    ('consent', None),
+    # Deprecated apps from the edx-enterprise package. We're working on removing these as part of
+    # pluginifying edx-enterprise (<https://discuss.openedx.org/t/18316>)
     ('integrated_channels.integrated_channel', None),
     ('integrated_channels.degreed', None),
     ('integrated_channels.degreed2', None),
@@ -2841,7 +2838,6 @@ ACCOUNT_VISIBILITY_CONFIGURATION["admin_fields"] = (
         "secondary_email_enabled",
         "year_of_birth",
         "phone_number",
-        "activation_key",
         "pending_name_change",
     ]
 )
@@ -3342,6 +3338,16 @@ VIDEO_UPLOAD_PIPELINE = {
     'ROOT_PATH': '',
 }
 
+############### Settings for video audio description ##################
+VIDEO_AUDIO_DESCRIPTION_SETTINGS = dict(
+    VIDEO_AUDIO_DESCRIPTION_MAX_BYTES=200 * 1024 * 1024,  # 200 MB
+    STORAGE_KWARGS=dict(
+        location=MEDIA_ROOT,
+    ),
+    DIRECTORY_PREFIX='audio-descriptions/',
+    BASE_URL=MEDIA_URL,
+)
+
 ### Proctoring configuration (redirct URLs and keys shared between systems) ####
 PROCTORING_BACKENDS = {
     'DEFAULT': 'null',
@@ -3488,6 +3494,36 @@ ENTERPRISE_VSF_UUID = "e815503343644ac7845bc82325c34460"
 ENTERPRISE_MANUAL_REPORTING_CUSTOMER_UUIDS = []
 
 AVAILABLE_DISCUSSION_TOURS = []
+
+############## DISCUSSION MODERATION ##############
+
+# .. toggle_name: settings.DISCUSSION_MODERATION_BAN_EMAIL_ENABLED
+# .. toggle_implementation: DjangoSetting
+# .. toggle_default: True
+# .. toggle_description: Enable/disable email notifications when users are banned from discussions.
+#   Set to False in development/test environments to prevent spam to partner-support@edx.org.
+#   When enabled, escalation emails are sent to DISCUSSION_MODERATION_ESCALATION_EMAIL address.
+# .. toggle_use_cases: opt_in
+# .. toggle_creation_date: 2024-11-24
+# .. toggle_tickets: COSMO2-736
+DISCUSSION_MODERATION_BAN_EMAIL_ENABLED = True
+
+# .. setting_name: DISCUSSION_MODERATION_ESCALATION_EMAIL
+# .. setting_default: 'partner-support@edx.org'
+# .. setting_description: Email address to receive ban escalation notifications when users are banned
+#   from discussions. Override in development to use a test email address.
+# .. setting_use_cases: opt_in
+# .. setting_creation_date: 2024-11-24
+# .. setting_tickets: COSMO2-736
+DISCUSSION_MODERATION_ESCALATION_EMAIL = 'partner-support@edx.org'
+
+# .. setting_name: DISCUSSION_MODERATION_BAN_REASON_MAX_LENGTH
+# .. setting_default: 1000
+# .. setting_description: Maximum character length for ban reason text.
+# .. setting_use_cases: opt_in
+# .. setting_creation_date: 2024-11-24
+# .. setting_tickets: COSMO2-736
+DISCUSSION_MODERATION_BAN_REASON_MAX_LENGTH = 1000
 
 ############## NOTIFICATIONS ##############
 NOTIFICATION_TYPE_ICONS = {}

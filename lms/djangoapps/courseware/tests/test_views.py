@@ -79,6 +79,7 @@ from lms.djangoapps.courseware.toggles import (
     COURSEWARE_MICROFRONTEND_ENABLE_NAVIGATION_SIDEBAR,
     COURSEWARE_MICROFRONTEND_SEARCH_ENABLED,
     COURSEWARE_OPTIMIZED_RENDER_XBLOCK,
+    ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE,
 )
 from completion.waffle import ENABLE_COMPLETION_TRACKING_SWITCH
 from lms.djangoapps.courseware.user_state_client import DjangoXBlockUserStateClient
@@ -1781,6 +1782,14 @@ class ProgressPageShowCorrectnessTests(ProgressPageBaseTests):
         (ShowCorrectness.PAST_DUE, TODAY, True),
         (ShowCorrectness.PAST_DUE, TOMORROW, False),
         (ShowCorrectness.PAST_DUE, TOMORROW, True),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, None, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, None, True),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, YESTERDAY, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, YESTERDAY, True),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TODAY, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TODAY, True),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TOMORROW, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TOMORROW, True),
     )
     @ddt.unpack
     def test_progress_page_no_problem_scores(self, show_correctness, due_date_name, graded):
@@ -1821,6 +1830,14 @@ class ProgressPageShowCorrectnessTests(ProgressPageBaseTests):
         (ShowCorrectness.PAST_DUE, TODAY, True, True),
         (ShowCorrectness.PAST_DUE, TOMORROW, False, False),
         (ShowCorrectness.PAST_DUE, TOMORROW, True, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, None, False, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, None, True, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, YESTERDAY, False, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, YESTERDAY, True, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TODAY, False, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TODAY, True, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TOMORROW, False, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TOMORROW, True, False),
     )
     @ddt.unpack
     def test_progress_page_hide_scores_from_learner(self, show_correctness, due_date_name, graded, show_grades):
@@ -1873,11 +1890,20 @@ class ProgressPageShowCorrectnessTests(ProgressPageBaseTests):
         (ShowCorrectness.PAST_DUE, TODAY, True, True),
         (ShowCorrectness.PAST_DUE, TOMORROW, False, True),
         (ShowCorrectness.PAST_DUE, TOMORROW, True, True),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, None, False, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, None, True, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, YESTERDAY, False, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, YESTERDAY, True, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TODAY, False, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TODAY, True, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TOMORROW, False, False),
+        (ShowCorrectness.NEVER_BUT_INCLUDE_GRADE, TOMORROW, True, False),
     )
     @ddt.unpack
     def test_progress_page_hide_scores_from_staff(self, show_correctness, due_date_name, graded, show_grades):
         """
-        Test that problem scores are hidden from staff viewing a learner's progress page only if show_correctness=never.
+        Test that problem scores are hidden from staff viewing a learner's progress page only if show_correctness is
+        never or never_but_include_grade.
         """
         due_date = self.DATES[due_date_name]
         self.setup_course(show_correctness=show_correctness, due_date=due_date, graded=graded)
@@ -3421,3 +3447,25 @@ class CourseAboutViewTests(ModuleStoreTestCase):
                 assert response.url == "http://example.com/catalog/courses/{}/about".format(self.course.id)
             else:
                 assert response.status_code == 200
+
+
+@ddt.ddt
+class UnifiedSiteAndTranslationLanguageEnabledViewTests(TestCase):
+    """
+    Tests for the unified_site_and_translation_language_enabled view
+    """
+    @override_waffle_flag(ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE, True)
+    def test_view_logged_out(self):
+        url = reverse('unified_translations_enabled_view')
+        self.client.logout()
+        response = self.client.get(url)
+        assert response.status_code == 302
+
+    @ddt.data(True, False)
+    def test_view(self, enabled):
+        url = reverse('unified_translations_enabled_view')
+        user = UserFactory.create()
+        assert self.client.login(username=user.username, password=TEST_PASSWORD)
+        with override_waffle_flag(ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE, enabled):
+            response = self.client.get(url)
+        assert response.json()['enabled'] == enabled

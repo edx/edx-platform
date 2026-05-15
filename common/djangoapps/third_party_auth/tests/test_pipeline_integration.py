@@ -3,10 +3,10 @@
 
 import datetime
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 import ddt
 import pytest
-import pytz
 from django import test
 from django.contrib.auth import models, REDIRECT_FIELD_NAME
 from django.core import mail
@@ -158,6 +158,15 @@ class UrlFormationTestCase(TestCase):
 
         with pytest.raises(ValueError):
             pipeline.get_complete_url(provider_name)
+
+    def test_complete_url_does_not_raise_for_tpa_saml_with_no_enabled_providers(self):
+        # tpa-saml is allowed to proceed even when no providers are visible in the
+        # site-filtered registry, because the SAML handshake may have completed via
+        # a site-independent lookup.
+        with mock.patch.object(provider.Registry, 'get_enabled_by_backend_name', return_value=iter([])):
+            url = pipeline.get_complete_url('tpa-saml')
+        assert url.startswith('/auth/complete')
+        assert 'tpa-saml' in url
 
     def test_complete_url_returns_expected_format(self):
         complete_url = pipeline.get_complete_url(self.enabled_provider.backend_name)
@@ -361,22 +370,105 @@ class EnsureUserInformationTestCase(TestCase):
         )
         with mock.patch('common.djangoapps.third_party_auth.pipeline.provider.Registry.get_from_pipeline') as get_from_pipeline:  # lint-amnesty, pylint: disable=line-too-long
             get_from_pipeline.return_value = saml_provider
-            with mock.patch(
-                'common.djangoapps.third_party_auth.pipeline.provider.Registry.get_enabled_by_backend_name'
-            ) as enabled_saml_providers:
-                enabled_saml_providers.return_value = [saml_provider, ] if is_saml else []
-                with mock.patch('social_core.pipeline.partial.partial_prepare') as partial_prepare:
-                    partial_prepare.return_value = mock.MagicMock(token='')
-                    strategy = mock.MagicMock()
-                    response = pipeline.ensure_user_information(
-                        strategy=strategy,
-                        backend=None,
-                        auth_entry=pipeline.AUTH_ENTRY_LOGIN,
-                        pipeline_index=0,
-                        details={'username': self.user.username, 'email': email}
-                    )
-                    assert response.status_code == 302
-                    assert response.url == expected_redirect_url
+            with mock.patch('social_core.pipeline.partial.partial_prepare') as partial_prepare:
+                backend = 'tpa-saml' if is_saml else 'oa2-google-oauth2'
+                partial_prepare.return_value = mock.MagicMock(token='', backend=backend)
+                strategy = mock.MagicMock()
+                response = pipeline.ensure_user_information(
+                    strategy=strategy,
+                    backend=None,
+                    auth_entry=pipeline.AUTH_ENTRY_LOGIN,
+                    pipeline_index=0,
+                    details={'username': self.user.username, 'email': email}
+                )
+                assert response.status_code == 302
+                assert response.url == expected_redirect_url
+
+
+@ddt.ddt
+class EnsureUserInformationNextUrlTestCase(test.TestCase):
+    """Tests that ensure_user_information forwards session['next'] as a query parameter."""
+
+    def _call_ensure_user_information(self, session_next, auth_entry=pipeline.AUTH_ENTRY_LOGIN,
+                                      send_to_registration_first=True):
+        """Helper to call ensure_user_information with a controlled session_get('next') value."""
+        mock_provider = mock.MagicMock(
+            send_to_registration_first=send_to_registration_first,
+            skip_email_verification=False,
+        )
+        with mock.patch(
+            'common.djangoapps.third_party_auth.pipeline.provider.Registry.get_from_pipeline'
+        ) as get_from_pipeline:
+            get_from_pipeline.return_value = mock_provider
+            with mock.patch('social_core.pipeline.partial.partial_prepare') as partial_prepare:
+                partial_prepare.return_value = mock.MagicMock(token='')
+                strategy = mock.MagicMock()
+                strategy.session_get.side_effect = lambda key, *args: (
+                    session_next if key == 'next' else mock.DEFAULT
+                )
+                response = pipeline.ensure_user_information(
+                    strategy=strategy,
+                    backend=None,
+                    auth_entry=auth_entry,
+                    pipeline_index=0,
+                )
+                return response
+
+    @mock.patch(
+        'common.djangoapps.third_party_auth.pipeline.is_tpa_next_url_on_dispatch_enabled',
+        return_value=True,
+    )
+    @ddt.data(
+        # (session_next, send_to_registration_first, expected_url)
+        ('/courses/my-course', True, '/register?next=/courses/my-course'),
+        ('/courses/my-course', False, '/login?next=/courses/my-course'),
+        ('/dashboard', True, '/register?next=/dashboard'),
+    )
+    @ddt.unpack
+    def test_next_url_forwarded_to_redirect(self, session_next, send_to_registration_first, expected_url, _flag_mock):
+        """When session contains a 'next' URL, it should be appended as a query parameter."""
+        response = self._call_ensure_user_information(
+            session_next=session_next,
+            send_to_registration_first=send_to_registration_first,
+        )
+        assert response.status_code == 302
+        assert response.url == expected_url
+
+    @mock.patch(
+        'common.djangoapps.third_party_auth.pipeline.is_tpa_next_url_on_dispatch_enabled',
+        return_value=True,
+    )
+    @ddt.data(None, '')
+    def test_no_next_url_gives_bare_redirect(self, session_next, _flag_mock):
+        """When session has no 'next' URL, the redirect should be bare /register."""
+        response = self._call_ensure_user_information(session_next=session_next)
+        assert response.status_code == 302
+        assert response.url == '/register'
+
+    @mock.patch(
+        'common.djangoapps.third_party_auth.pipeline.is_tpa_next_url_on_dispatch_enabled',
+        return_value=True,
+    )
+    def test_next_url_with_special_characters_is_encoded(self, _flag_mock):
+        """Special characters in the next URL should be percent-encoded."""
+        response = self._call_ensure_user_information(
+            session_next='/courses/my course?foo=bar&baz=1',
+        )
+        assert response.status_code == 302
+        assert response.url.startswith('/register?next=')
+        # The space and & should be encoded
+        assert '%20' in response.url or '+' in response.url
+        assert 'foo%3Dbar' in response.url or 'foo=bar' in response.url
+
+    @mock.patch(
+        'common.djangoapps.third_party_auth.pipeline.is_tpa_next_url_on_dispatch_enabled',
+        return_value=False,
+    )
+    def test_flag_disabled_gives_bare_redirect(self, _flag_mock):
+        """When the waffle flag is disabled, the redirect should be bare even with session['next']."""
+        response = self._call_ensure_user_information(session_next='/courses/my-course')
+        assert response.status_code == 302
+        assert response.url == '/register'
 
 
 class UserDetailsForceSyncTestCase(TestCase):
@@ -562,7 +654,7 @@ class SetIDVerificationStatusTestCase(TestCase):
         )
 
         with mock.patch('common.djangoapps.third_party_auth.pipeline.earliest_allowed_verification_date') as earliest_date:  # lint-amnesty, pylint: disable=line-too-long
-            earliest_date.return_value = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=1)
+            earliest_date.return_value = datetime.datetime.now(ZoneInfo("UTC")) + datetime.timedelta(days=1)
             # Begin the pipeline.
             pipeline.set_id_verification_status(
                 auth_entry=pipeline.AUTH_ENTRY_LOGIN,

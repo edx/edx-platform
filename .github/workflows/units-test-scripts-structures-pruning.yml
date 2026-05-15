@@ -2,9 +2,10 @@ name: units-test-scripts-common
 
 on:
   pull_request:
+  merge_group:
   push:
     branches:
-      - master
+      - release-ulmo
 
 jobs:
   test:
@@ -20,7 +21,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 

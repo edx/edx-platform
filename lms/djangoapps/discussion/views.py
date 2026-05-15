@@ -166,6 +166,7 @@ def get_threads(request, course, user_info, discussion_id=None, per_page=THREADS
                     'flagged',
                     'unread',
                     'unanswered',
+                    'context',
                 ]
             )
         )
@@ -186,6 +187,12 @@ def get_threads(request, course, user_info, discussion_id=None, per_page=THREADS
         # patch for backward compatibility to comments service
         if 'pinned' not in thread:
             thread['pinned'] = False
+
+    # Filter team discussions - only team members can see team posts
+    if discussion_id is not None and not is_privileged_user(course.id, request.user):
+        team = team_api.get_team_by_discussion(discussion_id)
+        if team and not team.users.filter(id=request.user.id).exists():
+            threads = []
 
     query_params['page'] = paginated_results.page
     query_params['num_pages'] = paginated_results.num_pages

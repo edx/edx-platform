@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 
 import requests
 from crum import get_current_request
+from django.apps import apps as django_apps
 from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.contrib.sites.models import Site
@@ -305,6 +306,16 @@ class EnterpriseApiServiceClient(EnterpriseServiceClientMixin, EnterpriseApiClie
         return enterprise_customer
 
 
+def fetch_enterprise_branding(self, enterprise_customer_uuid):
+    """
+    Fetch branding configuration for the given enterprise customer UUID.
+    """
+    branding_url = f"{self.base_api_url}/enterprise-customer-branding/{enterprise_customer_uuid}/"
+    response = self.client.get(branding_url)
+    response.raise_for_status()
+    return response.json()
+
+
 def activate_learner_enterprise(request, user, enterprise_customer):
     """
     Allow an enterprise learner to activate one of learner's linked enterprises.
@@ -373,7 +384,7 @@ def enterprise_enabled():
     """
     Determines whether the Enterprise app is installed
     """
-    return 'enterprise' in settings.INSTALLED_APPS and settings.FEATURES.get('ENABLE_ENTERPRISE_INTEGRATION', False)
+    return django_apps.is_installed('enterprise') and settings.FEATURES.get('ENABLE_ENTERPRISE_INTEGRATION', False)
 
 
 def enterprise_is_enabled(otherwise=None):
@@ -502,7 +513,9 @@ def enterprise_customer_uuid_for_request(request):
     if running_pipeline:
         # Determine if the user is in the middle of a third-party auth pipeline,
         # and set the sso_provider_id parameter to match if so.
-        sso_provider_id = Registry.get_from_pipeline(running_pipeline).provider_id
+        pipeline_provider = Registry.get_from_pipeline(running_pipeline)
+        if pipeline_provider:
+            sso_provider_id = pipeline_provider.provider_id
 
     if sso_provider_id:
         # If we have a third-party auth provider, get the linked enterprise customer.

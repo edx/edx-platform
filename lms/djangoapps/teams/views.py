@@ -17,6 +17,7 @@ from django.utils.functional import cached_property
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_noop
 from django_countries import countries
+from elasticsearch.exceptions import TransportError
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from edx_rest_framework_extensions.paginators import DefaultPagination, paginate_search_results
 from opaque_keys import InvalidKeyError
@@ -467,21 +468,20 @@ class TeamsListView(ExpandableFieldViewMixin, GenericAPIView):
             })
 
         if text_search and CourseTeamIndexer.search_is_enabled():
+            result_filter.update({'course_id': course_id_string})
             try:
                 search_engine = CourseTeamIndexer.engine()
-            except ElasticSearchConnectionError:
+                search_results = search_engine.search(
+                    query_string=text_search,
+                    field_dictionary=result_filter,
+                    size=MAXIMUM_SEARCH_SIZE,
+                )
+            except (ElasticSearchConnectionError, TransportError):
+                log.exception('Elasticsearch error for team search in course %s', course_id_string)
                 return Response(
                     build_api_error(gettext_noop('Error connecting to elasticsearch')),
                     status=status.HTTP_503_SERVICE_UNAVAILABLE
                 )
-
-            result_filter.update({'course_id': course_id_string})
-
-            search_results = search_engine.search(
-                query_string=text_search,
-                field_dictionary=result_filter,
-                size=MAXIMUM_SEARCH_SIZE,
-            )
 
             # We need to manually exclude some potential private_managed teams from results, because
             # it doesn't appear that the search supports "field__in" style lookups

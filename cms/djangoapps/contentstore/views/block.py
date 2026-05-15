@@ -1,8 +1,10 @@
 """Views for blocks."""
 
 import logging
+import re
 from collections import OrderedDict
 from functools import partial
+from urllib.parse import urlparse
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -305,6 +307,43 @@ def xblock_view_handler(request, usage_key_string, view_name):
         return HttpResponse(status=406)
 
 
+def _get_safe_return_to(request):
+    """
+    Read and validate the ``returnTo`` query parameter for the XBlock edit view.
+
+    Returns the parameter value if it is a safe same-origin URL (i.e. an
+    absolute-path reference that starts with ``/`` but not ``//``), or ``None``
+    if the parameter is absent or fails validation.  This prevents open-redirect
+    attacks via protocol-relative URLs such as ``//evil.com/path``.
+    """
+    return_to = request.GET.get('returnTo', '').strip()
+    if not return_to:
+        return None
+
+    if re.search(r'[\x00-\x1f\x7f]', return_to):
+        return None
+
+    if len(return_to) > 2048:
+        return None
+
+    parsed = urlparse(return_to)
+    if parsed.scheme or parsed.netloc:
+        request_origin = '{scheme}://{host}'.format(
+            scheme=request.scheme,
+            host=request.get_host(),
+        )
+        url_origin = '{scheme}://{host}'.format(
+            scheme=parsed.scheme,
+            host=parsed.netloc,
+        )
+        if request_origin != url_origin:
+            return None
+    elif not return_to.startswith('/') or return_to.startswith('//'):
+        return None
+
+    return return_to
+
+
 @xframe_options_exempt
 @require_http_methods(["GET"])
 @login_required
@@ -313,6 +352,10 @@ def xblock_edit_view(request, usage_key_string):
     Return rendered xblock edit view.
 
     Allows editing of an XBlock specified by the usage key.
+
+    Supports an optional ``returnTo`` query parameter.  When present and
+    pointing to a same-origin URL, the editor will redirect the browser to
+    that URL after the user saves or cancels instead of leaving the page blank.
     """
     usage_key = usage_key_with_run(usage_key_string)
     if not has_studio_read_access(request.user, usage_key.course_key):
@@ -333,6 +376,7 @@ def xblock_edit_view(request, usage_key_string):
         container_handler_context.update({
             "action_name": "edit",
             "resources": list(hashed_resources.items()),
+            "return_to": _get_safe_return_to(request),
         })
 
         return render_to_response('container_editor.html', container_handler_context)

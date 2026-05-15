@@ -4,20 +4,32 @@ Tests for discussion API permission logic
 
 
 import itertools
+from unittest.mock import Mock
 
 import ddt
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
 
+from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
+from common.djangoapps.student.tests.factories import UserFactory
 from lms.djangoapps.discussion.rest_api.permissions import (
+    IsAllowedToRestore,
     can_delete,
     get_editable_fields,
     get_initializable_comment_fields,
-    get_initializable_thread_fields
+    get_initializable_thread_fields,
+    CanMuteUsers
 )
 from openedx.core.djangoapps.django_comment_common.comment_client.comment import Comment
 from openedx.core.djangoapps.django_comment_common.comment_client.thread import Thread
 from openedx.core.djangoapps.django_comment_common.comment_client.user import User
+from common.djangoapps.student.models import CourseEnrollment
+from openedx.core.djangoapps.django_comment_common.models import (
+    FORUM_ROLE_ADMINISTRATOR,
+    FORUM_ROLE_COMMUNITY_TA,
+    FORUM_ROLE_MODERATOR,
+    Role,
+)
 
 
 def _get_context(
@@ -130,6 +142,8 @@ class GetEditableFieldsTest(ModuleStoreTestCase):
             expected |= {"voted"}
         if has_moderation_privilege and not is_author:
             expected |= {"edit_reason_code"}
+        if has_moderation_privilege and not is_author:
+            expected |= {"muted"}
         if is_author or has_moderation_privilege:
             expected |= {"raw_body", "topic_id", "type", "title"}
         if has_moderation_privilege and is_cohorted:
@@ -202,3 +216,180 @@ class CanDeleteTest(ModuleStoreTestCase):
             thread=Thread(user_id="5" if is_thread_author else "6")
         )
         assert can_delete(comment, context) == (is_author or is_privileged)
+
+
+@ddt.ddt
+class IsAllowedToRestoreTest(ModuleStoreTestCase):
+    """Tests for IsAllowedToRestore permission class"""
+
+    def setUp(self):
+        super().setUp()
+        self.course = CourseFactory.create()
+        self.permission = IsAllowedToRestore()
+
+    def _create_mock_request(self, user, course_id):
+        """Helper to create a mock request object"""
+        request = Mock()
+        request.user = user
+        request.data = {"course_id": str(course_id)}
+        return request
+
+    def _create_mock_view(self):
+        """Helper to create a mock view object"""
+        return Mock()
+
+    def test_unauthenticated_user_denied(self):
+        """Test that unauthenticated users are denied"""
+        user = Mock()
+        user.is_authenticated = False
+        request = self._create_mock_request(user, self.course.id)
+        view = self._create_mock_view()
+
+        assert not self.permission.has_permission(request, view)
+
+    def test_missing_course_id_denied(self):
+        """Test that requests without course_id are denied"""
+        user = UserFactory.create()
+        request = Mock()
+        request.user = user
+        request.data = {}  # No course_id
+        view = self._create_mock_view()
+
+        assert not self.permission.has_permission(request, view)
+
+    def test_invalid_course_id_denied(self):
+        """Test that requests with invalid course_id are denied"""
+        user = UserFactory.create()
+        request = Mock()
+        request.user = user
+        request.data = {"course_id": "invalid-course-id"}
+        view = self._create_mock_view()
+
+        assert not self.permission.has_permission(request, view)
+
+    def test_global_staff_allowed(self):
+        """Test that global staff users are allowed"""
+        user = UserFactory.create(is_staff=True)
+        request = self._create_mock_request(user, self.course.id)
+        view = self._create_mock_view()
+
+        assert self.permission.has_permission(request, view)
+
+    def test_course_staff_denied(self):
+        """Test that course staff are denied restore access (authoring role only)"""
+        user = UserFactory.create()
+        CourseStaffRole(self.course.id).add_users(user)
+        request = self._create_mock_request(user, self.course.id)
+        view = self._create_mock_view()
+
+        assert not self.permission.has_permission(request, view)
+
+    def test_course_instructor_denied(self):
+        """Test that course instructors are denied restore access (authoring role only)"""
+        user = UserFactory.create()
+        CourseInstructorRole(self.course.id).add_users(user)
+        request = self._create_mock_request(user, self.course.id)
+        view = self._create_mock_view()
+
+        assert not self.permission.has_permission(request, view)
+
+    @ddt.data(
+        FORUM_ROLE_ADMINISTRATOR,
+        FORUM_ROLE_MODERATOR,
+        FORUM_ROLE_COMMUNITY_TA,
+    )
+    def test_discussion_privileged_users_allowed(self, role_name):
+        """Test that discussion privileged users (moderator, community TA, administrator) are allowed"""
+        user = UserFactory.create()
+        role = Role.objects.get_or_create(name=role_name, course_id=self.course.id)[0]
+        role.users.add(user)
+        request = self._create_mock_request(user, self.course.id)
+        view = self._create_mock_view()
+
+        assert self.permission.has_permission(request, view)
+
+    def test_regular_user_denied(self):
+        """Test that regular users without privileges are denied"""
+        user = UserFactory.create()
+        request = self._create_mock_request(user, self.course.id)
+        view = self._create_mock_view()
+
+        assert not self.permission.has_permission(request, view)
+
+
+class ModerationPermissionsTest(ModuleStoreTestCase):
+    """Tests for discussion moderation permissions"""
+
+    def setUp(self):
+        super().setUp()
+        self.course = CourseFactory.create()
+
+    def test_can_mute_self_mute_prevention(self):
+        """Test that users cannot mute themselves"""
+
+        user = UserFactory.create()
+
+        # Self-mute should always return False
+        result = CanMuteUsers.can_mute(user, user, self.course.id, 'personal')
+        assert result is False
+
+        result = CanMuteUsers.can_mute(user, user, self.course.id, 'course')
+        assert result is False
+
+    def test_can_mute_basic_logic(self):
+        """Test basic mute permission logic"""
+
+        user1 = UserFactory.create()
+        user2 = UserFactory.create()
+
+        # Create enrollments
+        CourseEnrollment.objects.create(user=user1, course_id=self.course.id, is_active=True)
+        CourseEnrollment.objects.create(user=user2, course_id=self.course.id, is_active=True)
+
+        # Basic personal mute should work
+        result = CanMuteUsers.can_mute(user1, user2, self.course.id, 'personal')
+        assert result is True
+
+        # Course-wide mute should fail for non-staff
+        result = CanMuteUsers.can_mute(user1, user2, self.course.id, 'course')
+        assert result is False
+
+    def test_can_mute_discussion_moderator_permissions(self):
+        """Test discussion moderator mute permissions"""
+
+        moderator = UserFactory.create()
+        learner = UserFactory.create()
+
+        # Create enrollments
+        CourseEnrollment.objects.create(user=moderator, course_id=self.course.id, is_active=True)
+        CourseEnrollment.objects.create(user=learner, course_id=self.course.id, is_active=True)
+
+        # Make user a discussion moderator (not course staff)
+        role = Role.objects.get_or_create(name=FORUM_ROLE_MODERATOR, course_id=self.course.id)[0]
+        role.users.add(moderator)
+
+        # Discussion moderators should be able to do course-wide mutes
+        result = CanMuteUsers.can_mute(moderator, learner, self.course.id, 'course')
+        assert result is True
+
+        # Discussion moderators should also be able to do personal mutes
+        result = CanMuteUsers.can_mute(moderator, learner, self.course.id, 'personal')
+        assert result is True
+
+    def test_can_unmute_user_basic_logic(self):
+        """Test basic unmute permission logic"""
+
+        user1 = UserFactory.create()
+        user2 = UserFactory.create()
+
+        # Create enrollments for unmute operations
+        CourseEnrollment.objects.create(user=user1, course_id=self.course.id, is_active=True)
+        CourseEnrollment.objects.create(user=user2, course_id=self.course.id, is_active=True)
+
+        # Personal unmute should work
+        result = CanMuteUsers.can_unmute(user1, user2, self.course.id, 'personal')
+        assert result is True
+
+        # Course unmute should fail for non-staff
+        result = CanMuteUsers.can_unmute(user1, user2, self.course.id, 'course')
+        assert result is False

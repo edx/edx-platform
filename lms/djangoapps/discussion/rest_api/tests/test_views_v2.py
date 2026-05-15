@@ -25,7 +25,6 @@ from rest_framework.parsers import JSONParser
 from rest_framework.test import APIClient, APITestCase
 
 from lms.djangoapps.discussion.django_comment_client.tests.utils import (
-    ForumsEnableMixin,
     config_course_discussions,
     topic_name_to_id,
 )
@@ -72,7 +71,7 @@ from openedx.core.djangoapps.discussions.config.waffle import ENABLE_NEW_STRUCTU
 from openedx.core.djangoapps.user_api.accounts.image_helpers import get_profile_image_storage
 
 
-class DiscussionAPIViewTestMixin(ForumsEnableMixin, ForumMockUtilsMixin, UrlResetMixin):
+class DiscussionAPIViewTestMixin(ForumMockUtilsMixin, UrlResetMixin):
     """
     Mixin for common code in tests of Discussion API views. This includes
     creation of common structures (e.g. a course, user, and enrollment), logging
@@ -135,6 +134,7 @@ class DiscussionAPIViewTestMixin(ForumsEnableMixin, ForumMockUtilsMixin, UrlRese
                 "thread_type": "discussion",
                 "title": "Test Title",
                 "body": "Test body",
+                "is_deleted": False,
             }
         )
         cs_thread.update(overrides or {})
@@ -353,6 +353,7 @@ class ThreadViewSetPartialUpdateTest(
                     "voted",
                 ],
                 "response_count": 2,
+                "is_deleted": None,
             }
         )
         assert response_data == expected_data
@@ -382,6 +383,8 @@ class CommentViewSetPartialUpdateTest(
             "parent_id": None,
             "author": self.user.username,
             "author_label": None,
+            "is_author_banned": False,
+            "author_ban_scope": None,
             "created_at": "1970-01-01T00:00:00Z",
             "updated_at": "1970-01-01T00:00:00Z",
             "raw_body": "Original body",
@@ -409,6 +412,11 @@ class CommentViewSetPartialUpdateTest(
                 "image_url_medium": "http://testserver/static/default_50.png",
                 "image_url_small": "http://testserver/static/default_30.png",
             },
+            "learner_status": "new",
+            "is_deleted": False,
+            "deleted_at": None,
+            "deleted_by": None,
+            "deleted_by_label": None,
         }
         response_data.update(overrides or {})
         return response_data
@@ -502,6 +510,14 @@ class ThreadViewSetListTest(
 
     def setUp(self):
         super().setUp()
+        # Patch forum_api in api module to use the same mock as the mixin
+        self.api_patcher = mock.patch(
+            'lms.djangoapps.discussion.rest_api.api.forum_api',
+            self.mock_forum_api
+        )
+        self.api_patcher.start()
+        self.addCleanup(self.api_patcher.stop)
+
         self.author = UserFactory.create()
         self.url = reverse("thread-list")
 
@@ -523,6 +539,7 @@ class ThreadViewSetListTest(
                 "votes": {"up_count": 4},
                 "comments_count": 5,
                 "unread_comments_count": 3,
+                "is_deleted": False,
             }
         )
 
@@ -534,18 +551,21 @@ class ThreadViewSetListTest(
         self.assert_response_correct(
             response,
             400,
-            {"field_errors": {"course_id": {"developer_message": "This field is required."}}}
+            {
+                "field_errors": {
+                    "course_id": {"developer_message": "This field is required."}
+                }
+            },
         )
 
     def test_404(self):
         response = self.client.get(self.url, {"course_id": "non/existent/course"})
         self.assert_response_correct(
-            response,
-            404,
-            {"developer_message": "Course not found."}
+            response, 404, {"developer_message": "Course not found."}
         )
 
     def test_basic(self):
+        self.set_mock_return_value("get_all_muted_users_for_course", {"muted_users": []})
         self.register_get_user_response(self.user, upvoted_ids=["test_thread"])
         source_threads = [
             self.create_source_thread(
@@ -571,6 +591,7 @@ class ThreadViewSetListTest(
                         "voted",
                     ],
                     "abuse_flagged_count": None,
+                    "is_deleted": None,
                 }
             )
         ]
@@ -908,6 +929,9 @@ class BulkDeleteUserPostsTest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
                 "replies": random.randint(0, 30),
                 "responses": random.randint(0, 100),
                 "threads": random.randint(0, 10),
+                "deleted_threads": 0,
+                "deleted_replies": 0,
+                "deleted_responses": 0,
                 "username": f"user-{idx}"
             }
             for idx in range(10)
@@ -1099,6 +1123,8 @@ class CourseViewTest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
                 'is_email_verified': True,
                 'only_verified_users_can_post': False,
                 'content_creation_rate_limited': False,
+                'is_user_banned': False,
+                'enable_discussion_ban': False,
             }
         )
 
@@ -1574,7 +1600,13 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
             }},
             {"key": "vote_count", "value": 4},
             {"key": "voted", "value": False},
-
+            {"key": "learner_status", "value": "new"},
+            {"key": "is_deleted", "value": False},
+            {"key": "deleted_at", "value": None},
+            {"key": "deleted_by", "value": None},
+            {"key": "deleted_by_label", "value": None},
+            {"key": "is_author_banned", "value": False},
+            {"key": "author_ban_scope", "value": None},
         ]
         self.url = reverse("discussion_learner_threads", kwargs={'course_id': str(self.course.id)})
 
@@ -1698,7 +1730,8 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
             "per_page": 10,
             "thread_type": thread_type,
             "sort_key": 'activity',
-            "count_flagged": False
+            "count_flagged": False,
+            "show_deleted": False,
         }
 
         self.check_mock_called_with("get_user_active_threads", -1, **params)
@@ -1753,7 +1786,8 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
             "page": 1,
             "per_page": 10,
             "sort_key": cc_query,
-            "count_flagged": False
+            "count_flagged": False,
+            "show_deleted": False,
         }
         self.check_mock_called_with("get_user_active_threads", -1, **params)
 
@@ -1806,7 +1840,8 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
                 "per_page": 10,
                 post_status: True,
                 "sort_key": 'activity',
-                "count_flagged": False
+                "count_flagged": False,
+                "show_deleted": False,
             }
             self.check_mock_called_with("get_user_active_threads", -1, **params)
 
@@ -1814,7 +1849,7 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
 @ddt.ddt
 @httpretty.activate
 @override_waffle_flag(ENABLE_DISCUSSIONS_MFE, True)
-class CourseActivityStatsTest(ForumsEnableMixin, UrlResetMixin, ForumMockUtilsMixin, APITestCase,
+class CourseActivityStatsTest(UrlResetMixin, ForumMockUtilsMixin, APITestCase,
                               SharedModuleStoreTestCase):
     """
     Tests for the course stats endpoint
@@ -1837,6 +1872,9 @@ class CourseActivityStatsTest(ForumsEnableMixin, UrlResetMixin, ForumMockUtilsMi
                 "replies": random.randint(0, 30),
                 "responses": random.randint(0, 100),
                 "threads": random.randint(0, 10),
+                "deleted_threads": 0,
+                "deleted_replies": 0,
+                "deleted_responses": 0,
                 "username": f"user-{idx}"
             }
             for idx in range(10)
@@ -2028,7 +2066,7 @@ class RetireViewTest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
 
 
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
-class UploadFileViewTest(ForumsEnableMixin, ForumMockUtilsMixin, UrlResetMixin, ModuleStoreTestCase):
+class UploadFileViewTest(ForumMockUtilsMixin, UrlResetMixin, ModuleStoreTestCase):
     """
     Tests for UploadFileView.
     """

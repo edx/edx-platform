@@ -8,6 +8,27 @@ define(['jquery', 'underscore', 'backbone', 'gettext', 'js/views/modals/base_mod
 function($, _, Backbone, gettext, BaseModal, ViewUtils, XBlockViewUtils, XBlockEditorView) {
     'use strict';
 
+    /**
+     * Returns true when ``url`` is safe to use as a same-origin redirect
+     * destination.  Accepted values are:
+     *   - Root-relative paths beginning with '/' but NOT '//' (protocol-
+     *     relative URLs such as //evil.com would bypass the check).
+     *   - Absolute URLs whose origin matches the current page's origin.
+     */
+    function isSafeReturnTo(url) {
+        if (typeof url !== 'string' || url.length === 0) {
+            return false;
+        }
+        if (url.charAt(0) === '/' && url.charAt(1) !== '/') {
+            return true;
+        }
+        try {
+            return new URL(url).origin === window.location.origin;
+        } catch (e) {
+            return false;
+        }
+    }
+
     var EditXBlockModal = BaseModal.extend({
         events: _.extend({}, BaseModal.prototype.events, {
             'click .action-save': 'save',
@@ -234,10 +255,29 @@ function($, _, Backbone, gettext, BaseModal, ViewUtils, XBlockViewUtils, XBlockE
                 console.error(e);
             }
 
+            var returnTo = this.editOptions && this.editOptions.returnTo;
+            if (returnTo && isSafeReturnTo(returnTo)) {
+                this.hide();
+                window.location.href = returnTo;
+                return;
+            }
+
             var refresh = this.editOptions.refresh;
             this.hide();
             if (refresh) {
                 refresh(this.xblockInfo);
+            }
+        },
+
+        cancel: function(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            this.hide();
+            var returnTo = this.editOptions && this.editOptions.returnTo;
+            if (returnTo && isSafeReturnTo(returnTo)) {
+                window.location.href = returnTo;
             }
         },
 
@@ -295,6 +335,9 @@ function($, _, Backbone, gettext, BaseModal, ViewUtils, XBlockViewUtils, XBlockE
         }
 
     });
+
+    // Expose for unit testing.
+    EditXBlockModal.isSafeReturnTo = isSafeReturnTo;
 
     return EditXBlockModal;
 });

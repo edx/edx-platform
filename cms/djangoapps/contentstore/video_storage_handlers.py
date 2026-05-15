@@ -13,12 +13,11 @@ import requests
 import shutil
 import pathlib
 import zipfile
-
 from contextlib import closing
 from datetime import datetime, timedelta
 from uuid import uuid4
-from boto.s3.connection import S3Connection
-from boto import s3
+
+import boto3
 from django.conf import settings
 from django.contrib.staticfiles.storage import staticfiles_storage
 from django.http import FileResponse, HttpResponseNotFound, StreamingHttpResponse
@@ -33,8 +32,8 @@ from edxval.api import (
     create_video,
     get_3rd_party_transcription_plans,
     get_available_transcript_languages,
-    get_video_transcript_url,
     get_transcript_preferences,
+    get_video_transcript_url,
     get_videos_for_course,
     remove_transcript_preferences,
     remove_video_for_course,
@@ -55,10 +54,7 @@ from common.djangoapps.edxmako.shortcuts import render_to_response
 from common.djangoapps.util.json_request import JsonResponse
 from openedx.core.djangoapps.video_config.models import VideoTranscriptEnabledFlag
 from openedx.core.djangoapps.video_config.toggles import PUBLIC_VIDEO_SHARE
-from openedx.core.djangoapps.video_pipeline.config.waffle import (
-    DEPRECATE_YOUTUBE,
-    ENABLE_DEVSTACK_VIDEO_UPLOADS,
-)
+from openedx.core.djangoapps.video_pipeline.config.waffle import DEPRECATE_YOUTUBE
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 
@@ -812,7 +808,8 @@ def videos_post(course, request):
     if error:
         return {'error': error}, 400
 
-    bucket = storage_service_bucket()
+    s3_client = boto3.client('s3')
+
     req_files = data['files']
     resp_files = []
 
@@ -826,7 +823,6 @@ def videos_post(course, request):
             return {'error': error_msg}, 400
 
         edx_video_id = str(uuid4())
-        key = storage_service_key(bucket, file_name=edx_video_id)
 
         metadata_list = [
             ('client_video_id', file_name),
@@ -846,12 +842,15 @@ def videos_post(course, request):
             if transcript_preferences is not None:
                 metadata_list.append(('transcript_preferences', json.dumps(transcript_preferences)))
 
-        for metadata_name, value in metadata_list:
-            key.set_metadata(metadata_name, value)
-        upload_url = key.generate_url(
-            KEY_EXPIRATION_IN_SECONDS,
-            'PUT',
-            headers={'Content-Type': req_file['content_type']}
+        upload_url = s3_client.generate_presigned_url(
+            ClientMethod='put_object',
+            Params={
+                'Bucket': storage_service_bucket_name(),
+                'Key': storage_service_key_name(edx_video_id),
+                'ContentType': req_file['content_type'],
+                'Metadata': dict(metadata_list),
+            },
+            ExpiresIn=KEY_EXPIRATION_IN_SECONDS,
         )
 
         # persist edx_video_id in VAL
@@ -869,41 +868,21 @@ def videos_post(course, request):
     return {'files': resp_files}, 200
 
 
-def storage_service_bucket():
+def storage_service_bucket_name():
     """
-    Returns an S3 bucket for video upload.
+    Returns name of S3 bucket to use for video upload.
     """
-    if ENABLE_DEVSTACK_VIDEO_UPLOADS.is_enabled():
-        params = {
-            'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
-            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY,
-            'security_token': settings.AWS_SECURITY_TOKEN
-
-        }
-    else:
-        params = {
-            'aws_access_key_id': settings.AWS_ACCESS_KEY_ID,
-            'aws_secret_access_key': settings.AWS_SECRET_ACCESS_KEY
-        }
-
-    conn = S3Connection(**params)
-
-    # We don't need to validate our bucket, it requires a very permissive IAM permission
-    # set since behind the scenes it fires a HEAD request that is equivalent to get_all_keys()
-    # meaning it would need ListObjects on the whole bucket, not just the path used in each
-    # environment (since we share a single bucket for multiple deployments in some configurations)
-    return conn.get_bucket(settings.VIDEO_UPLOAD_PIPELINE['VEM_S3_BUCKET'], validate=False)
+    return settings.VIDEO_UPLOAD_PIPELINE['VEM_S3_BUCKET']
 
 
-def storage_service_key(bucket, file_name):
+def storage_service_key_name(file_name):
     """
-    Returns an S3 key to the given file in the given bucket.
+    Returns the S3 object key to be used for a given video filename.
     """
-    key_name = "{}/{}".format(
+    return "{}/{}".format(
         settings.VIDEO_UPLOAD_PIPELINE.get("ROOT_PATH", ""),
         file_name
     )
-    return s3.key.Key(bucket, key_name)
 
 
 def send_video_status_update(updates):

@@ -1,51 +1,77 @@
 """
 Discussion API views
 """
+
 import logging
 import uuid
 
 import edx_api_doc_tools as apidocs
-
+from opaque_keys import InvalidKeyError
 from django.contrib.auth import get_user_model
 from django.core.exceptions import BadRequest, ValidationError
 from django.shortcuts import get_object_or_404
 from drf_yasg import openapi
+from edx_django_utils.monitoring import set_custom_attribute
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
-from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
+from edx_rest_framework_extensions.auth.session.authentication import (
+    SessionAuthenticationAllowInactiveUser,
+)
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import permissions, status
 from rest_framework.authentication import SessionAuthentication
-from rest_framework.exceptions import ParseError, UnsupportedMediaType
+from rest_framework.exceptions import (
+    ParseError,
+    PermissionDenied,
+    UnsupportedMediaType,
+)
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
-from xmodule.modulestore.django import modulestore
-
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.util.file import store_uploaded_file
 from lms.djangoapps.course_api.blocks.api import get_blocks
 from lms.djangoapps.course_goals.models import UserActivity
-from lms.djangoapps.discussion.rate_limit import is_content_creation_rate_limited
-from lms.djangoapps.discussion.rest_api.permissions import IsAllowedToBulkDelete
-from lms.djangoapps.discussion.rest_api.tasks import delete_course_post_for_user
-from lms.djangoapps.discussion.toggles import ONLY_VERIFIED_USERS_CAN_POST
 from lms.djangoapps.discussion.django_comment_client import settings as cc_settings
-from lms.djangoapps.discussion.django_comment_client.utils import get_group_id_for_comments_service
+from lms.djangoapps.discussion.django_comment_client.utils import (
+    get_group_id_for_comments_service,
+)
+from lms.djangoapps.discussion.rate_limit import is_content_creation_rate_limited
+from lms.djangoapps.discussion.rest_api.permissions import IsAllowedToBulkDelete, IsAllowedToRestore
+from lms.djangoapps.discussion.rest_api.tasks import (
+    delete_course_post_for_user,
+    restore_course_post_for_user,
+)
+from lms.djangoapps.discussion.toggles import ONLY_VERIFIED_USERS_CAN_POST, ENABLE_DISCUSSION_BAN
 from lms.djangoapps.instructor.access import update_forum_role
-from openedx.core.djangoapps.discussions.config.waffle import ENABLE_NEW_STRUCTURE_DISCUSSIONS
-from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration, Provider
+from openedx.core.djangoapps.discussions.config.waffle import (
+    ENABLE_NEW_STRUCTURE_DISCUSSIONS,
+)
+from openedx.core.djangoapps.discussions.models import (
+    DiscussionsConfiguration,
+    Provider,
+)
 from openedx.core.djangoapps.discussions.serializers import DiscussionSettingsSerializer
 from openedx.core.djangoapps.django_comment_common import comment_client
-from openedx.core.djangoapps.django_comment_common.models import CourseDiscussionSettings, Role
 from openedx.core.djangoapps.django_comment_common.comment_client.comment import Comment
 from openedx.core.djangoapps.django_comment_common.comment_client.thread import Thread
-from openedx.core.djangoapps.user_api.accounts.permissions import CanReplaceUsername, CanRetireUser
+from openedx.core.djangoapps.django_comment_common.models import (
+    CourseDiscussionSettings,
+    Role,
+)
+from openedx.core.djangoapps.user_api.accounts.permissions import (
+    CanReplaceUsername,
+    CanRetireUser,
+)
 from openedx.core.djangoapps.user_api.models import UserRetirementStatus
-from openedx.core.lib.api.authentication import BearerAuthentication, BearerAuthenticationAllowInactiveUser
+from openedx.core.lib.api.authentication import (
+    BearerAuthentication,
+    BearerAuthenticationAllowInactiveUser,
+)
 from openedx.core.lib.api.parsers import MergePatchParser
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin, view_auth_classes
+from xmodule.modulestore.django import modulestore
 
 from ..rest_api.api import (
     create_comment,
@@ -57,10 +83,10 @@ from ..rest_api.api import (
     get_course_discussion_user_stats,
     get_course_topics,
     get_course_topics_v2,
+    get_learner_active_thread_list,
     get_response_comments,
     get_thread,
     get_thread_list,
-    get_learner_active_thread_list,
     get_user_comments,
     get_v2_course_topics_as_v1,
     update_comment,
@@ -88,15 +114,39 @@ from ..rest_api.serializers import (
 from .utils import (
     create_blocks_params,
     create_topics_v3_structure,
-    is_captcha_enabled,
-    verify_recaptcha_token,
     get_course_id_from_thread_id,
+    is_captcha_enabled,
     is_only_student,
+    verify_recaptcha_token,
 )
 
 log = logging.getLogger(__name__)
 
 User = get_user_model()
+
+
+def _discussion_error_type(exc):
+    """Map common discussion exceptions to a stable Datadog error type."""
+    if isinstance(exc, PermissionError):
+        return "permission_denied"
+    if isinstance(exc, PermissionDenied):
+        return "permission_denied"
+    if isinstance(exc, InvalidKeyError):
+        return "validation_error"
+    if isinstance(exc, ValidationError):
+        return "validation_error"
+    if isinstance(exc, ParseError):
+        return "validation_error"
+    if isinstance(exc, UnsupportedMediaType):
+        return "validation_error"
+    return "backend_error"
+
+
+def _get_comment_trace_context(comment_id):
+    """Retrieve comment context needed for request-level telemetry."""
+    cc_comment = Comment(id=comment_id).retrieve()
+    course_id = get_course_id_from_thread_id(cc_comment["thread_id"])
+    return cc_comment, course_id
 
 
 @view_auth_classes()
@@ -107,14 +157,16 @@ class CourseView(DeveloperErrorViewMixin, APIView):
 
     @apidocs.schema(
         parameters=[
-            apidocs.string_parameter("course_id", apidocs.ParameterLocation.PATH, description="Course ID")
+            apidocs.string_parameter(
+                "course_id", apidocs.ParameterLocation.PATH, description="Course ID"
+            )
         ],
         responses={
             200: CourseMetadataSerailizer(read_only=True, required=False),
             401: "The requester is not authenticated.",
             403: "The requester cannot access the specified course.",
             404: "The requested course does not exist.",
-        }
+        },
     )
     def get(self, request, course_id):
         """
@@ -126,7 +178,9 @@ class CourseView(DeveloperErrorViewMixin, APIView):
         """
         course_key = CourseKey.from_string(course_id)  # TODO: which class is right?
         # Record user activity for tracking progress towards a user's course goals (for mobile app)
-        UserActivity.record_user_activity(request.user, course_key, request=request, only_if_mobile_app=True)
+        UserActivity.record_user_activity(
+            request.user, course_key, request=request, only_if_mobile_app=True
+        )
         return Response(get_course(request, course_key))
 
 
@@ -138,14 +192,16 @@ class CourseViewV2(DeveloperErrorViewMixin, APIView):
 
     @apidocs.schema(
         parameters=[
-            apidocs.string_parameter("course_id", apidocs.ParameterLocation.PATH, description="Course ID")
+            apidocs.string_parameter(
+                "course_id", apidocs.ParameterLocation.PATH, description="Course ID"
+            )
         ],
         responses={
             200: CourseMetadataSerailizer(read_only=True, required=False),
             401: "The requester is not authenticated.",
             403: "The requester cannot access the specified course.",
             404: "The requested course does not exist.",
-        }
+        },
     )
     def get(self, request, course_id):
         """
@@ -156,7 +212,9 @@ class CourseViewV2(DeveloperErrorViewMixin, APIView):
         """
         course_key = CourseKey.from_string(course_id)
         # Record user activity for tracking progress towards a user's course goals (for mobile app)
-        UserActivity.record_user_activity(request.user, course_key, request=request, only_if_mobile_app=True)
+        UserActivity.record_user_activity(
+            request.user, course_key, request=request, only_if_mobile_app=True
+        )
         return Response(get_course(request, course_key, False))
 
 
@@ -221,14 +279,14 @@ class CourseActivityStatsView(DeveloperErrorViewMixin, APIView):
         form_query_string = CourseActivityStatsForm(request.query_params)
         if not form_query_string.is_valid():
             raise ValidationError(form_query_string.errors)
-        order_by = form_query_string.cleaned_data.get('order_by', None)
+        order_by = form_query_string.cleaned_data.get("order_by", None)
         order_by = UserOrdering(order_by) if order_by else None
-        username_search_string = form_query_string.cleaned_data.get('username', None)
+        username_search_string = form_query_string.cleaned_data.get("username", None)
         data = get_course_discussion_user_stats(
             request,
             course_key_string,
-            form_query_string.cleaned_data['page'],
-            form_query_string.cleaned_data['page_size'],
+            form_query_string.cleaned_data["page"],
+            form_query_string.cleaned_data["page_size"],
             order_by,
             username_search_string,
         )
@@ -268,19 +326,17 @@ class CourseTopicsView(DeveloperErrorViewMixin, APIView):
         Implements the GET method as described in the class docstring.
         """
         course_key = CourseKey.from_string(course_id)
-        topic_ids = self.request.GET.get('topic_id')
-        topic_ids = set(topic_ids.strip(',').split(',')) if topic_ids else None
+        topic_ids = self.request.GET.get("topic_id")
+        topic_ids = set(topic_ids.strip(",").split(",")) if topic_ids else None
         with modulestore().bulk_operations(course_key):
             configuration = DiscussionsConfiguration.get(context_key=course_key)
             provider = configuration.provider_type
             # This will be removed when mobile app will support new topic structure
-            new_structure_enabled = ENABLE_NEW_STRUCTURE_DISCUSSIONS.is_enabled(course_key)
+            new_structure_enabled = ENABLE_NEW_STRUCTURE_DISCUSSIONS.is_enabled(
+                course_key
+            )
             if provider == Provider.OPEN_EDX and new_structure_enabled:
-                response = get_v2_course_topics_as_v1(
-                    request,
-                    course_key,
-                    topic_ids
-                )
+                response = get_v2_course_topics_as_v1(request, course_key, topic_ids)
             else:
                 response = get_course_topics(
                     request,
@@ -288,7 +344,9 @@ class CourseTopicsView(DeveloperErrorViewMixin, APIView):
                     topic_ids,
                 )
             # Record user activity for tracking progress towards a user's course goals (for mobile app)
-            UserActivity.record_user_activity(request.user, course_key, request=request, only_if_mobile_app=True)
+            UserActivity.record_user_activity(
+                request.user, course_key, request=request, only_if_mobile_app=True
+            )
         return Response(response)
 
 
@@ -304,17 +362,17 @@ class CourseTopicsViewV2(DeveloperErrorViewMixin, APIView):
     @apidocs.schema(
         parameters=[
             apidocs.string_parameter(
-                'course_id',
+                "course_id",
                 apidocs.ParameterLocation.PATH,
                 description="Course ID",
             ),
             apidocs.string_parameter(
-                'topic_id',
+                "topic_id",
                 apidocs.ParameterLocation.QUERY,
                 description="Comma-separated list of topic ids to filter",
             ),
             openapi.Parameter(
-                'order_by',
+                "order_by",
                 apidocs.ParameterLocation.QUERY,
                 required=False,
                 type=openapi.TYPE_STRING,
@@ -327,7 +385,7 @@ class CourseTopicsViewV2(DeveloperErrorViewMixin, APIView):
             401: "The requester is not authenticated.",
             403: "The requester cannot access the specified course.",
             404: "The requested course does not exist.",
-        }
+        },
     )
     def get(self, request, course_id):
         """
@@ -348,7 +406,7 @@ class CourseTopicsViewV2(DeveloperErrorViewMixin, APIView):
             course_key,
             request.user,
             form_query_params.cleaned_data["topic_id"],
-            form_query_params.cleaned_data["order_by"]
+            form_query_params.cleaned_data["order_by"],
         )
         return Response(response)
 
@@ -416,17 +474,17 @@ class CourseTopicsViewV3(DeveloperErrorViewMixin, APIView):
         blocks_params = create_blocks_params(course_usage_key, request.user)
         blocks = get_blocks(
             request,
-            blocks_params['usage_key'],
-            blocks_params['user'],
-            blocks_params['depth'],
-            blocks_params['nav_depth'],
-            blocks_params['requested_fields'],
-            blocks_params['block_counts'],
-            blocks_params['student_view_data'],
-            blocks_params['return_type'],
-            blocks_params['block_types_filter'],
+            blocks_params["usage_key"],
+            blocks_params["user"],
+            blocks_params["depth"],
+            blocks_params["nav_depth"],
+            blocks_params["requested_fields"],
+            blocks_params["block_counts"],
+            blocks_params["student_view_data"],
+            blocks_params["return_type"],
+            blocks_params["block_types_filter"],
             hide_access_denials=False,
-        )['blocks']
+        )["blocks"]
 
         topics = create_topics_v3_structure(blocks, topics)
         return Response(topics)
@@ -627,8 +685,12 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         No content is returned for a DELETE request
 
     """
+
     lookup_field = "thread_id"
-    parser_classes = (JSONParser, MergePatchParser,)
+    parser_classes = (
+        JSONParser,
+        MergePatchParser,
+    )
 
     def list(self, request):
         """
@@ -641,7 +703,10 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
 
         # Record user activity for tracking progress towards a user's course goals (for mobile app)
         UserActivity.record_user_activity(
-            request.user, form.cleaned_data["course_id"], request=request, only_if_mobile_app=True
+            request.user,
+            form.cleaned_data["course_id"],
+            request=request,
+            only_if_mobile_app=True,
         )
 
         return get_thread_list(
@@ -660,14 +725,16 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["order_direction"],
             form.cleaned_data["requested_fields"],
             form.cleaned_data["count_flagged"],
+            form.cleaned_data["include_muted"],
+            form.cleaned_data["show_deleted"],
         )
 
     def retrieve(self, request, thread_id=None):
         """
         Implements the GET method for thread ID
         """
-        requested_fields = request.GET.get('requested_fields')
-        course_id = request.GET.get('course_id')
+        requested_fields = request.GET.get("requested_fields")
+        course_id = request.GET.get("course_id")
         return Response(get_thread(request, thread_id, requested_fields, course_id))
 
     def create(self, request):
@@ -675,45 +742,152 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         Implements the POST method for the list endpoint as described in the
         class docstring.
         """
-        if not request.data.get("course_id"):
-            raise ValidationError({"course_id": ["This field is required."]})
-        course_key_str = request.data.get("course_id")
-        course_key = CourseKey.from_string(course_key_str)
+        set_custom_attribute("forum.operation", "thread.create")
+        set_custom_attribute("forum.course_id", request.data.get("course_id", ""))
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
 
-        if is_content_creation_rate_limited(request, course_key=course_key):
-            return Response("Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS)
+        if request.data.get("type"):
+            set_custom_attribute("forum.thread_type", request.data.get("type"))
+        if request.data.get("topic_id"):
+            set_custom_attribute("forum.commentable_id", request.data.get("topic_id"))
+        if request.data.get("group_id") is not None:
+            set_custom_attribute("forum.group_id", str(request.data.get("group_id")))
 
-        if is_captcha_enabled(course_key) and is_only_student(course_key, request.user):
-            captcha_token = request.data.get('captcha_token')
-            if not captcha_token:
-                raise ValidationError({'captcha_token': 'This field is required.'})
+        try:
+            if not request.data.get("course_id"):
+                raise ValidationError({"course_id": ["This field is required."]})
+            course_key_str = request.data.get("course_id")
+            course_key = CourseKey.from_string(course_key_str)
 
-            if not verify_recaptcha_token(captcha_token):
-                return Response({'error': 'CAPTCHA verification failed.'}, status=400)
+            if is_content_creation_rate_limited(request, course_key=course_key):
+                set_custom_attribute("forum.result", "error")
+                set_custom_attribute(
+                    "forum.http_status", str(status.HTTP_429_TOO_MANY_REQUESTS)
+                )
+                set_custom_attribute("forum.error_type", "rate_limited")
+                return Response(
+                    "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
 
-        if ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key) and not request.user.is_active:
-            raise ValidationError({"detail": "Only verified users can post in discussions."})
+            if is_captcha_enabled(course_key) and is_only_student(
+                course_key, request.user
+            ):
+                captcha_token = request.data.get("captcha_token")
+                if not captcha_token:
+                    raise ValidationError({"captcha_token": "This field is required."})
 
-        data = request.data.copy()
-        data.pop('captcha_token', None)
-        return Response(create_thread(request, data))
+                if not verify_recaptcha_token(captcha_token):
+                    set_custom_attribute("forum.result", "error")
+                    set_custom_attribute(
+                        "forum.http_status", str(status.HTTP_400_BAD_REQUEST)
+                    )
+                    set_custom_attribute("forum.error_type", "validation_error")
+                    return Response(
+                        {"error": "CAPTCHA verification failed."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            if (
+                ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
+                and not request.user.is_active
+            ):
+                raise ValidationError(
+                    {"detail": "Only verified users can post in discussions."}
+                )
+
+            data = request.data.copy()
+            data.pop("captcha_token", None)
+            response = Response(create_thread(request, data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def partial_update(self, request, thread_id):
         """
         Implements the PATCH method for the instance endpoint as described in
         the class docstring.
         """
-        if request.content_type != MergePatchParser.media_type:
-            raise UnsupportedMediaType(request.content_type)
-        return Response(update_thread(request, thread_id, request.data))
+        voted_value = request.data.get("voted") if "voted" in request.data else None
+        if voted_value in (True, "true", "True", 1, "1"):
+            operation = "thread.vote"
+        elif voted_value in (False, "false", "False", 0, "0"):
+            operation = "thread.unvote"
+        else:
+            operation = "thread.update"
+
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.entity_id", thread_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            course_id = request.data.get("course_id") or get_course_id_from_thread_id(
+                thread_id
+            )
+            set_custom_attribute("forum.course_id", str(course_id))
+
+            update_fields = [
+                field
+                for field, value in request.data.items()
+                if value is not None and field != "voted"
+            ]
+            if update_fields and operation == "thread.update":
+                set_custom_attribute("forum.update_fields", ",".join(update_fields))
+
+            if request.data.get("type"):
+                set_custom_attribute("forum.thread_type", request.data.get("type"))
+            if request.data.get("topic_id"):
+                set_custom_attribute(
+                    "forum.commentable_id", request.data.get("topic_id")
+                )
+            if request.data.get("group_id") is not None:
+                set_custom_attribute(
+                    "forum.group_id", str(request.data.get("group_id"))
+                )
+
+            if request.content_type != MergePatchParser.media_type:
+                raise UnsupportedMediaType(request.content_type)
+
+            response = Response(update_thread(request, thread_id, request.data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def destroy(self, request, thread_id):
         """
         Implements the DELETE method for the instance endpoint as described in
         the class docstring
         """
-        delete_thread(request, thread_id)
-        return Response(status=204)
+        set_custom_attribute("forum.operation", "thread.delete")
+        set_custom_attribute("forum.entity_type", "thread")
+        set_custom_attribute("forum.entity_id", thread_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            course_id = get_course_id_from_thread_id(thread_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            set_custom_attribute("forum.delete_mode", "soft")
+
+            delete_thread(request, thread_id)
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(status.HTTP_204_NO_CONTENT))
+            return Response(status=204)
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
 
 class LearnerThreadView(APIView):
@@ -762,24 +936,34 @@ class LearnerThreadView(APIView):
         Implements the GET method as described in the class docstring.
         """
         course_key = CourseKey.from_string(course_id)
-        page_num = request.GET.get('page', 1)
-        threads_per_page = request.GET.get('page_size', 10)
-        count_flagged = request.GET.get('count_flagged', False)
-        thread_type = request.GET.get('thread_type')
+        page_num = request.GET.get("page", 1)
+        threads_per_page = request.GET.get("page_size", 10)
+        count_flagged = request.GET.get("count_flagged", False)
+        thread_type = request.GET.get("thread_type")
+        # Parse include_muted parameter (boolean)
+        include_muted = request.GET.get('include_muted', False)
+        if isinstance(include_muted, str):
+            include_muted = include_muted.lower() == 'true'
+
+        # Parse and map order_by parameter
         order_by = request.GET.get('order_by')
         order_by_mapping = {
             "last_activity_at": "activity",
             "comment_count": "comments",
-            "vote_count": "votes"
+            "vote_count": "votes",
         }
-        order_by = order_by_mapping.get(order_by, 'activity')
-        post_status = request.GET.get('status', None)
+        order_by = order_by_mapping.get(order_by, "activity")
+
+        post_status = request.GET.get("status", None)
+        show_deleted = request.GET.get("show_deleted", "false").lower() == "true"
         discussion_id = None
-        username = request.GET.get('username', None)
+        username = request.GET.get("username", None)
         user = get_object_or_404(User, username=username)
         group_id = None
         try:
-            group_id = get_group_id_for_comments_service(request, course_key, discussion_id)
+            group_id = get_group_id_for_comments_service(
+                request, course_key, discussion_id
+            )
         except ValueError:
             pass
 
@@ -792,14 +976,18 @@ class LearnerThreadView(APIView):
             "count_flagged": count_flagged,
             "thread_type": thread_type,
             "sort_key": order_by,
+            "include_muted": include_muted,
+            "show_deleted": show_deleted,
         }
         if post_status:
-            if post_status not in ['flagged', 'unanswered', 'unread', 'unresponded']:
-                raise ValidationError({
-                    "status": [
-                        f"Invalid value. '{post_status}' must be 'flagged', 'unanswered', 'unread' or 'unresponded"
-                    ]
-                })
+            if post_status not in ["flagged", "unanswered", "unread", "unresponded"]:
+                raise ValidationError(
+                    {
+                        "status": [
+                            f"Invalid value. '{post_status}' must be 'flagged', 'unanswered', 'unread' or 'unresponded"
+                        ]
+                    }
+                )
             query_params[post_status] = True
         return get_learner_active_thread_list(request, course_key, query_params)
 
@@ -968,8 +1156,12 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
         No content is returned for a DELETE request
 
     """
+
     lookup_field = "comment_id"
-    parser_classes = (JSONParser, MergePatchParser,)
+    parser_classes = (
+        JSONParser,
+        MergePatchParser,
+    )
 
     def list(self, request):
         """
@@ -1010,7 +1202,9 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["page_size"],
             form.cleaned_data["flagged"],
             form.cleaned_data["requested_fields"],
-            form.cleaned_data["merge_question_type_responses"]
+            form.cleaned_data["merge_question_type_responses"],
+            form.cleaned_data["include_muted"],
+            form.cleaned_data["show_deleted"],
         )
 
     def list_by_user(self, request):
@@ -1044,6 +1238,7 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
             form.cleaned_data["page"],
             form.cleaned_data["page_size"],
             form.cleaned_data["requested_fields"],
+            form.cleaned_data["include_muted"],
         )
 
     def create(self, request):
@@ -1051,45 +1246,150 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
         Implements the POST method for the list endpoint as described in the
         class docstring.
         """
-        if not request.data.get("thread_id"):
-            raise ValidationError({"thread_id": ["This field is required."]})
-        course_key_str = get_course_id_from_thread_id(request.data["thread_id"])
-        course_key = CourseKey.from_string(course_key_str)
+        operation = (
+            "comment.create_child"
+            if request.data.get("parent_id")
+            else "comment.create_parent"
+        )
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
 
-        if is_content_creation_rate_limited(request, course_key=course_key):
-            return Response("Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS)
+        try:
+            if not request.data.get("thread_id"):
+                raise ValidationError({"thread_id": ["This field is required."]})
+            course_key_str = get_course_id_from_thread_id(request.data["thread_id"])
+            course_key = CourseKey.from_string(course_key_str)
+            set_custom_attribute("forum.course_id", str(course_key_str))
 
-        if is_captcha_enabled(course_key) and is_only_student(course_key, request.user):
-            captcha_token = request.data.get('captcha_token')
-            if not captcha_token:
-                raise ValidationError({'captcha_token': 'This field is required.'})
+            if request.data.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(request.data.get("parent_id"))
+                )
 
-            if not verify_recaptcha_token(captcha_token):
-                return Response({'error': 'CAPTCHA verification failed.'}, status=400)
+            if is_content_creation_rate_limited(request, course_key=course_key):
+                set_custom_attribute("forum.result", "error")
+                set_custom_attribute(
+                    "forum.http_status", str(status.HTTP_429_TOO_MANY_REQUESTS)
+                )
+                set_custom_attribute("forum.error_type", "rate_limited")
+                return Response(
+                    "Too many requests", status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
 
-        if ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key) and not request.user.is_active:
-            raise ValidationError({"detail": "Only verified users can post in discussions."})
+            if is_captcha_enabled(course_key) and is_only_student(
+                course_key, request.user
+            ):
+                captcha_token = request.data.get("captcha_token")
+                if not captcha_token:
+                    raise ValidationError({"captcha_token": "This field is required."})
 
-        data = request.data.copy()
-        data.pop('captcha_token', None)
-        return Response(create_comment(request, data))
+                if not verify_recaptcha_token(captcha_token):
+                    set_custom_attribute("forum.result", "error")
+                    set_custom_attribute(
+                        "forum.http_status", str(status.HTTP_400_BAD_REQUEST)
+                    )
+                    set_custom_attribute("forum.error_type", "validation_error")
+                    return Response(
+                        {"error": "CAPTCHA verification failed."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            if (
+                ONLY_VERIFIED_USERS_CAN_POST.is_enabled(course_key)
+                and not request.user.is_active
+            ):
+                raise ValidationError(
+                    {"detail": "Only verified users can post in discussions."}
+                )
+
+            data = request.data.copy()
+            data.pop("captcha_token", None)
+            response = Response(create_comment(request, data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def destroy(self, request, comment_id):
         """
         Implements the DELETE method for the instance endpoint as described in
         the class docstring
         """
-        delete_comment(request, comment_id)
-        return Response(status=204)
+        set_custom_attribute("forum.operation", "comment.delete")
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.entity_id", comment_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            cc_comment, course_id = _get_comment_trace_context(comment_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            if cc_comment.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(cc_comment.get("parent_id"))
+                )
+            set_custom_attribute("forum.delete_mode", "soft")
+
+            delete_comment(request, comment_id)
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(status.HTTP_204_NO_CONTENT))
+            return Response(status=204)
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
     def partial_update(self, request, comment_id):
         """
         Implements the PATCH method for the instance endpoint as described in
         the class docstring.
         """
-        if request.content_type != MergePatchParser.media_type:
-            raise UnsupportedMediaType(request.content_type)
-        return Response(update_comment(request, comment_id, request.data))
+        voted_value = request.data.get("voted") if "voted" in request.data else None
+        if voted_value in (True, "true", "True", 1, "1"):
+            operation = "comment.vote"
+        elif voted_value in (False, "false", "False", 0, "0"):
+            operation = "comment.unvote"
+        else:
+            operation = "comment.update"
+
+        set_custom_attribute("forum.operation", operation)
+        set_custom_attribute("forum.entity_type", "comment")
+        set_custom_attribute("forum.entity_id", comment_id)
+        set_custom_attribute("forum.actor_id", str(getattr(request.user, "id", "")))
+
+        try:
+            cc_comment, course_id = _get_comment_trace_context(comment_id)
+            set_custom_attribute("forum.course_id", str(course_id))
+            if cc_comment.get("parent_id"):
+                set_custom_attribute(
+                    "forum.parent_comment_id", str(cc_comment.get("parent_id"))
+                )
+
+            update_fields = [
+                field
+                for field, value in request.data.items()
+                if value is not None and field != "voted"
+            ]
+            if update_fields and operation == "comment.update":
+                set_custom_attribute("forum.update_fields", ",".join(update_fields))
+
+            if request.content_type != MergePatchParser.media_type:
+                raise UnsupportedMediaType(request.content_type)
+
+            response = Response(update_comment(request, comment_id, request.data))
+            set_custom_attribute("forum.result", "success")
+            set_custom_attribute("forum.http_status", str(response.status_code))
+            return response
+        except Exception as exc:
+            set_custom_attribute("forum.result", "error")
+            set_custom_attribute("forum.http_status", str(status.HTTP_400_BAD_REQUEST))
+            set_custom_attribute("forum.error_type", _discussion_error_type(exc))
+            raise
 
 
 class UploadFileView(DeveloperErrorViewMixin, APIView):
@@ -1147,8 +1447,11 @@ class UploadFileView(DeveloperErrorViewMixin, APIView):
         unique_file_name = f"{course_id}/{thread_key}/{uuid.uuid4()}"
         try:
             file_storage, stored_file_name = store_uploaded_file(
-                request, "uploaded_file", cc_settings.ALLOWED_UPLOAD_FILE_TYPES,
-                unique_file_name, max_file_size=cc_settings.MAX_UPLOAD_FILE_SIZE,
+                request,
+                "uploaded_file",
+                cc_settings.ALLOWED_UPLOAD_FILE_TYPES,
+                unique_file_name,
+                max_file_size=cc_settings.MAX_UPLOAD_FILE_SIZE,
             )
         except ValueError as err:
             raise BadRequest("no `uploaded_file` was provided") from err
@@ -1189,10 +1492,12 @@ class RetireUserView(APIView):
         """
         Implements the retirement endpoint.
         """
-        username = request.data['username']
+        username = request.data["username"]
 
         try:
-            retirement = UserRetirementStatus.get_retirement_for_retirement_action(username)
+            retirement = UserRetirementStatus.get_retirement_for_retirement_action(
+                username
+            )
             cc_user = comment_client.User.from_django_user(retirement.user)
 
             # Send the retired username to the forums service, as the service cannot generate
@@ -1247,7 +1552,9 @@ class ReplaceUsernamesView(APIView):
         for username_pair in username_mappings:
             current_username = list(username_pair.keys())[0]
             new_username = list(username_pair.values())[0]
-            successfully_replaced = self._replace_username(current_username, new_username)
+            successfully_replaced = self._replace_username(
+                current_username, new_username
+            )
             if successfully_replaced:
                 successful_replacements.append({current_username: new_username})
             else:
@@ -1257,8 +1564,8 @@ class ReplaceUsernamesView(APIView):
             status=status.HTTP_200_OK,
             data={
                 "successful_replacements": successful_replacements,
-                "failed_replacements": failed_replacements
-            }
+                "failed_replacements": failed_replacements,
+            },
         )
 
     def _replace_username(self, current_username, new_username):
@@ -1304,7 +1611,7 @@ class ReplaceUsernamesView(APIView):
         return True
 
     def _has_valid_schema(self, post_data):
-        """ Verifies the data is a list of objects with a single key:value pair """
+        """Verifies the data is a list of objects with a single key:value pair"""
         if not isinstance(post_data, list):
             return False
         for obj in post_data:
@@ -1364,12 +1671,16 @@ class CourseDiscussionSettingsAPIView(DeveloperErrorViewMixin, APIView):
         * available_division_schemes: A list of available division schemes for the course.
 
     """
+
     authentication_classes = (
         JwtAuthentication,
         BearerAuthenticationAllowInactiveUser,
         SessionAuthenticationAllowInactiveUser,
     )
-    parser_classes = (JSONParser, MergePatchParser,)
+    parser_classes = (
+        JSONParser,
+        MergePatchParser,
+    )
     permission_classes = (permissions.IsAuthenticated, IsStaffOrAdmin)
 
     def _get_request_kwargs(self, course_id):
@@ -1385,14 +1696,14 @@ class CourseDiscussionSettingsAPIView(DeveloperErrorViewMixin, APIView):
         if not form.is_valid():
             raise ValidationError(form.errors)
 
-        course_key = form.cleaned_data['course_key']
-        course = form.cleaned_data['course']
+        course_key = form.cleaned_data["course_key"]
+        course = form.cleaned_data["course"]
         discussion_settings = CourseDiscussionSettings.get(course_key)
         serializer = DiscussionSettingsSerializer(
             discussion_settings,
             context={
-                'course': course,
-                'settings': discussion_settings,
+                "course": course,
+                "settings": discussion_settings,
             },
             partial=True,
         )
@@ -1411,15 +1722,15 @@ class CourseDiscussionSettingsAPIView(DeveloperErrorViewMixin, APIView):
         if not form.is_valid():
             raise ValidationError(form.errors)
 
-        course = form.cleaned_data['course']
-        course_key = form.cleaned_data['course_key']
+        course = form.cleaned_data["course"]
+        course_key = form.cleaned_data["course_key"]
         discussion_settings = CourseDiscussionSettings.get(course_key)
 
         serializer = DiscussionSettingsSerializer(
             discussion_settings,
             context={
-                'course': course,
-                'settings': discussion_settings,
+                "course": course,
+                "settings": discussion_settings,
             },
             data=request.data,
             partial=True,
@@ -1488,6 +1799,7 @@ class CourseDiscussionRolesAPIView(DeveloperErrorViewMixin, APIView):
 
         * division_scheme: The division scheme used by the course.
     """
+
     authentication_classes = (
         JwtAuthentication,
         BearerAuthenticationAllowInactiveUser,
@@ -1508,11 +1820,13 @@ class CourseDiscussionRolesAPIView(DeveloperErrorViewMixin, APIView):
         if not form.is_valid():
             raise ValidationError(form.errors)
 
-        course_id = form.cleaned_data['course_key']
-        role = form.cleaned_data['role']
+        course_id = form.cleaned_data["course_key"]
+        role = form.cleaned_data["role"]
 
-        data = {'course_id': course_id, 'users': role.users.all()}
-        context = {'course_discussion_settings': CourseDiscussionSettings.get(course_id)}
+        data = {"course_id": course_id, "users": role.users.all()}
+        context = {
+            "course_discussion_settings": CourseDiscussionSettings.get(course_id)
+        }
 
         serializer = DiscussionRolesListSerializer(data, context=context)
         return Response(serializer.data)
@@ -1526,23 +1840,25 @@ class CourseDiscussionRolesAPIView(DeveloperErrorViewMixin, APIView):
         if not form.is_valid():
             raise ValidationError(form.errors)
 
-        course_id = form.cleaned_data['course_key']
-        rolename = form.cleaned_data['rolename']
+        course_id = form.cleaned_data["course_key"]
+        rolename = form.cleaned_data["rolename"]
 
         serializer = DiscussionRolesSerializer(data=request.data)
         if not serializer.is_valid():
             raise ValidationError(serializer.errors)
 
-        action = serializer.validated_data['action']
-        user = serializer.validated_data['user']
+        action = serializer.validated_data["action"]
+        user = serializer.validated_data["user"]
         try:
             update_forum_role(course_id, user, rolename, action)
         except Role.DoesNotExist as err:
             raise ValidationError(f"Role '{rolename}' does not exist") from err
 
-        role = form.cleaned_data['role']
-        data = {'course_id': course_id, 'users': role.users.all()}
-        context = {'course_discussion_settings': CourseDiscussionSettings.get(course_id)}
+        role = form.cleaned_data["role"]
+        data = {"course_id": course_id, "users": role.users.all()}
+        context = {
+            "course_discussion_settings": CourseDiscussionSettings.get(course_id)
+        }
         serializer = DiscussionRolesListSerializer(data, context=context)
         return Response(serializer.data)
 
@@ -1566,14 +1882,16 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
     """
 
     authentication_classes = (
-        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
     )
     permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
 
     def post(self, request, course_id):
         """
         Implements the delete user posts endpoint.
-        TODO: Add support for MySQLBackend as well
+        Supports both MongoDB and MySQL backends via forum API.
         """
         username = request.GET.get("username", None)
         execute_task = request.GET.get("execute", "false").lower() == "true"
@@ -1587,23 +1905,26 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
         course_ids = [course_id]
         if course_or_org == "org":
             org_id = CourseKey.from_string(course_id).org
-            enrollments = CourseEnrollment.objects.filter(user=request.user).values_list('course_id', flat=True)
-            course_ids.extend([
-                str(c_id)
-                for c_id in enrollments
-                if c_id.org == org_id
-            ])
+            enrollments = CourseEnrollment.objects.filter(
+                user=user
+            ).values_list("course_id", flat=True)
+            course_ids.extend([str(c_id) for c_id in enrollments if c_id.org == org_id])
             course_ids = list(set(course_ids))
             log.info(f"<<Bulk Delete>> {username} enrolled in {enrollments}")
-        log.info(f"<<Bulk Delete>> Posts for {username} in {course_ids} - for {course_or_org} {course_id}")
+        log.info(
+            f"<<Bulk Delete>> Posts for {username} in {course_ids} - for {course_or_org} {course_id}"
+        )
 
         comment_count = Comment.get_user_comment_count(user.id, course_ids)
         thread_count = Thread.get_user_threads_count(user.id, course_ids)
-        log.info(f"<<Bulk Delete>> {username} in {course_ids} - Count thread {thread_count}, comment {comment_count}")
+        log.info(
+            f"<<Bulk Delete>> {username} in {course_ids} - Count thread {thread_count}, comment {comment_count}"
+        )
 
         if execute_task:
             event_data = {
                 "triggered_by": request.user.username,
+                "triggered_by_user_id": str(request.user.id),
                 "username": username,
                 "course_or_org": course_or_org,
                 "course_key": course_id,
@@ -1613,5 +1934,1270 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
             )
         return Response(
             {"comment_count": comment_count, "thread_count": thread_count},
-            status=status.HTTP_202_ACCEPTED
+            status=status.HTTP_202_ACCEPTED,
         )
+
+
+class RestoreContent(DeveloperErrorViewMixin, APIView):
+    """
+    **Use Cases**
+        A privileged user that can restore individual soft-deleted threads, comments, or responses.
+
+    **Example Requests**:
+        POST /api/discussion/v1/restore_content
+        Request Body:
+            {
+                "content_type": "thread",  // "thread", "comment", or "response"
+                "content_id": "thread_id_or_comment_id",
+                "course_id": "course-v1:edX+DemoX+Demo_Course"
+            }
+
+    **Example Response**:
+        {"success": true, "message": "Content restored successfully"}
+    """
+
+    authentication_classes = (
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
+    )
+    permission_classes = (permissions.IsAuthenticated, IsAllowedToRestore)
+
+    def post(self, request):
+        """
+        Implements the restore individual content endpoint.
+        """
+        content_type = request.data.get("content_type")
+        content_id = request.data.get("content_id")
+        course_id = request.data.get("course_id")
+
+        if not all([content_type, content_id, course_id]):
+            raise BadRequest("content_type, content_id, and course_id are required.")
+
+        if content_type not in ["thread", "comment", "response"]:
+            raise BadRequest("content_type must be 'thread', 'comment', or 'response'.")
+
+        restored_by_user_id = str(request.user.id)
+
+        try:
+            if content_type == "thread":
+                success = Thread.restore_thread(
+                    content_id, course_id=course_id, restored_by=restored_by_user_id
+                )
+            else:  # comment or response (both are comments in the backend)
+                success = Comment.restore_comment(
+                    content_id, course_id=course_id, restored_by=restored_by_user_id
+                )
+
+            if success:
+                return Response(
+                    {
+                        "success": True,
+                        "message": f"{content_type.capitalize()} restored successfully",
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            else:
+                return Response(
+                    {
+                        "success": False,
+                        "message": f"{content_type.capitalize()} not found or already restored",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.error("Error restoring %s %s: %s", content_type, content_id, str(e))
+            return Response(
+                {
+                    "success": False,
+                    "message": f"Error restoring {content_type}: {str(e)}",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
+    """
+    **Use Cases**
+        A privileged user that can restore all soft-deleted posts and comments made by a user.
+        It returns expected number of comments and threads that will be restored
+
+    **Example Requests**:
+        POST /api/discussion/v1/bulk_restore_user_posts/{course_id}
+        Query Parameters:
+            username: The username of the user whose posts are to be restored
+            course_id: Course id for which posts are to be restored
+            execute: If True, runs restoration task
+            course_or_org: If 'course', restores posts in the course, if 'org', restores posts in all courses of the org
+
+    **Example Response**:
+        {"comment_count": 5, "thread_count": 3}
+    """
+
+    authentication_classes = (
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
+    )
+    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+
+    def post(self, request, course_id):
+        """
+        Implements the restore user posts endpoint.
+        """
+        username = request.GET.get("username", None)
+        execute_task = request.GET.get("execute", "false").lower() == "true"
+        if (not username) or (not course_id):
+            raise BadRequest("username and course_id are required.")
+        course_or_org = request.GET.get("course_or_org", "course")
+        if course_or_org not in ["course", "org"]:
+            raise BadRequest("course_or_org must be either 'course' or 'org'.")
+
+        user = get_object_or_404(User, username=username)
+        course_ids = [course_id]
+        if course_or_org == "org":
+            org_id = CourseKey.from_string(course_id).org
+            enrollments = CourseEnrollment.objects.filter(
+                user=user
+            ).values_list("course_id", flat=True)
+            course_ids.extend([str(c_id) for c_id in enrollments if c_id.org == org_id])
+            course_ids = list(set(course_ids))
+            log.info("<<Bulk Restore>> %s enrolled in %s", username, enrollments)
+        log.info(
+            "<<Bulk Restore>> Posts for %s in %s - for %s %s",
+            username,
+            course_ids,
+            course_or_org,
+            course_id,
+        )
+        comment_count = Comment.get_user_deleted_comment_count(user.id, course_ids)
+        thread_count = Thread.get_user_deleted_threads_count(user.id, course_ids)
+        log.info(
+            "<<Bulk Restore>> %s in %s - Count thread %s, comment %s",
+            username,
+            course_ids,
+            thread_count,
+            comment_count,
+        )
+
+        if execute_task:
+            event_data = {
+                "triggered_by": request.user.username,
+                "triggered_by_user_id": str(request.user.id),
+                "username": username,
+                "course_or_org": course_or_org,
+                "course_key": course_id,
+            }
+            restore_course_post_for_user.apply_async(
+                args=(user.id, username, course_ids, event_data),
+            )
+        return Response(
+            {"comment_count": comment_count, "thread_count": thread_count},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class DeletedContentView(DeveloperErrorViewMixin, APIView):
+    """
+    **Use Cases**
+        Retrieve all deleted content (threads, comments, responses) for a course.
+        This endpoint allows privileged users to fetch deleted discussion content.
+
+    **Example Requests**:
+        GET /api/discussion/v1/deleted_content/course-v1:edX+DemoX+Demo_Course
+        GET /api/discussion/v1/deleted_content/course-v1:edX+DemoX+Demo_Course?content_type=thread
+        GET /api/discussion/v1/deleted_content/course-v1:edX+DemoX+Demo_Course?page=1&per_page=20
+
+    **Example Response**:
+        {
+            "results": [
+                {
+                    "id": "thread_id",
+                    "type": "thread",
+                    "title": "Deleted Thread Title",
+                    "body": "Thread content...",
+                    "course_id": "course-v1:edX+DemoX+Demo_Course",
+                    "author_id": "user_123",
+                    "deleted_at": "2023-11-19T10:30:00Z",
+                    "deleted_by": "moderator_456"
+                }
+            ],
+            "pagination": {
+                "page": 1,
+                "per_page": 20,
+                "total_count": 50,
+                "num_pages": 3
+            }
+        }
+    """
+
+    authentication_classes = (
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
+    )
+    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+
+    def get(self, request, course_id):
+        """
+        Retrieve all deleted content for a course.
+        """
+        try:
+            course_key = CourseKey.from_string(course_id)
+        except Exception as e:
+            raise BadRequest("Invalid course_id") from e
+
+        # Get query parameters
+        content_type = request.GET.get(
+            "content_type", None
+        )  # 'thread', 'comment', or None for all
+        page = int(request.GET.get("page", 1))
+        per_page = int(request.GET.get("per_page", 20))
+        author_id = request.GET.get("author_id", None)
+
+        # Validate parameters
+        if content_type and content_type not in ["thread", "comment"]:
+            raise BadRequest("content_type must be 'thread' or 'comment'")
+
+        per_page = min(per_page, 100)  # Limit to prevent excessive load
+
+        try:
+            # Import here to avoid circular imports
+            from lms.djangoapps.discussion.rest_api.api import (
+                get_deleted_content_for_course,
+            )
+
+            results = get_deleted_content_for_course(
+                request=request,
+                course_id=str(course_key),
+                content_type=content_type,
+                page=page,
+                per_page=per_page,
+                author_id=author_id,
+            )
+
+            return Response(results, status=status.HTTP_200_OK)
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.exception(
+                "Error retrieving deleted content for course %s: %s", course_id, e
+            )
+            return Response(
+                {"error": "Failed to retrieve deleted content"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
+    """
+    **Use Cases**
+
+        Perform bulk moderation actions on discussion posts and manage user bans.
+
+    **Example Requests**
+
+        POST /api/discussion/v1/moderation/bulk-delete-ban/
+        GET /api/discussion/v1/moderation/banned-users/course-v1:edX+DemoX+Demo
+        POST /api/discussion/v1/moderation/123/unban/
+    """
+
+    authentication_classes = (
+        JwtAuthentication, BearerAuthentication, SessionAuthentication,
+    )
+    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+
+    def get_permissions(self):
+        """
+        Return permission instances for the view.
+
+        For unban_user, unban_user_by_id, and banned_users actions, we only need IsAuthenticated
+        because we check course-specific permissions inside the action method after retrieving the ban.
+        For ban_user, we check permissions inside the action based on scope.
+        """
+        if self.action in ['unban_user', 'unban_user_by_id', 'banned_users', 'ban_user']:
+            return [permissions.IsAuthenticated()]
+        return super().get_permissions()
+
+    @apidocs.schema(
+        body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['course_id'],
+            properties={
+                'user_id': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description='ID of the user to ban (required if username is not provided)'
+                ),
+                'username': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Username of the user to ban (required if user_id is not provided)'
+                ),
+                'course_id': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Course ID (e.g., course-v1:edX+DemoX+Demo_Course)'
+                ),
+                'scope': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Scope of ban: "course" or "organization"',
+                    enum=['course', 'organization'],
+                    default='course'
+                ),
+                'reason': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Reason for the ban (optional)',
+                    max_length=1000
+                ),
+            },
+        ),
+        responses={
+            201: openapi.Response(
+                description='User banned successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING, example='success'),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'ban_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                        'scope': openapi.Schema(type=openapi.TYPE_STRING),
+                        'course_id': openapi.Schema(type=openapi.TYPE_STRING),
+                    },
+                ),
+            ),
+            400: 'Invalid request data or user already banned.',
+            401: 'The requester is not authenticated.',
+            403: 'The requester does not have permission to ban users.',
+            404: 'The specified user does not exist.',
+        },
+    )
+    def _validate_ban_request_and_get_user(self, request, serializer_data):
+        """
+        Validate ban request and retrieve target user.
+
+        Returns tuple of (user, course_key, ban_scope, reason) or Response object on error.
+        """
+        from lms.djangoapps.discussion.rest_api.utils import (
+            _is_privileged_user,
+        )
+
+        user_id = serializer_data.get('user_id')
+        lookup_username = serializer_data.get('lookup_username')
+        course_id_str = serializer_data['course_id']
+        ban_scope = serializer_data.get('scope', 'course')
+        reason = serializer_data.get('reason', '').strip()
+
+        try:
+            course_key = CourseKey.from_string(course_id_str)
+        except InvalidKeyError:
+            return Response(
+                {'error': f'Invalid course_id: {course_id_str}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            if user_id:
+                user = User.objects.get(id=user_id)
+            elif lookup_username:
+                user = User.objects.get(username=lookup_username)
+            else:
+                return Response(
+                    {'error': 'Either user_id or username must be provided'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except User.DoesNotExist:
+            identifier = user_id if user_id else lookup_username
+            return Response(
+                {'error': f'User {identifier} does not exist'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if user is staff/privileged - they shouldn't be banned
+        if _is_privileged_user(user, course_key):
+            return Response(
+                {
+                    'error': (
+                        f'Cannot ban staff or privileged users. User {user.username} '
+                        f'has elevated permissions in this course.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return user, course_key, ban_scope, reason
+
+    def _check_ban_permissions(self, request, ban_scope, course_key):
+        """
+        Check if user has permission to ban at the specified scope.
+
+        Returns Response object on permission denied, None if permitted.
+        """
+        from lms.djangoapps.discussion.rest_api.permissions import can_take_action_on_spam
+        from common.djangoapps.student.roles import GlobalStaff
+
+        if ban_scope == 'course':
+            if not can_take_action_on_spam(request.user, course_key):
+                return Response(
+                    {'error': 'You do not have permission to ban users in this course'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        else:
+            if not (GlobalStaff().has_user(request.user) or request.user.is_staff):
+                return Response(
+                    {'error': 'Organization-level bans require global staff permissions'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        if not ENABLE_DISCUSSION_BAN.is_enabled(course_key):
+            return Response(
+                {'error': 'Discussion ban feature is not enabled for this course'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        return None
+
+    def _get_or_create_ban(self, user, course_key, ban_scope, reason, request):
+        """
+        Get existing ban or create new one.
+
+        Returns tuple of (ban, action_type, message) or Response object on error.
+        """
+        from forum import api as forum_api
+
+        # Check if already banned
+        if forum_api.is_user_banned(user, course_key, check_org=(ban_scope == 'organization')):
+            existing_ban = forum_api.get_ban(
+                user=user,
+                course_id=course_key,
+                scope=ban_scope
+            )
+            if existing_ban and existing_ban['is_active']:
+                return Response(
+                    {
+                        'error': f'User {user.username} is already banned at {ban_scope} level',
+                        'ban_id': existing_ban['id']
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Use forum API to ban user
+        ban_result = forum_api.ban_user(
+            user=user,
+            banned_by=request.user,
+            course_id=course_key,
+            scope=ban_scope,
+            reason=reason
+        )
+
+        # Determine action type and message
+        if ban_result.get('reactivated'):
+            action_type = 'ban_reactivate'
+            message = f'User {user.username} ban reactivated at {ban_scope} level'
+        else:
+            action_type = 'ban_user'
+            message = f'User {user.username} banned at {ban_scope} level'
+
+        return ban_result, action_type, message
+
+    def ban_user(self, request):
+        """
+        Ban a user from discussions without deleting posts.
+
+        **Use Cases**
+
+            * Ban user directly from UI moderation interface
+            * Prevent future posts without removing existing content
+            * Apply preventive bans based on behavior patterns
+
+        **Example Requests**
+
+            POST /api/discussion/v1/moderation/ban-user/
+
+            Course-level ban:
+            ```json
+            {
+                "user_id": 12345,
+                "course_id": "course-v1:HarvardX+CS50+2024",
+                "scope": "course",
+                "reason": "Repeated policy violations"
+            }
+            ```
+
+            Organization-level ban (requires global staff):
+            ```json
+            {
+                "username": "spammer123",
+                "course_id": "course-v1:HarvardX+CS50+2024",
+                "scope": "organization",
+                "reason": "Spam across multiple courses"
+            }
+            ```
+
+        **Response Values**
+
+            * status: Success status
+            * message: Human-readable message
+            * ban_id: ID of the created ban record
+            * user_id: Banned user's ID
+            * username: Banned user's username
+            * scope: Scope of the ban
+            * course_id: Course ID (if course-level ban)
+
+        **Notes**
+
+            * Creates ban without deleting existing posts
+            * Course-level bans require course moderation permissions
+            * Organization-level bans require global staff permissions
+            * Reactivates existing inactive bans if found
+            * All ban actions are logged in ModerationAuditLog
+        """
+        from forum import api as forum_api
+        from lms.djangoapps.discussion.rest_api.serializers import BanUserRequestSerializer
+
+        # Check if ban API is available
+        if not hasattr(forum_api, 'ban_user') or not hasattr(forum_api, 'is_user_banned'):
+            return Response(
+                {'error': 'Ban functionality is not available in this forum version'},
+                status=status.HTTP_501_NOT_IMPLEMENTED
+            )
+
+        serializer = BanUserRequestSerializer(data=request.data, context={'request': request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate and get user
+        result = self._validate_ban_request_and_get_user(request, serializer.validated_data)
+        if isinstance(result, Response):
+            return result
+        user, course_key, ban_scope, reason = result
+
+        # Check permissions
+        permission_error = self._check_ban_permissions(request, ban_scope, course_key)
+        if permission_error:
+            return permission_error
+
+        # Get or create ban
+        result = self._get_or_create_ban(user, course_key, ban_scope, reason, request)
+        if isinstance(result, Response):
+            return result
+        ban, action_type, message = result
+
+        # Audit log
+        org_key = course_key.org if ban_scope == 'organization' else None
+        forum_api.create_audit_log(
+            action_type=action_type,
+            target_user=user,
+            moderator=request.user,
+            course_id=str(course_key),
+            scope=ban_scope,
+            reason=reason or 'No reason provided',
+            metadata={
+                'ban_id': ban['id'],
+                'organization': org_key
+            }
+        )
+
+        return Response({
+            'status': 'success',
+            'message': message,
+            'ban_id': ban['id'],
+            'user_id': user.id,
+            'username': user.username,
+            'scope': ban_scope,
+            'course_id': str(course_key) if ban_scope == 'course' else None,
+        }, status=status.HTTP_201_CREATED)
+
+    @apidocs.schema(
+        body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['course_id', 'scope'],
+            properties={
+                'user_id': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description='ID of the user to unban (required if username is not provided)'
+                ),
+                'username': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Username of the user to unban (required if user_id is not provided)'
+                ),
+                'course_id': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Course ID (e.g., course-v1:edX+DemoX+Demo_Course)'
+                ),
+                'scope': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Scope of ban to lift: "course" or "organization"',
+                    enum=['course', 'organization']
+                ),
+                'reason': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Reason for unbanning',
+                    max_length=1000
+                ),
+            },
+        ),
+        responses={
+            200: openapi.Response(
+                description='User unbanned successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING, example='success'),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'ban_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                        'scope': openapi.Schema(type=openapi.TYPE_STRING),
+                    },
+                ),
+            ),
+            400: 'Invalid request data or user not currently banned.',
+            401: 'The requester is not authenticated.',
+            403: 'The requester does not have permission to unban users.',
+            404: 'The specified user or ban does not exist.',
+        },
+    )
+    def unban_user(self, request):
+        """
+        Unban a user from discussions.
+
+        **Use Cases**
+
+            * Lift ban after user appeal
+            * Remove accidental or temporary bans
+            * Restore discussion access
+
+        **Example Requests**
+
+            POST /api/discussion/v1/moderation/unban-user/
+
+            Course-level unban:
+            ```json
+            {
+                "user_id": 12345,
+                "course_id": "course-v1:HarvardX+CS50+2024",
+                "scope": "course",
+                "reason": "User appealed and corrected behavior"
+            }
+            ```
+
+            Organization-level unban:
+            ```json
+            {
+                "username": "student123",
+                "course_id": "course-v1:HarvardX+CS50+2024",
+                "scope": "organization",
+                "reason": "Ban lifted after review"
+            }
+            ```
+
+        **Response Values**
+
+            * status: Success status
+            * message: Human-readable message
+            * ban_id: ID of the unbanned record
+            * user_id: Unbanned user's ID
+            * username: Unbanned user's username
+            * scope: Scope of the ban that was lifted
+
+        **Notes**
+
+            * Deactivates the ban without deleting the record
+            * Course-level unbans require course moderation permissions
+            * Organization-level unbans require global staff permissions
+            * All unban actions are logged in ModerationAuditLog
+        """
+        from forum import api as forum_api
+        from lms.djangoapps.discussion.rest_api.serializers import BanUserRequestSerializer
+
+        # Check if ban API is available
+        if not hasattr(forum_api, 'unban_user') or not hasattr(forum_api, 'is_user_banned'):
+            return Response(
+                {'error': 'Ban functionality is not available in this forum version'},
+                status=status.HTTP_501_NOT_IMPLEMENTED
+            )
+
+        serializer = BanUserRequestSerializer(data=request.data, context={'request': request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate and get user
+        result = self._validate_ban_request_and_get_user(request, serializer.validated_data)
+        if isinstance(result, Response):
+            return result
+
+        user, course_key, ban_scope, reason = result
+
+        # Permission check
+        permission_error = self._check_ban_permissions(request, ban_scope, course_key)
+        if permission_error:
+            return permission_error
+
+        # Check if user has an active ban
+        if not forum_api.is_user_banned(user, course_key, check_org=(ban_scope == 'organization')):
+            return Response(
+                {
+                    'error': f'User {user.username} does not have an active ban at {ban_scope} level',
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get ban details before unbanning
+        ban_data = forum_api.get_ban(
+            user=user,
+            course_id=course_key,
+            scope=ban_scope
+        )
+
+        # Unban using forum API
+        # For org-level bans, pass course_id=None to fully unban across org
+        # (passing course_id for org ban creates an exception instead)
+        # NOTE: The newer /moderation/{pk}/unban/ endpoint (line ~2912) correctly
+        # supports optional course_id for creating exceptions. This older endpoint
+        # should always fully unban when scope='organization'.
+        unban_result = forum_api.unban_user(
+            user=user,
+            unbanned_by=request.user,
+            course_id=course_key if ban_scope == 'course' else None,
+            scope=ban_scope
+        )
+
+        # Prepare ban parameters based on scope
+        org_key = course_key.org if ban_scope == 'organization' else None
+
+        # Audit log
+        forum_api.create_audit_log(
+            action_type='unban_user',
+            target_user=user,
+            moderator=request.user,
+            course_id=str(course_key),
+            scope=ban_scope,
+            reason=reason or 'No reason provided',
+            metadata={
+                'ban_id': ban_data.get('id') if ban_data else None,
+                'organization': org_key
+            },
+        )
+
+        return Response({
+            'status': 'success',
+            'message': f'User {user.username} unbanned at {ban_scope} level',
+            'ban_id': ban_data.get('id') if ban_data else None,
+            'user_id': user.id,
+            'username': user.username,
+            'scope': ban_scope,
+        }, status=status.HTTP_200_OK)
+
+    @apidocs.schema(
+        body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['user_id', 'course_id'],
+            properties={
+                'user_id': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description='ID of the user whose posts should be deleted'
+                ),
+                'course_id': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Course ID (e.g., course-v1:edX+DemoX+Demo_Course)'
+                ),
+                'ban_user': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='If true, ban the user after deleting posts',
+                    default=False
+                ),
+                'ban_scope': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Scope of ban: "course" or "organization"',
+                    enum=['course', 'organization'],
+                    default='course'
+                ),
+                'reason': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Reason for ban (required if ban_user is true)',
+                    max_length=1000
+                ),
+            },
+        ),
+        responses={
+            202: openapi.Response(
+                description='Deletion task queued successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING, example='success'),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'task_id': openapi.Schema(type=openapi.TYPE_STRING),
+                    },
+                ),
+            ),
+            400: 'Invalid request data or missing required parameters.',
+            401: 'The requester is not authenticated.',
+            403: 'The requester does not have permission to perform bulk delete.',
+            404: 'The specified user does not exist.',
+        },
+    )
+    def bulk_delete_ban(self, request):
+        """
+        Delete all user posts in a course and optionally ban the user.
+
+        **Use Cases**
+
+            * Remove all discussion content from a spam account
+            * Ban user from course or organization discussions
+            * Bulk cleanup of policy-violating content
+
+        **Example Request**
+
+            POST /api/discussion/v1/moderation/bulk-delete-ban/
+
+            ```json
+            {
+                "user_id": 12345,
+                "course_id": "course-v1:HarvardX+CS50+2024",
+                "ban_user": true,
+                "ban_scope": "course",
+                "reason": "Posting spam and scam content"
+            }
+            ```
+
+        **Response Values**
+
+            * status: Success status of the request
+            * message: Human-readable message about the queued task
+            * task_id: Celery task ID for tracking the asynchronous operation
+
+        **Notes**
+
+            * This operation is asynchronous and returns a task ID
+            * If ban_user is true, a ban record will be created after content deletion
+            * Reason is required when ban_user is true
+            * Email notification is sent to partner-support upon ban
+            * Staff and privileged users cannot be banned
+        """
+        from lms.djangoapps.discussion.rest_api.serializers import BulkDeleteBanRequestSerializer
+        from lms.djangoapps.discussion.rest_api.utils import _is_privileged_user
+
+        serializer = BulkDeleteBanRequestSerializer(data=request.data, context={'request': request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        validated_data = serializer.validated_data
+        try:
+            course_key = CourseKey.from_string(validated_data['course_id'])
+        except InvalidKeyError:
+            return Response(
+                {'error': f"Invalid course_id: {validated_data['course_id']}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            target_user = User.objects.get(id=validated_data['user_id'])
+        except User.DoesNotExist:
+            return Response(
+                {'error': f'User with ID {validated_data["user_id"]} does not exist'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if target user is staff/privileged - they shouldn't be banned
+        if validated_data['ban_user'] and _is_privileged_user(target_user, course_key):
+            return Response(
+                {
+                    'error': (
+                        f'Cannot ban staff or privileged users. User {target_user.username} '
+                        f'has elevated permissions in this course.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if ban feature is enabled for this course
+        if validated_data['ban_user']:
+            if not ENABLE_DISCUSSION_BAN.is_enabled(course_key):
+                return Response(
+                    {'error': 'Discussion ban feature is not enabled for this course'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        # Enqueue Celery task (backward compatible with new parameters)
+        task = delete_course_post_for_user.apply_async(
+            kwargs={
+                'user_id': validated_data['user_id'],
+                'username': target_user.username,
+                'course_ids': [validated_data['course_id']],
+                'ban_user': validated_data['ban_user'],
+                'ban_scope': validated_data.get('ban_scope', 'course'),
+                'moderator_id': request.user.id,
+                'reason': validated_data.get('reason', ''),
+            }
+        )
+
+        message = (
+            'Deletion task queued. User will be banned upon completion.'
+            if validated_data['ban_user']
+            else 'Deletion task queued.'
+        )
+        return Response({
+            'status': 'success',
+            'message': message,
+            'task_id': task.id,
+        }, status=status.HTTP_202_ACCEPTED)
+
+    @apidocs.schema(
+        parameters=[
+            apidocs.string_parameter(
+                'course_id',
+                apidocs.ParameterLocation.PATH,
+                description='Course ID to retrieve banned users for (required)'
+            ),
+            apidocs.string_parameter(
+                'scope',
+                apidocs.ParameterLocation.QUERY,
+                description='Filter by ban scope: "course" or "organization"'
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description='List of banned users',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(
+                            type=openapi.TYPE_INTEGER,
+                            description='Total number of banned users'
+                        ),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            description='Array of banned user records',
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'username': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'user_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'course_id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'organization': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'scope': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'reason': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'banned_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time'),
+                                    'banned_by_username': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'is_active': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                },
+                            ),
+                        ),
+                    },
+                ),
+            ),
+            400: 'Missing required course_id parameter.',
+            401: 'The requester is not authenticated.',
+            403: 'The requester does not have permission to view banned users.',
+        },
+    )
+    def banned_users(self, request, course_id=None):
+        """
+        Retrieve list of banned users for a specific course.
+
+        **Use Cases**
+
+            * View all currently banned users in a course
+            * Filter banned users by scope (course-level vs organization-level)
+            * Audit moderation actions
+            * Unban users who were mistakenly banned (including staff)
+
+        **Example Requests**
+
+            GET /api/discussion/v1/moderation/banned-users/course-v1:HarvardX+CS50+2024
+            GET /api/discussion/v1/moderation/banned-users/course-v1:edX+DemoX+Demo?scope=course
+
+        **Response Values**
+
+            * count: Total number of active bans for the course
+            * results: Array of ban records with user information (deduplicated)
+
+        **Notes**
+
+            * Only returns active bans (is_active=True)
+            * Course-level bans are specific to one course
+            * Organization-level bans apply to all courses in the organization
+            * Shows ALL banned users including staff (so they can be unbanned if mistakenly banned)
+            * Deduplicates users with multiple ban records (e.g., course-level + org-level)
+            * New bans of staff are prevented by validation in ban endpoints
+        """
+        from forum import api as forum_api
+        from lms.djangoapps.discussion.rest_api.permissions import can_take_action_on_spam
+
+        if not course_id:
+            return Response(
+                {'error': 'course_id parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            course_key = CourseKey.from_string(course_id)
+        except InvalidKeyError:
+            return Response(
+                {'error': f'Invalid course_id: {course_id}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Permission check: user must be able to moderate in this course
+        if not can_take_action_on_spam(request.user, course_key):
+            return Response(
+                {'error': 'You do not have permission to view banned users in this course'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Check if ban feature is enabled for this course
+        if not ENABLE_DISCUSSION_BAN.is_enabled(course_key):
+            return Response(
+                {'error': 'Discussion ban feature is not enabled for this course'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Optional scope filter
+        scope = request.query_params.get('scope')
+
+        # Get banned users using forum API
+        banned_users_data = forum_api.get_banned_users(
+            course_id=course_key,
+            scope=scope
+        )
+
+        # Deduplicate by user_id (user may have both course-level and org-level bans)
+        # Keep the first occurrence (most relevant ban record)
+        seen_user_ids = set()
+        deduplicated_banned_users = []
+        for ban in banned_users_data:
+            user_id = ban.get('user', {}).get('id')
+            if user_id and user_id not in seen_user_ids:
+                seen_user_ids.add(user_id)
+                deduplicated_banned_users.append(ban)
+
+        return Response({
+            'count': len(deduplicated_banned_users),
+            'results': deduplicated_banned_users
+        })
+
+    @apidocs.schema(
+        parameters=[
+            apidocs.string_parameter(
+                'pk',
+                apidocs.ParameterLocation.PATH,
+                description='Ban ID to unban'
+            ),
+        ],
+        body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'course_id': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Course ID for organization-level ban exceptions'
+                ),
+                'reason': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Reason for unbanning'
+                ),
+            },
+            required=['reason'],
+        ),
+        responses={
+            200: openapi.Response(
+                description='User unbanned successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING, example='success'),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'exception_created': openapi.Schema(
+                            type=openapi.TYPE_BOOLEAN,
+                            description='True if org-level ban exception was created'
+                        ),
+                    },
+                ),
+            ),
+            401: 'The requester is not authenticated.',
+            403: 'The requester does not have permission to unban users.',
+            404: 'Active ban not found with the specified ID.',
+        },
+    )
+    def unban_user_by_id(self, request, pk=None):
+        """
+        Unban a user from discussions or create course-level exception (by ban ID).
+
+        **Use Cases**
+
+            * Lift a course-level ban completely
+            * Lift an organization-level ban completely
+            * Create course-specific exception to organization-level ban
+            * Process user appeals
+
+        **Example Requests**
+
+            POST /api/discussion/v1/moderation/123/unban/
+
+            ```json
+            {
+                "reason": "User appeal approved - first offense"
+            }
+            ```
+
+            Create exception for org-level ban:
+
+            ```json
+            {
+                "course_id": "course-v1:HarvardX+CS50+2024",
+                "reason": "Exception approved for CS50 only"
+            }
+            ```
+
+        **Response Values**
+
+            * status: Success status of the operation
+            * message: Human-readable message describing the action taken
+            * exception_created: Boolean indicating if an org-level exception was created
+
+        **Notes**
+
+            * For course-level bans: Deactivates the ban completely
+            * For org-level bans without course_id: Deactivates entire org-level ban
+            * For org-level bans with course_id: Creates exception allowing user in that course only
+            * All unban actions are logged in ModerationAuditLog
+        """
+        from forum import api as forum_api
+        from lms.djangoapps.discussion.rest_api.permissions import can_take_action_on_spam
+
+        # Get ban using forum API
+        try:
+            ban = forum_api.get_ban(pk)
+        except Exception:  # pylint: disable=broad-exception-caught
+            return Response(
+                {'error': 'Active ban not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if ban is active
+        if not ban.get('is_active'):
+            return Response(
+                {'error': 'Active ban not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        course_id = request.data.get('course_id')
+        reason = request.data.get('reason', '').strip()
+        parsed_course_key = None
+
+        if course_id:
+            try:
+                parsed_course_key = CourseKey.from_string(course_id)
+            except InvalidKeyError:
+                return Response(
+                    {'error': f'Invalid course_id: {course_id}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Import dependencies
+        from common.djangoapps.student.roles import GlobalStaff
+
+        # Permission check: depends on ban type and what user is trying to do
+        ban_course_id = ban.get('course_id')
+        if ban_course_id:
+            # Course-level ban - check permissions for that specific course
+            course_key_obj = CourseKey.from_string(ban_course_id)
+            if not can_take_action_on_spam(request.user, course_key_obj):
+                return Response(
+                    {'error': 'You do not have permission to unban users in this course'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        else:
+            # Org-level ban
+            if course_id:
+                # Creating exception for specific course - check permissions in that course
+                if not can_take_action_on_spam(request.user, parsed_course_key):
+                    return Response(
+                        {'error': 'You do not have permission to create exceptions in this course'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            else:
+                # Fully unbanning org-level ban - only global staff can do this
+                if not (GlobalStaff().has_user(request.user) or request.user.is_staff):
+                    return Response(
+                        {'error': 'Only global staff can fully unban organization-level bans'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
+        # Check if ban feature is enabled
+        # Determine which course_key to use for flag check
+        if ban_course_id:
+            # Course-level ban - use ban's course_id
+            course_key_for_flag = CourseKey.from_string(ban_course_id)
+        elif course_id:
+            # Org-level ban with course exception - use provided course_id
+            course_key_for_flag = parsed_course_key
+        elif ban.get('scope') == 'organization' and ban.get('org_key'):
+            # Org-level ban without course_id - find any course in org to check flag
+            from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+            try:
+                # Find any course in the organization to check the flag
+                org_course = CourseOverview.objects.filter(org=ban['org_key']).first()
+                if org_course:
+                    course_key_for_flag = org_course.id
+                else:
+                    # No courses found in org - deny unless global staff
+                    if not (GlobalStaff().has_user(request.user) or request.user.is_staff):
+                        return Response(
+                            {'error': 'Discussion ban feature check requires course context or global staff access'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                    # Global staff can proceed without flag check for org-level operations
+                    course_key_for_flag = None
+            except Exception:  # pylint: disable=broad-exception-caught
+                # Fallback: deny unless global staff
+                if not (GlobalStaff().has_user(request.user) or request.user.is_staff):
+                    return Response(
+                        {'error': 'Discussion ban feature check requires course context or global staff access'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                course_key_for_flag = None
+        else:
+            course_key_for_flag = None
+
+        # Check flag if we have a course_key
+        if course_key_for_flag:
+            if not ENABLE_DISCUSSION_BAN.is_enabled(course_key_for_flag):
+                return Response(
+                    {'error': 'Discussion ban feature is not enabled for this course'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        # Validate that reason is provided
+        if not reason:
+            return Response(
+                {'error': 'reason field is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Use forum API to unban - it handles both full unban and exceptions
+        try:
+            unban_result = forum_api.unban_user(
+                ban_id=pk,
+                unbanned_by=request.user,
+                course_id=course_id,
+                reason=reason
+            )
+
+            return Response({
+                'status': unban_result.get('status', 'success'),
+                'message': unban_result.get('message', 'User unbanned successfully'),
+                'exception_created': unban_result.get('exception_created', False)
+            })
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.error(f"Error unbanning user: {e}")
+            return Response(
+                {'error': 'An error occurred while unbanning the user'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

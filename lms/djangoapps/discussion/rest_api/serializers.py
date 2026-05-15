@@ -1,13 +1,12 @@
 """
 Discussion API serializers
 """
-import html
-import re
 
-from bs4 import BeautifulSoup
+import re
 from typing import Dict
 from urllib.parse import urlencode, urlunparse
 
+from bs4 import BeautifulSoup
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
@@ -18,8 +17,12 @@ from rest_framework import serializers
 
 from common.djangoapps.student.models import get_user_by_username_or_email
 from common.djangoapps.student.roles import GlobalStaff
-from lms.djangoapps.discussion.django_comment_client.base.views import track_thread_lock_unlock_event, \
-    track_thread_edited_event, track_comment_edited_event, track_forum_response_mark_event
+from lms.djangoapps.discussion.django_comment_client.base.views import (
+    track_comment_edited_event,
+    track_forum_response_mark_event,
+    track_thread_edited_event,
+    track_thread_lock_unlock_event,
+)
 from lms.djangoapps.discussion.django_comment_client.utils import (
     course_discussion_division_enabled,
     get_group_id_for_user,
@@ -35,16 +38,23 @@ from lms.djangoapps.discussion.rest_api.permissions import (
 from lms.djangoapps.discussion.rest_api.render import render_body
 from lms.djangoapps.discussion.rest_api.utils import (
     get_course_staff_users_list,
-    get_moderator_users_list,
     get_course_ta_users_list,
+    get_moderator_users_list,
+    get_user_learner_status,
 )
 from openedx.core.djangoapps.discussions.models import DiscussionTopicLink
 from openedx.core.djangoapps.discussions.utils import get_group_names_by_id
 from openedx.core.djangoapps.django_comment_common.comment_client.comment import Comment
 from openedx.core.djangoapps.django_comment_common.comment_client.thread import Thread
-from openedx.core.djangoapps.django_comment_common.comment_client.user import User as CommentClientUser
-from openedx.core.djangoapps.django_comment_common.comment_client.utils import CommentClientRequestError
-from openedx.core.djangoapps.django_comment_common.models import CourseDiscussionSettings
+from openedx.core.djangoapps.django_comment_common.comment_client.user import (
+    User as CommentClientUser,
+)
+from openedx.core.djangoapps.django_comment_common.comment_client.utils import (
+    CommentClientRequestError,
+)
+from openedx.core.djangoapps.django_comment_common.models import (
+    CourseDiscussionSettings,
+)
 from openedx.core.djangoapps.user_api.accounts.api import get_profile_images
 from openedx.core.lib.api.serializers import CourseKeyField
 
@@ -58,6 +68,7 @@ class TopicOrdering(TextChoices):
     """
     Enum for the available options for ordering topics.
     """
+
     COURSE_STRUCTURE = "course_structure", "Course Structure"
     ACTIVITY = "activity", "Activity"
     NAME = "name", "Name"
@@ -72,16 +83,22 @@ def get_context(course, request, thread=None):
     moderator_user_ids = get_moderator_users_list(course.id)
     ta_user_ids = get_course_ta_users_list(course.id)
     requester = request.user
-    cc_requester = CommentClientUser.from_django_user(requester).retrieve(course_id=course.id)
+    cc_requester = CommentClientUser.from_django_user(requester).retrieve(
+        course_id=course.id
+    )
     cc_requester["course_id"] = course.id
     course_discussion_settings = CourseDiscussionSettings.get(course.id)
     is_global_staff = GlobalStaff().has_user(requester)
-    has_moderation_privilege = requester.id in moderator_user_ids or requester.id in ta_user_ids or is_global_staff
+    all_privileged_ids = set(moderator_user_ids) | set(ta_user_ids)
+    has_moderation_privilege = requester.id in all_privileged_ids or is_global_staff
     return {
         "course": course,
+        "course_id": course.id,
         "request": request,
         "thread": thread,
-        "discussion_division_enabled": course_discussion_division_enabled(course_discussion_settings),
+        "discussion_division_enabled": course_discussion_division_enabled(
+            course_discussion_settings
+        ),
         "group_ids_to_names": get_group_names_by_id(course_discussion_settings),
         "moderator_user_ids": moderator_user_ids,
         "course_staff_user_ids": course_staff_user_ids,
@@ -136,8 +153,8 @@ def _validate_privileged_access(context: Dict) -> bool:
     Returns:
         bool: Course exists and the user has privileged access.
     """
-    course = context.get('course', None)
-    is_requester_privileged = context.get('has_moderation_privilege')
+    course = context.get("course", None)
+    is_requester_privileged = context.get("has_moderation_privilege")
     return course and is_requester_privileged
 
 
@@ -147,7 +164,9 @@ def filter_spam_urls_from_html(html_string):
     Returns:
         clean_post, is_spam
     """
-    html_string = html.unescape(html_string)
+    # BeautifulSoup automatically handles HTML entities correctly.
+    # Do NOT call html.unescape() here as it breaks properly escaped content in code blocks
+    # (e.g., &lt;div&gt; inside <code> tags would become real <div> tags).
     soup = BeautifulSoup(html_string, "html.parser")
     patterns = []
     is_spam = False
@@ -157,7 +176,7 @@ def filter_spam_urls_from_html(html_string):
         patterns.append(re.compile(rf"(https?://)?{domain_pattern}", re.IGNORECASE))
 
     for a_tag in soup.find_all("a", href=True):
-        href = a_tag.get('href')
+        href = a_tag.get("href")
         if href:
             if any(p.search(href) for p in patterns):
                 a_tag.replace_with(a_tag.get_text(strip=True))
@@ -166,7 +185,7 @@ def filter_spam_urls_from_html(html_string):
     for text_node in soup.find_all(string=True):
         new_text = text_node
         for p in patterns:
-            new_text = p.sub('', new_text)
+            new_text = p.sub("", new_text)
         if new_text != text_node:
             text_node.replace_with(new_text.strip())
             is_spam = True
@@ -182,6 +201,7 @@ class _ContentSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)  # pylint: disable=invalid-name
     author = serializers.SerializerMethodField()
     author_label = serializers.SerializerMethodField()
+    learner_status = serializers.SerializerMethodField()
     created_at = serializers.CharField(read_only=True)
     updated_at = serializers.CharField(read_only=True)
     raw_body = serializers.CharField(source="body", validators=[validate_not_blank])
@@ -194,8 +214,16 @@ class _ContentSerializer(serializers.Serializer):
     anonymous = serializers.BooleanField(default=False)
     anonymous_to_peers = serializers.BooleanField(default=False)
     last_edit = serializers.SerializerMethodField(required=False)
-    edit_reason_code = serializers.CharField(required=False, validators=[validate_edit_reason_code])
+    edit_reason_code = serializers.CharField(
+        required=False, validators=[validate_edit_reason_code]
+    )
     edit_by_label = serializers.SerializerMethodField(required=False)
+    is_deleted = serializers.SerializerMethodField(read_only=True)
+    deleted_at = serializers.SerializerMethodField(read_only=True)
+    deleted_by = serializers.SerializerMethodField(read_only=True)
+    deleted_by_label = serializers.SerializerMethodField(read_only=True)
+    is_author_banned = serializers.SerializerMethodField(read_only=True)
+    author_ban_scope = serializers.SerializerMethodField(read_only=True)
 
     non_updatable_fields = set()
 
@@ -214,10 +242,21 @@ class _ContentSerializer(serializers.Serializer):
 
     def _is_user_privileged(self, user_id):
         """
-        Returns a boolean indicating whether the given user_id identifies a
-        privileged user.
+        Returns a boolean indicating whether the given user_id identifies a privileged user.
         """
-        return user_id in self.context["moderator_user_ids"] or user_id in self.context["ta_user_ids"]
+        is_privileged = (
+            user_id in self.context["moderator_user_ids"]
+            or user_id in self.context["ta_user_ids"]
+        )
+
+        if not is_privileged:
+            try:
+                user = User.objects.get(id=user_id)
+                is_privileged = GlobalStaff().has_user(user)
+            except User.DoesNotExist:
+                pass
+
+        return is_privileged
 
     def _is_anonymous(self, obj):
         """
@@ -225,12 +264,12 @@ class _ContentSerializer(serializers.Serializer):
         the requester.
         """
         user_id = self.context["request"].user.id
-        is_user_staff = user_id in self.context["moderator_user_ids"] or user_id in self.context["ta_user_ids"]
-
-        return (
-            obj["anonymous"] or
-            obj["anonymous_to_peers"] and not is_user_staff
+        is_user_staff = (
+            user_id in self.context["moderator_user_ids"]
+            or user_id in self.context["ta_user_ids"]
         )
+
+        return obj["anonymous"] or obj["anonymous_to_peers"] and not is_user_staff
 
     def get_author(self, obj):
         """
@@ -240,18 +279,23 @@ class _ContentSerializer(serializers.Serializer):
 
     def _get_user_label(self, user_id):
         """
-        Returns the role label (i.e. "Staff", "Moderator" or "Community TA") for the user
-        with the given id.
+        Returns the role label for the user with the given id.
         """
-        is_staff = user_id in self.context["course_staff_user_ids"]
         is_moderator = user_id in self.context["moderator_user_ids"]
         is_ta = user_id in self.context["ta_user_ids"]
 
+        is_global_staff = False
+        if not (is_moderator or is_ta):
+            try:
+                user = User.objects.get(id=user_id)
+                is_global_staff = GlobalStaff().has_user(user)
+            except User.DoesNotExist:
+                pass
+
         return (
-            "Staff" if is_staff else
-            "Moderator" if is_moderator else
-            "Community TA" if is_ta else
-            None
+            "Staff"
+            if is_global_staff
+            else "Moderator" if is_moderator else "Community TA" if is_ta else None
         )
 
     def _get_user_label_from_username(self, username):
@@ -275,13 +319,35 @@ class _ContentSerializer(serializers.Serializer):
             user_id = int(obj["user_id"])
             return self._get_user_label(user_id)
 
+    def get_learner_status(self, obj):
+        """
+        Get the learner status for the discussion post author.
+        Returns one of: "anonymous", "staff", "new", "regular"
+        """
+        # Skip for anonymous content
+        if self._is_anonymous(obj) or obj.get("user_id") is None:
+            return "anonymous"
+
+        try:
+            user = User.objects.get(id=int(obj["user_id"]))
+        except (User.DoesNotExist, ValueError):
+            return "anonymous"
+
+        course = self.context.get("course")
+        if not course:
+            return "anonymous"
+
+        return get_user_learner_status(user, course.id)
+
     def get_rendered_body(self, obj):
         """
         Returns the rendered body content.
         """
         if self._rendered_body is None:
             self._rendered_body = render_body(obj["body"])
-            self._rendered_body, is_spam = filter_spam_urls_from_html(self._rendered_body)
+            self._rendered_body, is_spam = filter_spam_urls_from_html(
+                self._rendered_body
+            )
             if is_spam and settings.CONTENT_FOR_SPAM_POSTS:
                 self._rendered_body = settings.CONTENT_FOR_SPAM_POSTS
         return self._rendered_body
@@ -293,8 +359,9 @@ class _ContentSerializer(serializers.Serializer):
         """
         total_abuse_flaggers = len(obj.get("abuse_flaggers", []))
         return (
-            self.context["has_moderation_privilege"] and total_abuse_flaggers > 0 or
-            self.context["cc_requester"]["id"] in obj.get("abuse_flaggers", [])
+            self.context["has_moderation_privilege"]
+            and total_abuse_flaggers > 0
+            or self.context["cc_requester"]["id"] in obj.get("abuse_flaggers", [])
         )
 
     def get_voted(self, obj):
@@ -327,7 +394,7 @@ class _ContentSerializer(serializers.Serializer):
         Returns information about the last edit for this content for
         privileged users.
         """
-        is_user_author = str(obj['user_id']) == str(self.context['request'].user.id)
+        is_user_author = str(obj["user_id"]) == str(self.context["request"].user.id)
         if not (_validate_privileged_access(self.context) or is_user_author):
             return None
         edit_history = obj.get("edit_history")
@@ -343,12 +410,233 @@ class _ContentSerializer(serializers.Serializer):
         """
         Returns the role label for the last edit user.
         """
-        is_user_author = str(obj['user_id']) == str(self.context['request'].user.id)
+        is_user_author = str(obj["user_id"]) == str(self.context["request"].user.id)
         is_user_privileged = _validate_privileged_access(self.context)
         edit_history = obj.get("edit_history")
         if (is_user_author or is_user_privileged) and edit_history:
             last_edit = edit_history[-1]
-            return self._get_user_label_from_username(last_edit.get('editor_username'))
+            return self._get_user_label_from_username(last_edit.get("editor_username"))
+
+    def get_is_deleted(self, obj):
+        """
+        Returns the is_deleted status for privileged users or content authors.
+        """
+        is_user_author = str(obj["user_id"]) == str(self.context["request"].user.id)
+        if not (_validate_privileged_access(self.context) or is_user_author):
+            return None
+        return obj.get("is_deleted", False)
+
+    def get_deleted_at(self, obj):
+        """
+        Returns the deletion timestamp for privileged users or content authors.
+        """
+        is_user_author = str(obj["user_id"]) == str(self.context["request"].user.id)
+        if not (_validate_privileged_access(self.context) or is_user_author):
+            return None
+        return obj.get("deleted_at")
+
+    def get_deleted_by(self, obj):
+        """
+        Returns the username of the user who deleted this content for privileged users or content authors.
+        """
+        is_user_author = str(obj["user_id"]) == str(self.context["request"].user.id)
+        if not (_validate_privileged_access(self.context) or is_user_author):
+            return None
+        deleted_by_id = obj.get("deleted_by")
+        if deleted_by_id:
+            try:
+                user = User.objects.get(id=int(deleted_by_id))
+                return user.username
+            except (User.DoesNotExist, ValueError):
+                return None
+        return None
+
+    def get_deleted_by_label(self, obj):
+        """
+        Returns the role label for the user who deleted this content for privileged users only.
+        """
+        if not _validate_privileged_access(self.context):
+            return None
+        deleted_by_id = obj.get("deleted_by")
+        if deleted_by_id:
+            try:
+                return self._get_user_label(int(deleted_by_id))
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    def _get_author_ban_cache_key(self, course_id, user_id):
+        """Build a stable cache key for author ban lookups."""
+        return (str(course_id), int(user_id))
+
+    def _get_author_from_cache(self, user_id):
+        """Fetch author from per-request cache or database."""
+        user_cache = self.context.setdefault("_author_ban_user_cache", {})
+        if user_id not in user_cache:
+            try:
+                user_cache[user_id] = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                user_cache[user_id] = None
+        return user_cache[user_id]
+
+    def get_is_author_banned(self, obj):
+        """
+        Returns True if the content author is banned from discussions.
+        Returns False for anonymous content or if ban check fails.
+        """
+        from forum import api as forum_api
+        from lms.djangoapps.discussion.toggles import ENABLE_DISCUSSION_BAN
+
+        # Skip for anonymous content
+        if self._is_anonymous(obj) or obj.get("user_id") is None:
+            return False
+
+        # Skip if ban function not available
+        is_user_banned_func = getattr(forum_api, 'is_user_banned', None)
+        if not is_user_banned_func:
+            return False
+
+        # Skip if feature flag is not enabled
+        course_id = self.context.get("course_id")
+        if not course_id or not ENABLE_DISCUSSION_BAN.is_enabled(course_id):
+            return False
+
+        try:
+            user_id = int(obj["user_id"])
+        except (ValueError, TypeError):
+            return False
+
+        cache_key = self._get_author_ban_cache_key(course_id, user_id)
+        ban_status_cache = self.context.setdefault("_author_ban_status_cache", {})
+        if cache_key in ban_status_cache:
+            return ban_status_cache[cache_key]
+
+        try:
+            user = self._get_author_from_cache(user_id)
+            if not user:
+                ban_status_cache[cache_key] = False
+                return False
+
+            is_banned = is_user_banned_func(user, course_id)
+            ban_status_cache[cache_key] = is_banned
+            return is_banned
+        except (User.DoesNotExist, ValueError, Exception):  # pylint: disable=broad-except
+            ban_status_cache[cache_key] = False
+
+        return False
+
+    def get_author_ban_scope(self, obj):
+        """
+        Returns the scope of the author's ban ('course' or 'organization').
+        Returns None for anonymous content, unbanned users, or if check fails.
+        """
+        from forum import api as forum_api
+        from lms.djangoapps.discussion.toggles import ENABLE_DISCUSSION_BAN
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Skip for anonymous content
+        if self._is_anonymous(obj) or obj.get("user_id") is None:
+            return None
+
+        # Skip if required functions not available
+        is_user_banned_func = getattr(forum_api, 'is_user_banned', None)
+        get_user_bans_func = getattr(forum_api, 'get_user_bans', None)
+        if not is_user_banned_func:
+            return None
+
+        # Skip if feature flag is not enabled
+        course_id = self.context.get("course_id")
+        if not course_id or not ENABLE_DISCUSSION_BAN.is_enabled(course_id):
+            return None
+
+        try:
+            user_id = int(obj["user_id"])
+        except (ValueError, TypeError):
+            return None
+
+        cache_key = self._get_author_ban_cache_key(course_id, user_id)
+        ban_scope_cache = self.context.setdefault("_author_ban_scope_cache", {})
+        if cache_key in ban_scope_cache:
+            return ban_scope_cache[cache_key]
+
+        ban_status_cache = self.context.setdefault("_author_ban_status_cache", {})
+
+        try:
+            user = self._get_author_from_cache(user_id)
+            if not user:
+                ban_scope_cache[cache_key] = None
+                return None
+
+            if not course_id:
+                ban_scope_cache[cache_key] = None
+                return None
+
+            # First check if user is banned at all
+            user_banned = ban_status_cache.get(cache_key)
+            if user_banned is None:
+                user_banned = is_user_banned_func(user, course_id)
+                ban_status_cache[cache_key] = user_banned
+
+            if not user_banned:
+                ban_scope_cache[cache_key] = None
+                return None
+
+            # Try to get all active bans for this user and course
+            if get_user_bans_func:
+                try:
+                    bans = get_user_bans_func(user=user, course_id=course_id)
+                    # Check for organization-level ban first (higher precedence)
+                    for ban in bans:
+                        if ban.get('is_active') and ban.get('scope') == 'organization':
+                            ban_scope_cache[cache_key] = 'organization'
+                            return 'organization'
+                    # Then check for course-level ban
+                    for ban in bans:
+                        if ban.get('is_active') and ban.get('scope') == 'course':
+                            ban_scope_cache[cache_key] = 'course'
+                            return 'course'
+                except Exception as e:  # pylint: disable=broad-except
+                    logger.debug(
+                        "Unable to fetch ban list for ban-scope detection. course_id=%s user_id=%s error=%s",
+                        course_id,
+                        obj.get("user_id"),
+                        e,
+                    )
+
+            # Fallback: Try checking each scope individually using is_user_banned
+            # check_org parameter: True = include org checks, False = course-only
+            try:
+                # Check course-only (check_org=False means don't check org)
+                course_only = is_user_banned_func(user, course_id, check_org=False)
+
+                # If course-only check returns False but user IS banned, must be org-banned
+                if not course_only:
+                    ban_scope_cache[cache_key] = 'organization'
+                    return 'organization'
+
+                # If course-only check returns True, it's course-level ban
+                ban_scope_cache[cache_key] = 'course'
+                return 'course'
+            except TypeError as e:
+                # check_org parameter might not exist in older versions
+                logger.debug(
+                    "check_org parameter unsupported during ban-scope detection. course_id=%s user_id=%s error=%s",
+                    course_id,
+                    obj.get("user_id"),
+                    e,
+                )
+
+        except (User.DoesNotExist, ValueError, Exception) as e:  # pylint: disable=broad-except
+            logger.warning(
+                "Unable to determine author ban scope. course_id=%s user_id=%s error=%s",
+                self.context.get("course_id"),
+                obj.get("user_id"),
+                e,
+            )
+
+        ban_scope_cache[cache_key] = None
+        return None
 
 
 class ThreadSerializer(_ContentSerializer):
@@ -359,13 +647,15 @@ class ThreadSerializer(_ContentSerializer):
     not had retrieve() called, because of the interaction between DRF's attempts
     at introspection and Thread's __getattr__.
     """
+
     course_id = serializers.CharField()
-    topic_id = serializers.CharField(source="commentable_id", validators=[validate_not_blank])
+    topic_id = serializers.CharField(
+        source="commentable_id", validators=[validate_not_blank]
+    )
     group_id = serializers.IntegerField(required=False, allow_null=True)
     group_name = serializers.SerializerMethodField()
     type = serializers.ChoiceField(
-        source="thread_type",
-        choices=[(val, val) for val in ["discussion", "question"]]
+        source="thread_type", choices=[(val, val) for val in ["discussion", "question"]]
     )
     preview_body = serializers.SerializerMethodField()
     abuse_flagged_count = serializers.SerializerMethodField(required=False)
@@ -380,8 +670,12 @@ class ThreadSerializer(_ContentSerializer):
     non_endorsed_comment_list_url = serializers.SerializerMethodField()
     read = serializers.BooleanField(required=False)
     has_endorsed = serializers.BooleanField(source="endorsed", read_only=True)
-    response_count = serializers.IntegerField(source="resp_total", read_only=True, required=False)
-    close_reason_code = serializers.CharField(required=False, validators=[validate_close_reason_code])
+    response_count = serializers.IntegerField(
+        source="resp_total", read_only=True, required=False
+    )
+    close_reason_code = serializers.CharField(
+        required=False, validators=[validate_close_reason_code]
+    )
     close_reason = serializers.SerializerMethodField()
     closed_by = serializers.SerializerMethodField()
     closed_by_label = serializers.SerializerMethodField(required=False)
@@ -427,9 +721,8 @@ class ThreadSerializer(_ContentSerializer):
         Returns the URL to retrieve the thread's comments, optionally including
         the endorsed query parameter.
         """
-        if (
-            (obj["thread_type"] == "question" and endorsed is None) or
-            (obj["thread_type"] == "discussion" and endorsed is not None)
+        if (obj["thread_type"] == "question" and endorsed is None) or (
+            obj["thread_type"] == "discussion" and endorsed is not None
         ):
             return None
         path = reverse("comment-list")
@@ -473,13 +766,17 @@ class ThreadSerializer(_ContentSerializer):
         """
         Returns a cleaned version of the thread's body to display in a preview capacity.
         """
-        return strip_tags(self.get_rendered_body(obj)).replace('\n', ' ').replace('&nbsp;', ' ')
+        return (
+            strip_tags(self.get_rendered_body(obj))
+            .replace("\n", " ")
+            .replace("&nbsp;", " ")
+        )
 
     def get_close_reason(self, obj):
         """
         Returns the reason for which the thread was closed.
         """
-        is_user_author = str(obj['user_id']) == str(self.context['request'].user.id)
+        is_user_author = str(obj["user_id"]) == str(self.context["request"].user.id)
         if not (_validate_privileged_access(self.context) or is_user_author):
             return None
         reason_code = obj.get("close_reason_code")
@@ -490,7 +787,7 @@ class ThreadSerializer(_ContentSerializer):
         Returns the username of the moderator who closed this thread,
         only to other privileged users and author.
         """
-        is_user_author = str(obj['user_id']) == str(self.context['request'].user.id)
+        is_user_author = str(obj["user_id"]) == str(self.context["request"].user.id)
         if _validate_privileged_access(self.context) or is_user_author:
             return obj.get("closed_by")
 
@@ -498,7 +795,7 @@ class ThreadSerializer(_ContentSerializer):
         """
         Returns the role label for the user who closed the post.
         """
-        is_user_author = str(obj['user_id']) == str(self.context['request'].user.id)
+        is_user_author = str(obj["user_id"]) == str(self.context["request"].user.id)
         if is_user_author or _validate_privileged_access(self.context):
             return self._get_user_label_from_username(obj.get("closed_by"))
 
@@ -513,18 +810,31 @@ class ThreadSerializer(_ContentSerializer):
             requesting_user_id = self.context["cc_requester"]["id"]
             if key == "closed" and val:
                 instance["closing_user_id"] = requesting_user_id
-                track_thread_lock_unlock_event(self.context['request'], self.context['course'],
-                                               instance, validated_data.get('close_reason_code'))
+                track_thread_lock_unlock_event(
+                    self.context["request"],
+                    self.context["course"],
+                    instance,
+                    validated_data.get("close_reason_code"),
+                )
 
             if key == "closed" and not val:
                 instance["closing_user_id"] = requesting_user_id
-                track_thread_lock_unlock_event(self.context['request'], self.context['course'],
-                                               instance, validated_data.get('close_reason_code'), locked=False)
+                track_thread_lock_unlock_event(
+                    self.context["request"],
+                    self.context["course"],
+                    instance,
+                    validated_data.get("close_reason_code"),
+                    locked=False,
+                )
 
             if key == "body" and val:
                 instance["editing_user_id"] = requesting_user_id
-                track_thread_edited_event(self.context['request'], self.context['course'],
-                                          instance, validated_data.get('edit_reason_code'))
+                track_thread_edited_event(
+                    self.context["request"],
+                    self.context["course"],
+                    instance,
+                    validated_data.get("edit_reason_code"),
+                )
         instance.save()
         return instance
 
@@ -537,6 +847,7 @@ class CommentSerializer(_ContentSerializer):
     not had retrieve() called, because of the interaction between DRF's attempts
     at introspection and Comment's __getattr__.
     """
+
     thread_id = serializers.CharField()
     parent_id = serializers.CharField(required=False, allow_null=True)
     endorsed = serializers.BooleanField(required=False)
@@ -551,7 +862,7 @@ class CommentSerializer(_ContentSerializer):
     non_updatable_fields = NON_UPDATABLE_COMMENT_FIELDS
 
     def __init__(self, *args, **kwargs):
-        remove_fields = kwargs.pop('remove_fields', None)
+        remove_fields = kwargs.pop("remove_fields", None)
         super().__init__(*args, **kwargs)
 
         if remove_fields:
@@ -573,8 +884,8 @@ class CommentSerializer(_ContentSerializer):
             # Avoid revealing the identity of an anonymous non-staff question
             # author who has endorsed a comment in the thread
             if not (
-                self._is_anonymous(self.context["thread"]) and
-                not self._is_user_privileged(endorser_id)
+                self._is_anonymous(self.context["thread"])
+                and not self._is_user_privileged(endorser_id)
             ):
                 return User.objects.get(id=endorser_id).username
         return None
@@ -616,7 +927,7 @@ class CommentSerializer(_ContentSerializer):
         # Django Rest Framework v3 no longer includes None values
         # in the representation.  To maintain the previous behavior,
         # we do this manually instead.
-        if 'parent_id' not in data:
+        if "parent_id" not in data:
             data["parent_id"] = None
 
         return data
@@ -658,7 +969,7 @@ class CommentSerializer(_ContentSerializer):
         comment = Comment(
             course_id=self.context["thread"]["course_id"],
             user_id=self.context["cc_requester"]["id"],
-            **validated_data
+            **validated_data,
         )
         comment.save()
         return comment
@@ -671,12 +982,18 @@ class CommentSerializer(_ContentSerializer):
             # endorsement_user_id on update
             requesting_user_id = self.context["cc_requester"]["id"]
             if key == "endorsed":
-                track_forum_response_mark_event(self.context['request'], self.context['course'], instance, val)
+                track_forum_response_mark_event(
+                    self.context["request"], self.context["course"], instance, val
+                )
                 instance["endorsement_user_id"] = requesting_user_id
             if key == "body" and val:
                 instance["editing_user_id"] = requesting_user_id
-                track_comment_edited_event(self.context['request'], self.context['course'],
-                                           instance, validated_data.get('edit_reason_code'))
+                track_comment_edited_event(
+                    self.context["request"],
+                    self.context["course"],
+                    instance,
+                    validated_data.get("edit_reason_code"),
+                )
 
         instance.save()
         return instance
@@ -686,6 +1003,7 @@ class DiscussionTopicSerializer(serializers.Serializer):
     """
     Serializer for DiscussionTopic
     """
+
     id = serializers.CharField(read_only=True)  # pylint: disable=invalid-name
     name = serializers.CharField(read_only=True)
     thread_list_url = serializers.CharField(read_only=True)
@@ -715,10 +1033,11 @@ class DiscussionTopicSerializerV2(serializers.Serializer):
     """
     Serializer for new style topics.
     """
+
     id = serializers.CharField(  # pylint: disable=invalid-name
         read_only=True,
         source="external_id",
-        help_text="Provider-specific unique id for the topic"
+        help_text="Provider-specific unique id for the topic",
     )
     usage_key = serializers.CharField(
         read_only=True,
@@ -742,10 +1061,13 @@ class DiscussionTopicSerializerV2(serializers.Serializer):
         """
         Get thread counts from provided context
         """
-        return self.context['thread_counts'].get(obj.external_id, {
-            "discussion": 0,
-            "question": 0,
-        })
+        return self.context["thread_counts"].get(
+            obj.external_id,
+            {
+                "discussion": 0,
+                "question": 0,
+            },
+        )
 
 
 class DiscussionRolesSerializer(serializers.Serializer):
@@ -753,10 +1075,7 @@ class DiscussionRolesSerializer(serializers.Serializer):
     Serializer for course discussion roles.
     """
 
-    ACTION_CHOICES = (
-        ('allow', 'allow'),
-        ('revoke', 'revoke')
-    )
+    ACTION_CHOICES = (("allow", "allow"), ("revoke", "revoke"))
     action = serializers.ChoiceField(ACTION_CHOICES)
     user_id = serializers.CharField()
 
@@ -777,14 +1096,16 @@ class DiscussionRolesSerializer(serializers.Serializer):
             self.user = get_user_by_username_or_email(user_id)
             return user_id
         except User.DoesNotExist as err:
-            raise ValidationError(f"'{user_id}' is not a valid student identifier") from err
+            raise ValidationError(
+                f"'{user_id}' is not a valid student identifier"
+            ) from err
 
     def validate(self, attrs):
         """Validate the data at an object level."""
 
         # Store the user object to avoid fetching it again.
-        if hasattr(self, 'user'):
-            attrs['user'] = self.user
+        if hasattr(self, "user"):
+            attrs["user"] = self.user
         return attrs
 
     def create(self, validated_data):
@@ -802,6 +1123,7 @@ class DiscussionRolesMemberSerializer(serializers.Serializer):
     """
     Serializer for course discussion roles member data.
     """
+
     username = serializers.CharField()
     email = serializers.EmailField()
     first_name = serializers.CharField()
@@ -810,7 +1132,7 @@ class DiscussionRolesMemberSerializer(serializers.Serializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.course_discussion_settings = self.context['course_discussion_settings']
+        self.course_discussion_settings = self.context["course_discussion_settings"]
 
     def get_group_name(self, instance):
         """Return the group name of the user."""
@@ -833,6 +1155,7 @@ class DiscussionRolesListSerializer(serializers.Serializer):
     """
     Serializer for course discussion roles member list.
     """
+
     course_id = serializers.CharField()
     results = serializers.SerializerMethodField()
     division_scheme = serializers.SerializerMethodField()
@@ -840,15 +1163,17 @@ class DiscussionRolesListSerializer(serializers.Serializer):
     def get_results(self, obj):
         """Return the nested serializer data representing a list of member users."""
         context = {
-            'course_id': obj['course_id'],
-            'course_discussion_settings': self.context['course_discussion_settings']
+            "course_id": obj["course_id"],
+            "course_discussion_settings": self.context["course_discussion_settings"],
         }
-        serializer = DiscussionRolesMemberSerializer(obj['users'], context=context, many=True)
+        serializer = DiscussionRolesMemberSerializer(
+            obj["users"], context=context, many=True
+        )
         return serializer.data
 
     def get_division_scheme(self, obj):  # pylint: disable=unused-argument
         """Return the division scheme for the course."""
-        return self.context['course_discussion_settings'].division_scheme
+        return self.context["course_discussion_settings"].division_scheme
 
     def create(self, validated_data):
         """
@@ -865,9 +1190,13 @@ class UserStatsSerializer(serializers.Serializer):
     """
     Serializer for course user stats.
     """
+
     threads = serializers.IntegerField()
     replies = serializers.IntegerField()
     responses = serializers.IntegerField()
+    deleted_threads = serializers.IntegerField(required=False, default=0)
+    deleted_replies = serializers.IntegerField(required=False, default=0)
+    deleted_responses = serializers.IntegerField(required=False, default=0)
     active_flags = serializers.IntegerField()
     inactive_flags = serializers.IntegerField()
     username = serializers.CharField()
@@ -885,27 +1214,36 @@ class BlackoutDateSerializer(serializers.Serializer):
     """
     Serializer for blackout dates.
     """
-    start = serializers.DateTimeField(help_text="The ISO 8601 timestamp for the start of the blackout period")
-    end = serializers.DateTimeField(help_text="The ISO 8601 timestamp for the end of the blackout period")
+
+    start = serializers.DateTimeField(
+        help_text="The ISO 8601 timestamp for the start of the blackout period"
+    )
+    end = serializers.DateTimeField(
+        help_text="The ISO 8601 timestamp for the end of the blackout period"
+    )
 
 
 class ReasonCodeSeralizer(serializers.Serializer):
     """
     Serializer for reason codes.
     """
+
     code = serializers.CharField(help_text="A code for the an edit or close reason")
-    label = serializers.CharField(help_text="A user-friendly name text for the close or edit reason")
+    label = serializers.CharField(
+        help_text="A user-friendly name text for the close or edit reason"
+    )
 
 
 class CourseMetadataSerailizer(serializers.Serializer):
     """
     Serializer for course metadata.
     """
+
     id = CourseKeyField(help_text="The identifier of the course")
     blackouts = serializers.ListField(
         child=BlackoutDateSerializer(),
         help_text="A list of objects representing blackout periods "
-                  "(during which discussions are read-only except for privileged users)."
+        "(during which discussions are read-only except for privileged users).",
     )
     thread_list_url = serializers.URLField(
         help_text="The URL of the list of all threads in the course.",
@@ -913,7 +1251,9 @@ class CourseMetadataSerailizer(serializers.Serializer):
     following_thread_list_url = serializers.URLField(
         help_text="thread_list_url with parameter following=True",
     )
-    topics_url = serializers.URLField(help_text="The URL of the topic listing for the course.")
+    topics_url = serializers.URLField(
+        help_text="The URL of the topic listing for the course."
+    )
     allow_anonymous = serializers.BooleanField(
         help_text="A boolean indicating whether anonymous posts are allowed or not.",
     )
@@ -943,4 +1283,204 @@ class CourseMetadataSerailizer(serializers.Serializer):
     edit_reasons = serializers.ListField(
         child=ReasonCodeSeralizer(),
         help_text="A list of reasons that can be specified by moderators for editing a post, response, or comment",
+    )
+
+
+class BulkDeleteBanRequestSerializer(serializers.Serializer):
+    """
+    Request payload for bulk delete + ban action.
+
+    Accepts either user_id (for programmatic access) or username (for UI/human convenience).
+    Internally normalizes to user_id before processing.
+    """
+
+    user_id = serializers.IntegerField(
+        required=False,
+        help_text="User ID to ban. Either user_id or username must be provided."
+    )
+    username = serializers.CharField(
+        required=False,
+        max_length=150,
+        help_text="Username to ban. Converted to user_id internally. Either user_id or username must be provided."
+    )
+    course_id = serializers.CharField(max_length=255, required=True)
+    ban_user = serializers.BooleanField(default=False)
+    ban_scope = serializers.ChoiceField(
+        choices=['course', 'organization'],
+        default='course',
+        help_text="Scope of the ban: 'course' for course-level or 'organization' for organization-level"
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=1000
+    )
+
+    def validate(self, data):
+        """
+        Validate and normalize user identification.
+
+        - Ensures either user_id or username is provided
+        - Converts username to user_id if needed
+        - Validates ban requirements (reason, permissions)
+        """
+        # Validate that either user_id or username is provided
+        if not data.get('user_id') and not data.get('username'):
+            raise serializers.ValidationError({
+                'user_id': "Either user_id or username must be provided."
+            })
+
+        # Normalize username to user_id for internal processing
+        # This allows the view/task to always work with user_id
+        if data.get('username') and not data.get('user_id'):
+            try:
+                user = User.objects.get(username=data['username'])
+                data['user_id'] = user.id
+                # Keep username for logging/audit purposes
+                data['resolved_username'] = user.username
+            except User.DoesNotExist as exc:
+                raise serializers.ValidationError({
+                    'username': f"User with username '{data['username']}' does not exist."
+                }) from exc
+        elif data.get('user_id'):
+            # If user_id provided directly, resolve username for consistency
+            try:
+                user = User.objects.get(id=data['user_id'])
+                data['resolved_username'] = user.username
+            except User.DoesNotExist as exc:
+                raise serializers.ValidationError({
+                    'user_id': f"User with ID {data['user_id']} does not exist."
+                }) from exc
+
+        if data.get('ban_user'):
+            reason = data.get('reason', '').strip()
+            if not reason:
+                raise serializers.ValidationError({
+                    'reason': "Reason is required when banning a user."
+                })
+
+        # Validate that organization-level bans require elevated permissions
+        # only when a ban is requested.
+        if data.get('ban_user') and data.get('ban_scope') == 'organization':
+            request = self.context.get('request')
+            if request and not (
+                GlobalStaff().has_user(request.user) or request.user.is_staff
+            ):
+                raise serializers.ValidationError({
+                    'ban_scope': "Organization-level bans require global staff permissions."
+                })
+
+        return data
+
+
+class BanUserRequestSerializer(serializers.Serializer):
+    """
+    Request payload for standalone ban action (without bulk delete).
+
+    For direct ban from UI moderation actions.
+    """
+
+    user_id = serializers.IntegerField(
+        required=False,
+        help_text="User ID to ban. Either user_id or username must be provided."
+    )
+    username = serializers.CharField(
+        required=False,
+        max_length=150,
+        help_text="Username to ban. Converted to user_id internally. Either user_id or username must be provided."
+    )
+    course_id = serializers.CharField(
+        max_length=255,
+        required=True,
+        help_text="Course ID for course-level bans or org context for organization-level bans"
+    )
+    scope = serializers.ChoiceField(
+        choices=['course', 'organization'],
+        default='course',
+        help_text="Scope of the ban: 'course' for course-level or 'organization' for organization-level"
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=1000,
+        help_text="Reason for the ban (optional)"
+    )
+
+    def validate(self, data):
+        """
+        Validate and normalize user identification.
+        """
+        # Validate that either user_id or username is provided
+        if not data.get('user_id') and not data.get('username'):
+            raise serializers.ValidationError({
+                'user_id': "Either user_id or username must be provided."
+            })
+
+        # Normalize username to user_id if provided (view will validate existence)
+        if data.get('username') and not data.get('user_id'):
+            # Don't validate user existence here - let the view return 404
+            # Just record the username for the view to resolve
+            data['lookup_username'] = data['username']
+        return data
+
+# Muting-related serializers
+
+
+class MuteRequestSerializer(serializers.Serializer):
+    """
+    Serializer for mute user requests.
+    """
+    muted_user_id = serializers.IntegerField(
+        help_text="ID of the user to be muted"
+    )
+    course_id = serializers.CharField(
+        help_text="Course ID where the mute applies"
+    )
+    scope = serializers.ChoiceField(
+        choices=['personal', 'course'],
+        default='personal',
+        help_text="Scope of the mute (personal or course-wide)"
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional reason for muting"
+    )
+
+
+class MuteAndReportRequestSerializer(MuteRequestSerializer):
+    """
+    Serializer for mute and report requests.
+    """
+    thread_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="ID of the thread being reported"
+    )
+    comment_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="ID of the comment being reported"
+    )
+    post_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Generic post ID (could be thread or comment) - used for retry logic"
+    )
+
+
+class UnmuteRequestSerializer(serializers.Serializer):
+    """
+    Serializer for unmute user requests.
+    """
+    muted_user_id = serializers.IntegerField(
+        help_text="ID of the user to be unmuted"
+    )
+    course_id = serializers.CharField(
+        help_text="Course ID where the unmute applies"
+    )
+    scope = serializers.ChoiceField(
+        choices=['personal', 'course'],
+        default='personal',
+        help_text="Scope of the unmute (personal or course-wide)"
     )

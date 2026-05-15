@@ -16,7 +16,6 @@ from xmodule.modulestore.tests.factories import CourseFactory
 
 from common.djangoapps.student.tests.factories import UserFactory
 from common.djangoapps.util.testing import UrlResetMixin
-from lms.djangoapps.discussion.django_comment_client.tests.utils import ForumsEnableMixin
 from lms.djangoapps.discussion.rest_api.serializers import CommentSerializer, ThreadSerializer, get_context
 from lms.djangoapps.discussion.rest_api.tests.utils import (
     ForumMockUtilsMixin,
@@ -36,7 +35,7 @@ from openedx.core.djangoapps.django_comment_common.models import (
 
 
 @ddt.ddt
-class CommentSerializerDeserializationTest(ForumsEnableMixin, ForumMockUtilsMixin, SharedModuleStoreTestCase):
+class CommentSerializerDeserializationTest(ForumMockUtilsMixin, SharedModuleStoreTestCase):
     """Tests for ThreadSerializer deserialization."""
     @classmethod
     def setUpClass(cls):
@@ -387,7 +386,6 @@ class CommentSerializerDeserializationTest(ForumsEnableMixin, ForumMockUtilsMixi
 
 @ddt.ddt
 class ThreadSerializerDeserializationTest(
-        ForumsEnableMixin,
         ForumMockUtilsMixin,
         UrlResetMixin,
         SharedModuleStoreTestCase
@@ -535,7 +533,7 @@ class ThreadSerializerDeserializationTest(
 
 
 @ddt.ddt
-class SerializerTestMixin(ForumsEnableMixin, UrlResetMixin, ForumMockUtilsMixin):
+class SerializerTestMixin(UrlResetMixin, ForumMockUtilsMixin):
     """
     Test Mixin for Serializer tests
     """
@@ -744,6 +742,13 @@ class CommentSerializerTest(SerializerTestMixin, SharedModuleStoreTestCase):
             "can_delete": False,
             "last_edit": None,
             "edit_by_label": None,
+            "learner_status": "new",
+            "is_deleted": None,
+            "deleted_at": None,
+            "deleted_by": None,
+            "deleted_by_label": None,
+            "is_author_banned": False,
+            "author_ban_scope": None,
             "profile_image": {
                 "has_image": False,
                 "image_url_full": "http://testserver/static/default_500.png",
@@ -896,6 +901,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
             "abuse_flagged_count": None,
             "edit_by_label": None,
             "closed_by_label": None,
+            "is_deleted": None,
         })
         assert self.serialize(thread) == expected
 
@@ -988,7 +994,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
             editable_fields.remove("voted")
             editable_fields.extend(['anonymous', 'raw_body', 'title', 'topic_id', 'type'])
         elif role == FORUM_ROLE_MODERATOR:
-            editable_fields.extend(['close_reason_code', 'closed', 'edit_reason_code', 'pinned',
+            editable_fields.extend(['close_reason_code', 'closed', 'edit_reason_code', 'muted', 'pinned',
                                     'raw_body', 'title', 'topic_id', 'type'])
         expected = self.expected_thread_data({
             "author": author.username,
@@ -1002,6 +1008,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
             "edit_by_label": None,
             "closed_by_label": closed_by_label,
             "closed_by": closed_by,
+            "is_deleted": False if role in (FORUM_ROLE_MODERATOR, "author") else None,
         })
         assert self.serialize(thread) == expected
 
@@ -1046,7 +1053,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
             editable_fields.extend(['anonymous', 'raw_body', 'title', 'topic_id', 'type'])
 
         elif role == FORUM_ROLE_MODERATOR:
-            editable_fields.extend(['close_reason_code', 'closed', 'edit_reason_code', 'pinned',
+            editable_fields.extend(['close_reason_code', 'closed', 'edit_reason_code', 'muted', 'pinned',
                                     'raw_body', 'title', 'topic_id', 'type'])
 
         expected = self.expected_thread_data({
@@ -1062,6 +1069,7 @@ class ThreadSerializerSerializationTest(SerializerTestMixin, SharedModuleStoreTe
             "edit_by_label": edit_by_label,
             "closed_by_label": None,
             "closed_by": None,
+            "is_deleted": False if role in (FORUM_ROLE_MODERATOR, "author") else None,
         })
         assert self.serialize(thread) == expected
 

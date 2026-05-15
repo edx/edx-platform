@@ -62,6 +62,7 @@ import base64
 import hashlib
 import hmac
 import json
+import urllib.parse
 from collections import OrderedDict
 from logging import getLogger
 from smtplib import SMTPException
@@ -101,6 +102,7 @@ from common.djangoapps.third_party_auth.utils import (
     is_saml_provider,
     user_exists,
 )
+from common.djangoapps.third_party_auth.toggles import is_tpa_next_url_on_dispatch_enabled
 from common.djangoapps.track import segment
 from common.djangoapps.util.json_request import JsonResponse
 
@@ -358,7 +360,11 @@ def get_complete_url(backend_name):
         ValueError: if no provider is enabled with the given backend_name.
     """
     if not any(provider.Registry.get_enabled_by_backend_name(backend_name)):
-        raise ValueError('Provider with backend %s not enabled' % backend_name)
+        # For tpa-saml, the provider may not be visible to the site-filtered registry
+        # even though SAML auth already completed via a site-independent lookup.
+        # Allow get_complete_url to proceed in that case.
+        if backend_name != 'tpa-saml':
+            raise ValueError('Provider with backend %s not enabled' % backend_name)
 
     return _get_url('social:complete', backend_name)
 
@@ -576,13 +582,23 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
     # It is important that we always execute the entire pipeline. Even if
     # behavior appears correct without executing a step, it means important
     # invariants have been violated and future misbehavior is likely.
+    def _build_redirect_url(base_url):
+        """Append ?next=… to the redirect URL if the session carries a destination."""
+        if not is_tpa_next_url_on_dispatch_enabled():
+            return base_url
+        next_url = strategy.session_get('next')
+        if next_url and isinstance(next_url, str):
+            separator = '&' if '?' in base_url else '?'
+            base_url = f'{base_url}{separator}next={urllib.parse.quote(next_url)}'
+        return base_url
+
     def dispatch_to_login():
         """Redirects to the login page."""
-        return redirect(AUTH_DISPATCH_URLS[AUTH_ENTRY_LOGIN])
+        return redirect(_build_redirect_url(AUTH_DISPATCH_URLS[AUTH_ENTRY_LOGIN]))
 
     def dispatch_to_register():
         """Redirects to the registration page."""
-        return redirect(AUTH_DISPATCH_URLS[AUTH_ENTRY_REGISTER])
+        return redirect(_build_redirect_url(AUTH_DISPATCH_URLS[AUTH_ENTRY_REGISTER]))
 
     def should_force_account_creation():
         """ For some third party providers, we auto-create user accounts """
@@ -590,26 +606,22 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
         return (current_provider and
                 (current_provider.skip_email_verification or current_provider.send_to_registration_first))
 
-    def is_provider_saml():
-        """ Verify that the third party provider uses SAML """
-        current_provider = provider.Registry.get_from_pipeline({'backend': current_partial.backend, 'kwargs': kwargs})
-        saml_providers_list = list(provider.Registry.get_enabled_by_backend_name('tpa-saml'))
-        return (current_provider and
-                current_provider.slug in [saml_provider.slug for saml_provider in saml_providers_list])
-
     if current_partial:
         strategy.session_set('partial_pipeline_token_', current_partial.token)
         strategy.storage.partial.store(current_partial)
 
     if not user:
-        # Use only email for user existence check in case of saml provider
-        if is_provider_saml():
+        # Use only email for user existence check in case of saml provider.
+        # Check the backend name directly rather than the site-filtered registry,
+        # since the provider may only be visible via the site-independent fallback.
+        if current_partial.backend == 'tpa-saml':
             user_details = {'email': details.get('email')} if details else None
         else:
             user_details = details
         if user_exists(user_details or {}):
             # User has not already authenticated and the details sent over from
             # identity provider belong to an existing user.
+            logger.info('[THIRD_PARTY_AUTH] ensure_user_information: dispatching to login (user exists)')
             return dispatch_to_login()
 
         if is_api(auth_entry):
@@ -619,6 +631,7 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
             # account corresponds to them yet, if any.
             if should_force_account_creation():
                 return dispatch_to_register()
+            logger.info('[THIRD_PARTY_AUTH] ensure_user_information: dispatching to login (no force create)')
             return dispatch_to_login()
         elif auth_entry == AUTH_ENTRY_REGISTER:
             # User has authenticated with the third party provider and now wants to finish
@@ -1009,7 +1022,7 @@ def get_username(strategy, details, backend, user=None, *args, **kwargs):  # lin
         else:
             slug_func = lambda val: val
 
-        if is_auto_generated_username_enabled():
+        if is_auto_generated_username_enabled() and details.get('username') is None:
             username = get_auto_generated_username(details)
         else:
             if email_as_username and details.get('email'):

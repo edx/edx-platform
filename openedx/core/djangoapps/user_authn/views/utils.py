@@ -52,7 +52,8 @@ def third_party_auth_context(request, redirect_to, tpa_hint=None):
         "errorMessage": None,
         "registerFormSubmitButtonText": _("Create Account"),
         "syncLearnerProfileData": False,
-        "pipeline_user_details": {}
+        "pipeline_user_details": {},
+        "skipRegistrationOptionalCheckboxes": False
     }
 
     if third_party_auth.is_enabled():
@@ -96,6 +97,12 @@ def third_party_auth_context(request, redirect_to, tpa_hint=None):
                     # As a reliable way of "skipping" the registration form, we just submit it automatically
                     context["autoSubmitRegForm"] = True
 
+                # Check if SAML provider wants to skip optional checkboxes
+                if hasattr(current_provider, 'skip_registration_optional_checkboxes'):
+                    context["skipRegistrationOptionalCheckboxes"] = (
+                        current_provider.skip_registration_optional_checkboxes
+                    )
+
         # Check for any error messages we may want to display:
         for msg in messages.get_messages(request):
             if msg.extra_tags.split()[0] == "social-auth":
@@ -107,15 +114,21 @@ def third_party_auth_context(request, redirect_to, tpa_hint=None):
 
 
 def get_mfe_context(request, redirect_to, tpa_hint=None):
-    """
-    Returns Authn MFE context.
-    """
+    """Return Authn MFE context including enterprise branding and country code."""
+    # Import enterprise functions INSIDE the function to avoid circular import
+    from openedx.features.enterprise_support.api import enterprise_customer_for_request
+    from openedx.features.enterprise_support.utils import build_enterprise_branding_for_authn_mfe
 
     ip_address = get_client_ip(request)[0]
     country_code = country_code_from_ip(ip_address)
     context = third_party_auth_context(request, redirect_to, tpa_hint)
+
+    enterprise_customer = enterprise_customer_for_request(request)
+    enterprise_branding = build_enterprise_branding_for_authn_mfe(enterprise_customer)
+
     context.update({
         'countryCode': country_code,
+        'enterpriseBranding': enterprise_branding,
     })
     return context
 

@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from consent.models import DataSharingConsent
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from enterprise.models import (
     EnterpriseCourseEnrollment,
@@ -18,9 +19,8 @@ from enterprise.models import (
     EnterpriseCustomerUser,
     PendingEnterpriseCustomerUser
 )
-from integrated_channels.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
 from opaque_keys.edx.keys import CourseKey
-from pytz import UTC
+from zoneinfo import ZoneInfo
 
 from common.djangoapps.entitlements.models import CourseEntitlement, CourseEntitlementSupportDetail
 from lms.djangoapps.verify_student.models import SoftwareSecurePhotoVerification
@@ -30,6 +30,12 @@ from openedx.core.djangoapps.profile_images.tests.helpers import make_image_file
 from common.djangoapps.student.models import CourseEnrollment, CourseEnrollmentAllowed, PendingEmailChange, UserProfile
 
 from ...models import UserOrgTag
+
+# This is a temporary import path while we transition from integrated_channels to channel_integrations
+if getattr(settings, 'ENABLE_LEGACY_INTEGRATED_CHANNELS', True):
+    from integrated_channels.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
+else:
+    from channel_integrations.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
 
 
 class Command(BaseCommand):
@@ -82,7 +88,7 @@ class Command(BaseCommand):
         user.save()
 
         # UserProfile
-        profile_image_uploaded_date = datetime(2018, 5, 3, tzinfo=UTC)
+        profile_image_uploaded_date = datetime(2018, 5, 3, tzinfo=ZoneInfo("UTC"))
         user_profile, __ = UserProfile.objects.get_or_create(
             user=user
         )

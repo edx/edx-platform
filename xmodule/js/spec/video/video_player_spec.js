@@ -6,7 +6,6 @@ import _ from 'underscore';
 
 (function() {
     'use strict';
-
             describe('VideoPlayer', function() {
                 var STATUS = window.STATUS,
                     state,
@@ -1097,5 +1096,5 @@ import _ from 'underscore';
                     });
                 });
             });
-    
+
 }).call(this);

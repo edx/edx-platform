@@ -5,8 +5,9 @@ name: Lockfile Version check
 on:
   push:
     branches:
-      - master
+      - release-ulmo
   pull_request:
+  merge_group:
 
 jobs:
   version-check:

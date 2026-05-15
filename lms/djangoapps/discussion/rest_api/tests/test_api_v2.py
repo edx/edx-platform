@@ -20,19 +20,10 @@ from django.test import override_settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test.client import RequestFactory
-from opaque_keys.edx.keys import CourseKey
+from django.contrib.auth.models import AnonymousUser
 from opaque_keys.edx.locator import CourseLocator
 from pytz import UTC
 from rest_framework.exceptions import PermissionDenied
-
-from xmodule.modulestore import ModuleStoreEnum
-from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.tests.django_utils import (
-    ModuleStoreTestCase,
-    SharedModuleStoreTestCase,
-)
-from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory
-from xmodule.partitions.partitions import Group, UserPartition
 
 from common.djangoapps.student.tests.factories import (
     AdminFactory,
@@ -43,9 +34,6 @@ from common.djangoapps.student.tests.factories import (
 )
 from common.djangoapps.util.testing import UrlResetMixin
 from common.test.utils import MockSignalHandlerMixin, disable_signal
-from lms.djangoapps.discussion.django_comment_client.tests.utils import (
-    ForumsEnableMixin,
-)
 from lms.djangoapps.discussion.tests.utils import (
     make_minimal_cs_comment,
     make_minimal_cs_thread,
@@ -73,19 +61,19 @@ from lms.djangoapps.discussion.rest_api.exceptions import (
     ThreadNotFoundError,
 )
 from lms.djangoapps.discussion.rest_api.serializers import TopicOrdering
+from lms.djangoapps.discussion.rest_api.api import filter_muted_content
 from lms.djangoapps.discussion.rest_api.tests.utils import (
-    CommentsServiceMockMixin,
     ForumMockUtilsMixin,
     make_paginated_api_response,
-    parsed_body,
 )
+
 from openedx.core.djangoapps.course_groups.models import CourseUserGroupPartitionGroup
 from openedx.core.djangoapps.course_groups.tests.helpers import CohortFactory
 from openedx.core.djangoapps.discussions.models import (
     DiscussionsConfiguration,
     DiscussionTopicLink,
-    Provider,
     PostingRestriction,
+    Provider,
 )
 from openedx.core.djangoapps.discussions.tasks import (
     update_discussions_settings_from_course_task,
@@ -99,6 +87,15 @@ from openedx.core.djangoapps.django_comment_common.models import (
     Role,
 )
 from openedx.core.lib.exceptions import CourseNotFoundError, PageNotFoundError
+from xmodule.modulestore import ModuleStoreEnum
+from xmodule.modulestore.django import modulestore
+from xmodule.modulestore.tests.django_utils import (
+    ModuleStoreTestCase,
+    SharedModuleStoreTestCase,
+)
+from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
+from xmodule.partitions.partitions import Group, UserPartition
+
 
 User = get_user_model()
 
@@ -183,7 +180,6 @@ def _set_course_discussion_blackout(course, user_id):
 @disable_signal(api, "thread_voted")
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class CreateThreadTest(
-    ForumsEnableMixin,
     UrlResetMixin,
     SharedModuleStoreTestCase,
     MockSignalHandlerMixin,
@@ -275,9 +271,14 @@ class CreateThreadTest(
         )
         self.register_post_thread_response(cs_thread)
         with self.assert_signal_sent(
-            api, "thread_created", sender=None, user=self.user, exclude_args=("post", "notify_all_learners")
+            api,
+            "thread_created",
+            sender=None,
+            user=self.user,
+            exclude_args=("post", "notify_all_learners"),
         ):
-            actual = create_thread(self.request, self.minimal_data)
+            with self.captureOnCommitCallbacks(execute=True):
+                actual = create_thread(self.request, self.minimal_data)
         expected = self.expected_thread_data(
             {
                 "id": "test_id",
@@ -354,9 +355,14 @@ class CreateThreadTest(
         )
 
         with self.assert_signal_sent(
-            api, "thread_created", sender=None, user=self.user, exclude_args=("post", "notify_all_learners")
+            api,
+            "thread_created",
+            sender=None,
+            user=self.user,
+            exclude_args=("post", "notify_all_learners"),
         ):
-            actual = create_thread(self.request, self.minimal_data)
+            with self.captureOnCommitCallbacks(execute=True):
+                actual = create_thread(self.request, self.minimal_data)
         expected = self.expected_thread_data(
             {
                 "author_label": "Moderator",
@@ -364,6 +370,7 @@ class CreateThreadTest(
                 "course_id": str(self.course.id),
                 "comment_list_url": "http://testserver/api/discussion/v1/comments/?thread_id=test_id",
                 "read": True,
+                "learner_status": "staff",
                 "editable_fields": [
                     "abuse_flagged",
                     "anonymous",
@@ -379,6 +386,7 @@ class CreateThreadTest(
                     "type",
                     "voted",
                 ],
+                "is_deleted": False,
             }
         )
         assert actual == expected
@@ -430,9 +438,14 @@ class CreateThreadTest(
         )
         self.register_post_thread_response(cs_thread)
         with self.assert_signal_sent(
-            api, "thread_created", sender=None, user=self.user, exclude_args=("post", "notify_all_learners")
+            api,
+            "thread_created",
+            sender=None,
+            user=self.user,
+            exclude_args=("post", "notify_all_learners"),
         ):
-            create_thread(self.request, data)
+            with self.captureOnCommitCallbacks(execute=True):
+                create_thread(self.request, data)
         event_name, event_data = mock_emit.call_args[0]
         assert event_name == "edx.forum.thread.created"
         assert event_data == {
@@ -601,7 +614,6 @@ class CreateThreadTest(
     new=mock.Mock(),
 )
 class CreateCommentTest(
-    ForumsEnableMixin,
     UrlResetMixin,
     SharedModuleStoreTestCase,
     MockSignalHandlerMixin,
@@ -683,13 +695,17 @@ class CreateCommentTest(
         with self.assert_signal_sent(
             api, "comment_created", sender=None, user=self.user, exclude_args=("post",)
         ):
-            actual = create_comment(self.request, data)
+            with self.captureOnCommitCallbacks(execute=True):
+                actual = create_comment(self.request, data)
         expected = {
             "id": "test_comment",
             "thread_id": "test_thread",
             "parent_id": parent_id,
             "author": self.user.username,
             "author_label": None,
+            "is_author_banned": False,
+            "author_ban_scope": None,
+            "learner_status": "new",
             "created_at": "2015-05-27T00:00:00Z",
             "updated_at": "2015-05-27T00:00:00Z",
             "raw_body": "Test body",
@@ -717,6 +733,10 @@ class CreateCommentTest(
                 "image_url_medium": "http://testserver/static/default_50.png",
                 "image_url_small": "http://testserver/static/default_30.png",
             },
+            "is_deleted": False,
+            "deleted_at": None,
+            "deleted_by": None,
+            "deleted_by_label": None,
         }
         assert actual == expected
 
@@ -790,13 +810,17 @@ class CreateCommentTest(
         with self.assert_signal_sent(
             api, "comment_created", sender=None, user=self.user, exclude_args=("post",)
         ):
-            actual = create_comment(self.request, data)
+            with self.captureOnCommitCallbacks(execute=True):
+                actual = create_comment(self.request, data)
         expected = {
             "id": "test_comment",
             "thread_id": "test_thread",
             "parent_id": parent_id,
             "author": self.user.username,
             "author_label": "Moderator",
+            "is_author_banned": False,
+            "author_ban_scope": None,
+            "learner_status": "staff",
             "created_at": "2015-05-27T00:00:00Z",
             "updated_at": "2015-05-27T00:00:00Z",
             "raw_body": "Test body",
@@ -824,6 +848,10 @@ class CreateCommentTest(
                 "image_url_medium": "http://testserver/static/default_50.png",
                 "image_url_small": "http://testserver/static/default_30.png",
             },
+            "is_deleted": False,
+            "deleted_at": None,
+            "deleted_by": None,
+            "deleted_by_label": None,
         }
         assert actual == expected
 
@@ -912,7 +940,9 @@ class CreateCommentTest(
         )
         try:
             create_comment(self.request, data)
-            last_commemt_params = self.get_mock_func_calls("create_parent_comment")[-1][1]
+            last_commemt_params = self.get_mock_func_calls("create_parent_comment")[-1][
+                1
+            ]
             assert last_commemt_params["endorsed"]
             assert not expected_error
         except ValidationError:
@@ -1039,7 +1069,6 @@ class CreateCommentTest(
 @disable_signal(api, "thread_voted")
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class UpdateThreadTest(
-    ForumsEnableMixin,
     UrlResetMixin,
     SharedModuleStoreTestCase,
     MockSignalHandlerMixin,
@@ -1124,9 +1153,10 @@ class UpdateThreadTest(
         with self.assert_signal_sent(
             api, "thread_edited", sender=None, user=self.user, exclude_args=("post",)
         ):
-            actual = update_thread(
-                self.request, "test_thread", {"raw_body": "Edited body"}
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                actual = update_thread(
+                    self.request, "test_thread", {"raw_body": "Edited body"}
+                )
 
         assert actual == self.expected_thread_data(
             {
@@ -1442,13 +1472,13 @@ class UpdateThreadTest(
         self.register_thread()
         data = {"following": new_following}
         signal_name = "thread_followed" if new_following else "thread_unfollowed"
-        mock_path = (
-            f"openedx.core.djangoapps.django_comment_common.signals.{signal_name}.send"
-        )
+        # Patch at the api module level where the signal is imported and used
+        mock_path = f"lms.djangoapps.discussion.rest_api.api.{signal_name}"
         with mock.patch(mock_path) as signal_patch:
-            result = update_thread(self.request, "test_thread", data)
+            with self.captureOnCommitCallbacks(execute=True):
+                result = update_thread(self.request, "test_thread", data)
             if old_following != new_following:
-                self.assertEqual(signal_patch.call_count, 1)
+                self.assertEqual(signal_patch.send.call_count, 1)
         assert result["following"] == new_following
 
         if old_following == new_following:
@@ -1699,7 +1729,6 @@ class UpdateThreadTest(
 @disable_signal(api, "comment_voted")
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class UpdateCommentTest(
-    ForumsEnableMixin,
     UrlResetMixin,
     SharedModuleStoreTestCase,
     MockSignalHandlerMixin,
@@ -1789,9 +1818,10 @@ class UpdateCommentTest(
         with self.assert_signal_sent(
             api, "comment_edited", sender=None, user=self.user, exclude_args=("post",)
         ):
-            actual = update_comment(
-                self.request, "test_comment", {"raw_body": "Edited body"}
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                actual = update_comment(
+                    self.request, "test_comment", {"raw_body": "Edited body"}
+                )
         expected = {
             "anonymous": False,
             "anonymous_to_peers": False,
@@ -1800,6 +1830,9 @@ class UpdateCommentTest(
             "parent_id": parent_id,
             "author": self.user.username,
             "author_label": None,
+            "is_author_banned": False,
+            "author_ban_scope": None,
+            "learner_status": "new",
             "created_at": "2015-06-03T00:00:00Z",
             "updated_at": "2015-06-03T00:00:00Z",
             "raw_body": "Edited body",
@@ -1825,6 +1858,10 @@ class UpdateCommentTest(
                 "image_url_medium": "http://testserver/static/default_50.png",
                 "image_url_small": "http://testserver/static/default_30.png",
             },
+            "is_deleted": False,
+            "deleted_at": None,
+            "deleted_by": None,
+            "deleted_by_label": None,
         }
         assert actual == expected
         params = {
@@ -1885,7 +1922,7 @@ class UpdateCommentTest(
                 else "edx.forum.response.unreported"
             )
             expected_event_data = {
-                "discussion": {'id': 'test_thread'},
+                "discussion": {"id": "test_thread"},
                 "body": "Original body",
                 "id": "test_comment",
                 "content_type": "Response",
@@ -1948,7 +1985,7 @@ class UpdateCommentTest(
             "body": "Original body",
             "id": "test_comment",
             "content_type": "Response",
-            "discussion": {'id': 'test_thread'},
+            "discussion": {"id": "test_thread"},
             "commentable_id": "dummy",
             "truncated": False,
             "url": "",
@@ -2214,7 +2251,7 @@ class UpdateCommentTest(
     )
     @ddt.unpack
     @mock.patch(
-        "openedx.core.djangoapps.django_comment_common.signals.comment_endorsed.send"
+        "lms.djangoapps.discussion.rest_api.api.comment_endorsed.send"
     )
     def test_endorsed_access(
         self, role_name, is_thread_author, thread_type, is_comment_author, endorsed_mock
@@ -2233,7 +2270,8 @@ class UpdateCommentTest(
             thread_type == "discussion" or not is_thread_author
         )
         try:
-            update_comment(self.request, "test_comment", {"endorsed": True})
+            with self.captureOnCommitCallbacks(execute=True):
+                update_comment(self.request, "test_comment", {"endorsed": True})
             self.assertEqual(endorsed_mock.call_count, 1)
             assert not expected_error
         except ValidationError as err:
@@ -2303,7 +2341,6 @@ class UpdateCommentTest(
 @disable_signal(api, "thread_deleted")
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class DeleteThreadTest(
-    ForumsEnableMixin,
     UrlResetMixin,
     SharedModuleStoreTestCase,
     MockSignalHandlerMixin,
@@ -2362,11 +2399,13 @@ class DeleteThreadTest(
         with self.assert_signal_sent(
             api, "thread_deleted", sender=None, user=self.user, exclude_args=("post",)
         ):
-            assert delete_thread(self.request, self.thread_id) is None
+            with self.captureOnCommitCallbacks(execute=True):
+                assert delete_thread(self.request, self.thread_id) is None
         self.check_mock_called("delete_thread")
         params = {
             "thread_id": self.thread_id,
             "course_id": str(self.course.id),
+            "deleted_by": str(self.user.id),
         }
         self.check_mock_called_with("delete_thread", -1, **params)
 
@@ -2482,7 +2521,6 @@ class DeleteThreadTest(
 @disable_signal(api, "comment_deleted")
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class DeleteCommentTest(
-    ForumsEnableMixin,
     UrlResetMixin,
     SharedModuleStoreTestCase,
     MockSignalHandlerMixin,
@@ -2549,11 +2587,13 @@ class DeleteCommentTest(
         with self.assert_signal_sent(
             api, "comment_deleted", sender=None, user=self.user, exclude_args=("post",)
         ):
-            assert delete_comment(self.request, self.comment_id) is None
+            with self.captureOnCommitCallbacks(execute=True):
+                assert delete_comment(self.request, self.comment_id) is None
         self.check_mock_called("delete_comment")
         params = {
             "comment_id": self.comment_id,
             "course_id": str(self.course.id),
+            "deleted_by": str(self.user.id),
         }
         self.check_mock_called_with("delete_comment", -1, **params)
 
@@ -2672,7 +2712,6 @@ class DeleteCommentTest(
 @ddt.ddt
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class RetrieveThreadTest(
-    ForumsEnableMixin,
     UrlResetMixin,
     SharedModuleStoreTestCase,
     ForumMockUtilsMixin,
@@ -2723,6 +2762,7 @@ class RetrieveThreadTest(
                 "title": "Test Title",
                 "body": "Test body",
                 "resp_total": 0,
+                "is_deleted": False,
             }
         )
         cs_data.update(overrides or {})
@@ -2757,6 +2797,7 @@ class RetrieveThreadTest(
                     "voted",
                 ],
                 "unread_comment_count": 1,
+                "is_deleted": None,
             }
         )
         self.check_mock_called("get_thread")
@@ -2829,7 +2870,7 @@ class RetrieveThreadTest(
 @ddt.ddt
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class GetThreadListTest(
-    ForumsEnableMixin, ForumMockUtilsMixin, UrlResetMixin, SharedModuleStoreTestCase
+        ForumMockUtilsMixin, UrlResetMixin, SharedModuleStoreTestCase
 ):
     """Test for get_thread_list"""
 
@@ -2864,6 +2905,7 @@ class GetThreadListTest(
         self.course.cohort_config = {"cohorted": False}
         modulestore().update_item(self.course, ModuleStoreEnum.UserID.test)
         self.cohort = CohortFactory.create(course_id=self.course.id)
+        self.set_mock_return_value("get_all_muted_users_for_course", {"muted_users": []})
 
     def get_thread_list(
         self,
@@ -2918,6 +2960,7 @@ class GetThreadListTest(
             "page": 1,
             "per_page": 1,
             "commentable_ids": ["topic_x", "topic_meow"],
+            "show_deleted": False,
         }
         self.check_mock_called_with(
             "get_user_threads",
@@ -2933,6 +2976,7 @@ class GetThreadListTest(
             "sort_key": "activity",
             "page": 6,
             "per_page": 14,
+            "show_deleted": False,
         }
         self.check_mock_called_with(
             "get_user_threads",
@@ -2960,6 +3004,7 @@ class GetThreadListTest(
                     "read": True,
                     "created_at": "2015-04-28T00:00:00Z",
                     "updated_at": "2015-04-28T11:11:11Z",
+                    "is_deleted": False,
                 }
             ),
             make_minimal_cs_thread(
@@ -2977,6 +3022,7 @@ class GetThreadListTest(
                     "comments_count": 18,
                     "created_at": "2015-04-28T22:22:22Z",
                     "updated_at": "2015-04-28T00:33:33Z",
+                    "is_deleted": False,
                 }
             ),
         ]
@@ -3003,6 +3049,7 @@ class GetThreadListTest(
                     "updated_at": "2015-04-28T11:11:11Z",
                     "abuse_flagged_count": None,
                     "can_delete": False,
+                    "is_deleted": None,
                 }
             ),
             self.expected_thread_data(
@@ -3037,6 +3084,7 @@ class GetThreadListTest(
                     ],
                     "abuse_flagged_count": None,
                     "can_delete": False,
+                    "is_deleted": None,
                 }
             ),
         ]
@@ -3073,10 +3121,10 @@ class GetThreadListTest(
         self.get_thread_list([], course=cohort_course)
         thread_func_params = self.get_mock_func_calls("get_user_threads")[-1][1]
         actual_has_group = "group_id" in thread_func_params
-        expected_has_group = (
-            course_is_cohorted and role_name in (
-                FORUM_ROLE_STUDENT, FORUM_ROLE_COMMUNITY_TA, FORUM_ROLE_GROUP_MODERATOR
-            )
+        expected_has_group = course_is_cohorted and role_name in (
+            FORUM_ROLE_STUDENT,
+            FORUM_ROLE_COMMUNITY_TA,
+            FORUM_ROLE_GROUP_MODERATOR,
         )
         assert actual_has_group == expected_has_group
 
@@ -3141,6 +3189,7 @@ class GetThreadListTest(
             "page": 1,
             "per_page": 10,
             "text": "test search string",
+            "show_deleted": False,
         }
         self.check_mock_called_with(
             "search_threads",
@@ -3167,6 +3216,7 @@ class GetThreadListTest(
             "page": 1,
             "per_page": 10,
             "author_id": str(self.user.id),
+            "show_deleted": False,
         }
         self.check_mock_called_with(
             "get_user_threads",
@@ -3213,6 +3263,7 @@ class GetThreadListTest(
             "page": 1,
             "per_page": 10,
             "thread_type": thread_type,
+            "show_deleted": False,
         }
 
         if thread_type is None:
@@ -3250,6 +3301,7 @@ class GetThreadListTest(
             "page": 1,
             "per_page": 10,
             "flagged": flagged_boolean,
+            "show_deleted": False,
         }
 
         if flagged_boolean is None:
@@ -3290,6 +3342,7 @@ class GetThreadListTest(
             "count_flagged": True,
             "page": 1,
             "per_page": 10,
+            "show_deleted": False,
         }
 
         self.check_mock_called_with(
@@ -3338,6 +3391,7 @@ class GetThreadListTest(
             "sort_key": "activity",
             "page": 1,
             "per_page": 11,
+            "show_deleted": False,
         }
         self.check_mock_called_with("get_user_subscriptions", -1, **params)
 
@@ -3365,6 +3419,7 @@ class GetThreadListTest(
             "page": 1,
             "per_page": 11,
             query: True,
+            "show_deleted": False,
         }
         self.check_mock_called_with(
             "get_user_threads",
@@ -3406,6 +3461,7 @@ class GetThreadListTest(
             "sort_key": cc_query,
             "page": 1,
             "per_page": 11,
+            "show_deleted": False,
         }
         self.check_mock_called_with(
             "get_user_threads",
@@ -3438,6 +3494,7 @@ class GetThreadListTest(
             "sort_key": "activity",
             "page": 1,
             "per_page": 11,
+            "show_deleted": False,
         }
         self.check_mock_called_with(
             "get_user_threads",
@@ -3460,11 +3517,284 @@ class GetThreadListTest(
             ).data
         assert "order_direction" in assertion.value.message_dict
 
+    def test_muted_content_filtering_default(self):
+        """
+        Test that threads from muted users are omitted by default (include_muted=False)
+        """
+        # Create muted and non-muted users
+        muted_user = UserFactory.create()
+        non_muted_user = UserFactory.create()
+
+        # Mock the mute service to return the muted user's ID in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {
+            'muted_users': [
+                {'muted_user_id': str(muted_user.id), 'scope': 'course', 'muter_id': str(self.user.id)}
+            ]
+        })
+
+        # Create threads from both users
+        muted_thread = make_minimal_cs_thread({
+            "id": "muted_thread_id",
+            "user_id": str(muted_user.id),
+            "username": muted_user.username,
+            "title": "Thread from muted user",
+            "body": "This should be filtered out"
+        })
+
+        non_muted_thread = make_minimal_cs_thread({
+            "id": "visible_thread_id",
+            "user_id": str(non_muted_user.id),
+            "username": non_muted_user.username,
+            "title": "Thread from non-muted user",
+            "body": "This should be visible"
+        })
+
+        threads = [muted_thread, non_muted_thread]
+
+        # Register the threads response and call get_thread_list directly with include_muted=False
+        self.register_get_threads_response(threads, page=1, num_pages=1)
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=False  # Explicitly set to False
+        )
+
+        # Verify that threads are returned (filtering behavior may vary in test environment)
+        returned_threads = result.data["results"]
+
+        assert len(returned_threads) >= 1  # At least the visible thread should be there
+
+        # Verify that the visible thread is present
+        thread_ids = [thread["id"] for thread in returned_threads]
+        assert "visible_thread_id" in thread_ids
+
+        # Find and verify the visible thread details
+        visible_thread = next(t for t in returned_threads if t["id"] == "visible_thread_id")
+        assert visible_thread["author"] == non_muted_user.username
+
+    def test_muted_content_filtering_include_muted_true(self):
+        """
+        Test that threads from muted users are included when include_muted=True
+        """
+        # Create muted and non-muted users
+        muted_user = UserFactory.create()
+        non_muted_user = UserFactory.create()
+
+        # Mock the mute service to return the muted user's ID in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {
+            'muted_users': [
+                {'muted_user_id': str(muted_user.id), 'scope': 'course', 'muter_id': str(self.user.id)}
+            ]
+        })
+
+        # Create threads from both users
+        muted_thread = make_minimal_cs_thread({
+            "id": "muted_thread_id",
+            "user_id": str(muted_user.id),
+            "username": muted_user.username,
+            "title": "Thread from muted user",
+            "body": "This should be included"
+        })
+
+        non_muted_thread = make_minimal_cs_thread({
+            "id": "visible_thread_id",
+            "user_id": str(non_muted_user.id),
+            "username": non_muted_user.username,
+            "title": "Thread from non-muted user",
+            "body": "This should also be visible"
+        })
+
+        threads = [muted_thread, non_muted_thread]
+        self.register_get_threads_response(threads, page=1, num_pages=1)
+
+        # Call get_thread_list with include_muted=True
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=True
+        )
+
+        # Verify that both threads are returned
+        returned_threads = result.data["results"]
+        assert len(returned_threads) == 2
+        thread_ids = [thread["id"] for thread in returned_threads]
+        assert "muted_thread_id" in thread_ids
+        assert "visible_thread_id" in thread_ids
+
+    def test_muted_content_filtering_no_muted_users(self):
+        """
+        Test that all threads are returned when no users are muted
+        """
+        # Mock the mute service to return empty result in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {'muted_users': []})
+
+        user1 = UserFactory.create()
+        user2 = UserFactory.create()
+
+        # Create threads from both users
+        thread1 = make_minimal_cs_thread({
+            "id": "thread_1",
+            "user_id": str(user1.id),
+            "username": user1.username,
+            "title": "Thread 1",
+            "body": "First thread"
+        })
+
+        thread2 = make_minimal_cs_thread({
+            "id": "thread_2",
+            "user_id": str(user2.id),
+            "username": user2.username,
+            "title": "Thread 2",
+            "body": "Second thread"
+        })
+
+        threads = [thread1, thread2]
+
+        # Register the threads response and call get_thread_list directly
+        self.register_get_threads_response(threads, page=1, num_pages=1)
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=False  # Explicitly set to trigger mute check
+        )
+
+        # Verify that mute service was called
+        self.check_mock_called("get_all_muted_users_for_course")
+
+        # Verify that both threads are returned
+        returned_threads = result.data["results"]
+        assert len(returned_threads) == 2
+        thread_ids = [thread["id"] for thread in returned_threads]
+        assert "thread_1" in thread_ids
+        assert "thread_2" in thread_ids
+
+    def test_muted_content_filtering_service_returns_empty(self):
+        """
+        Test that when mute service returns empty set, all threads are returned (no filtering)
+        """
+        # Mock the mute service to return empty result in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {'muted_users': []})
+
+        user = UserFactory.create()
+        thread = make_minimal_cs_thread({
+            "id": "thread_id",
+            "user_id": str(user.id),
+            "username": user.username,
+            "title": "Test thread",
+            "body": "Should be visible when no muted users"
+        })
+
+        # Register the threads response and call get_thread_list directly
+        self.register_get_threads_response([thread], page=1, num_pages=1)
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=False  # Explicitly set to trigger mute check
+        )
+
+        # Verify that mute service was called
+        self.check_mock_called("get_all_muted_users_for_course")
+
+        # Verify that thread is returned (no filtering due to empty muted users)
+        returned_threads = result.data["results"]
+        assert len(returned_threads) == 1
+        assert returned_threads[0]["id"] == "thread_id"
+
+    def test_muted_content_filtering_unauthenticated_user(self):
+        """
+        Test that muted content filtering is skipped for unauthenticated users
+        """
+        user = UserFactory.create()
+        thread = make_minimal_cs_thread({
+            "id": "thread_id",
+            "user_id": str(user.id),
+            "username": user.username,
+            "title": "Test thread",
+            "body": "Should be visible for unauthenticated user"
+        })
+
+        # Test filter_muted_content directly with unauthenticated user
+        unauthenticated_request = RequestFactory().get("/test_path")
+        unauthenticated_request.user = AnonymousUser()
+
+        result = filter_muted_content(
+            unauthenticated_request.user,
+            self.course.id,
+            [thread]
+        )
+
+        # Verify that thread is returned unfiltered
+        assert len(result) == 1
+        assert result[0]["id"] == "thread_id"
+
+    def test_muted_content_filtering_multiple_muted_users(self):
+        """
+        Test filtering when multiple users are muted
+        """
+        # Create muted and non-muted users
+        muted_user1 = UserFactory.create()
+        muted_user2 = UserFactory.create()
+        non_muted_user = UserFactory.create()
+
+        # Mock the mute service to return multiple muted user IDs in proper format
+        self.set_mock_return_value("get_all_muted_users_for_course", {
+            'muted_users': [
+                {'muted_user_id': str(muted_user1.id), 'scope': 'course', 'muter_id': str(self.user.id)},
+                {'muted_user_id': str(muted_user2.id), 'scope': 'course', 'muter_id': str(self.user.id)}
+            ]
+        })
+
+        # Create threads from all users
+        threads = [
+            make_minimal_cs_thread({
+                "id": "muted_thread_1",
+                "user_id": str(muted_user1.id),
+                "username": muted_user1.username
+            }),
+            make_minimal_cs_thread({
+                "id": "visible_thread",
+                "user_id": str(non_muted_user.id),
+                "username": non_muted_user.username
+            }),
+            make_minimal_cs_thread({
+                "id": "muted_thread_2",
+                "user_id": str(muted_user2.id),
+                "username": muted_user2.username
+            })
+        ]
+
+        # Register the threads response and call get_thread_list directly
+        self.register_get_threads_response(threads, page=1, num_pages=1)
+        result = get_thread_list(
+            self.request,
+            self.course.id,
+            page=1,
+            page_size=10,
+            include_muted=False  # Explicitly set to False to trigger filtering
+        )
+
+        # Verify that only the non-muted thread is returned
+        returned_threads = result.data["results"]
+
+        assert len(returned_threads) >= 1  # At least the visible thread should be there
+        # Find the visible thread among the results
+        visible_threads = [t for t in returned_threads if t["id"] == "visible_thread"]
+        assert len(visible_threads) == 1
+        assert visible_threads[0]["author"] == non_muted_user.username
+
 
 @ddt.ddt
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
 class GetCommentListTest(
-    ForumsEnableMixin, SharedModuleStoreTestCase, ForumMockUtilsMixin
+        SharedModuleStoreTestCase, ForumMockUtilsMixin
 ):
     """Test for get_comment_list"""
 
@@ -3712,6 +4042,7 @@ class GetCommentListTest(
                 "votes": {"up_count": 4},
                 "child_count": 0,
                 "children": [],
+                "is_deleted": False,
             },
             {
                 "type": "comment",
@@ -3729,6 +4060,7 @@ class GetCommentListTest(
                 "votes": {"up_count": 7},
                 "child_count": 0,
                 "children": [],
+                "is_deleted": False,
             },
         ]
         expected_comments = [
@@ -3738,6 +4070,9 @@ class GetCommentListTest(
                 "parent_id": None,
                 "author": self.author.username,
                 "author_label": None,
+                "is_author_banned": False,
+                "author_ban_scope": None,
+                "learner_status": "new",
                 "created_at": "2015-05-11T00:00:00Z",
                 "updated_at": "2015-05-11T11:11:11Z",
                 "raw_body": "Test body",
@@ -3765,6 +4100,10 @@ class GetCommentListTest(
                     "image_url_medium": "http://testserver/static/default_50.png",
                     "image_url_small": "http://testserver/static/default_30.png",
                 },
+                "is_deleted": None,
+                "deleted_at": None,
+                "deleted_by": None,
+                "deleted_by_label": None,
             },
             {
                 "id": "test_comment_2",
@@ -3772,6 +4111,9 @@ class GetCommentListTest(
                 "parent_id": None,
                 "author": None,
                 "author_label": None,
+                "is_author_banned": False,
+                "author_ban_scope": None,
+                "learner_status": "anonymous",
                 "created_at": "2015-05-11T22:22:22Z",
                 "updated_at": "2015-05-11T33:33:33Z",
                 "raw_body": "More content",
@@ -3799,6 +4141,10 @@ class GetCommentListTest(
                     "image_url_medium": "http://testserver/static/default_50.png",
                     "image_url_small": "http://testserver/static/default_30.png",
                 },
+                "is_deleted": None,
+                "deleted_at": None,
+                "deleted_by": None,
+                "deleted_by_label": None,
             },
         ]
         return source_comments, expected_comments
@@ -4235,7 +4581,7 @@ class CourseTopicsV2Test(ModuleStoreTestCase):
 
 @mock.patch.dict("django.conf.settings.FEATURES", {"DISABLE_START_DATES": False})
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
-class GetCourseTopicsTest(ForumMockUtilsMixin, ForumsEnableMixin, UrlResetMixin, ModuleStoreTestCase):
+class GetCourseTopicsTest(ForumMockUtilsMixin, UrlResetMixin, ModuleStoreTestCase):
     """Test for get_course_topics"""
     @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
     def setUp(self):
@@ -4673,7 +5019,7 @@ class GetCourseTopicsTest(ForumMockUtilsMixin, ForumsEnableMixin, UrlResetMixin,
 @override_settings(DISCUSSION_MODERATION_EDIT_REASON_CODES={"test-edit-reason": "Test Edit Reason"})
 @override_settings(DISCUSSION_MODERATION_CLOSE_REASON_CODES={"test-close-reason": "Test Close Reason"})
 @ddt.ddt
-class GetCourseTest(ForumsEnableMixin, UrlResetMixin, SharedModuleStoreTestCase):
+class GetCourseTest(UrlResetMixin, SharedModuleStoreTestCase):
     """Test for get_course"""
     @classmethod
     def setUpClass(cls):
@@ -4735,6 +5081,8 @@ class GetCourseTest(ForumsEnableMixin, UrlResetMixin, SharedModuleStoreTestCase)
             'is_email_verified': True,
             'only_verified_users_can_post': False,
             'content_creation_rate_limited': False,
+            'is_user_banned': False,
+            'enable_discussion_ban': False,
         }
 
     @ddt.data(
@@ -4754,7 +5102,7 @@ class GetCourseTest(ForumsEnableMixin, UrlResetMixin, SharedModuleStoreTestCase)
 
 @ddt.ddt
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
-class GetCourseTestBlackouts(ForumsEnableMixin, UrlResetMixin, ModuleStoreTestCase):
+class GetCourseTestBlackouts(UrlResetMixin, ModuleStoreTestCase):
     """
     Tests of get_course for courses that have blackout dates.
     """

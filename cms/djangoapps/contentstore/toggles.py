@@ -2,7 +2,6 @@
 CMS feature toggles.
 """
 from edx_toggles.toggles import SettingDictToggle, WaffleFlag
-from openedx.core.djangoapps.content.search import api as search_api
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 
 
@@ -67,6 +66,30 @@ def bypass_olx_failure_enabled():
     return BYPASS_OLX_FAILURE.is_enabled()
 
 
+# .. toggle_name: contentstore.enable_audio_description
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Enables the audio description (AD) upload UI in the
+#   Studio video editor and the corresponding studio_audio_description XBlock
+#   handler. When disabled, course authors cannot upload, replace, or delete
+#   audio description files for video blocks. Playback of AD files that were
+#   already uploaded is NOT gated by this flag and continues to work in the
+#   LMS -- disable the playback path with a separate flag if needed.
+# .. toggle_use_cases: open_edx
+# .. toggle_creation_date: 2026-04-07
+ENABLE_AUDIO_DESCRIPTION = CourseWaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.enable_audio_description',
+    __name__,
+)
+
+
+def audio_description_enabled(course_key):
+    """
+    Return True if the audio description upload UI and handler are enabled.
+    """
+    return ENABLE_AUDIO_DESCRIPTION.is_enabled(course_key)
+
+
 # .. toggle_name: legacy_studio.exam_settings
 # .. toggle_implementation: WaffleFlag
 # .. toggle_default: False
@@ -84,25 +107,6 @@ def exam_setting_view_enabled(course_key):
     Returns a boolean if proctoring exam setting mfe view is enabled.
     """
     return not LEGACY_STUDIO_EXAM_SETTINGS.is_enabled(course_key)
-
-
-# .. toggle_name: legacy_studio.text_editor
-# .. toggle_implementation: WaffleFlag
-# .. toggle_default: False
-# .. toggle_description: Temporarily fall back to the old Text component (a.k.a. html block) editor.
-# .. toggle_use_cases: temporary
-# .. toggle_creation_date: 2025-03-14
-# .. toggle_target_removal_date: 2025-09-14
-# .. toggle_tickets: https://github.com/openedx/edx-platform/issues/36275
-# .. toggle_warning: In Ulmo, this toggle will be removed. Only the new (React-based) experience will be available.
-LEGACY_STUDIO_TEXT_EDITOR = CourseWaffleFlag("legacy_studio.text_editor", __name__)
-
-
-def use_new_text_editor(course_key):
-    """
-    Returns a boolean = true if new text editor is enabled
-    """
-    return not LEGACY_STUDIO_TEXT_EDITOR.is_enabled(course_key)
 
 
 # .. toggle_name: legacy_studio.video_editor
@@ -179,25 +183,6 @@ def individualize_anonymous_user_id(course_id):
     Returns a boolean if individualized anonymous_user_id is enabled on the course
     """
     return INDIVIDUALIZE_ANONYMOUS_USER_ID.is_enabled(course_id)
-
-
-# .. toggle_name: legacy_studio.home
-# .. toggle_implementation: WaffleFlag
-# .. toggle_default: False
-# .. toggle_description: Temporarily fall back to the old Studio logged-in landing page.
-# .. toggle_use_cases: temporary
-# .. toggle_creation_date: 2025-03-14
-# .. toggle_target_removal_date: 2025-09-14
-# .. toggle_tickets: https://github.com/openedx/edx-platform/issues/36275
-# .. toggle_warning: In Ulmo, this toggle will be removed. Only the new (React-based) experience will be available.
-LEGACY_STUDIO_HOME = WaffleFlag('legacy_studio.home', __name__)
-
-
-def use_new_home_page():
-    """
-    Returns a boolean if new studio home page mfe is enabled
-    """
-    return not LEGACY_STUDIO_HOME.is_enabled()
 
 
 # .. toggle_name: legacy_studio.custom_pages
@@ -351,25 +336,6 @@ def use_new_export_page(course_key):
     return not LEGACY_STUDIO_EXPORT.is_enabled(course_key)
 
 
-# .. toggle_name: legacy_studio.files_uploads
-# .. toggle_implementation: WaffleFlag
-# .. toggle_default: False
-# .. toggle_description: Temporarily fall back to the old Studio Files & Uploads page.
-# .. toggle_use_cases: temporary
-# .. toggle_creation_date: 2025-03-14
-# .. toggle_target_removal_date: 2025-09-14
-# .. toggle_tickets: https://github.com/openedx/edx-platform/issues/36275
-# .. toggle_warning: In Ulmo, this toggle will be removed. Only the new (React-based) experience will be available.
-LEGACY_STUDIO_FILES_UPLOADS = CourseWaffleFlag('legacy_studio.files_uploads', __name__)
-
-
-def use_new_files_uploads_page(course_key):
-    """
-    Returns a boolean if new studio files and uploads mfe is enabled
-    """
-    return not LEGACY_STUDIO_FILES_UPLOADS.is_enabled(course_key)
-
-
 # .. toggle_name: contentstore.new_studio_mfe.use_new_video_uploads_page
 # .. toggle_implementation: CourseWaffleFlag
 # .. toggle_default: False
@@ -400,13 +366,6 @@ def use_new_video_uploads_page(course_key):
 # .. toggle_tickets: https://github.com/openedx/edx-platform/issues/36275
 # .. toggle_warning: In Ulmo, this toggle will be removed. Only the new (React-based) experience will be available.
 LEGACY_STUDIO_COURSE_OUTLINE = CourseWaffleFlag('legacy_studio.course_outline', __name__)
-
-
-def use_new_course_outline_page(course_key):
-    """
-    Returns a boolean if new studio course outline mfe is enabled
-    """
-    return not LEGACY_STUDIO_COURSE_OUTLINE.is_enabled(course_key)
 
 
 # .. toggle_name: legacy_studio.unit_editor
@@ -612,6 +571,7 @@ def libraries_v2_enabled():
 
     Requires the ENABLE_CONTENT_LIBRARIES feature flag to be enabled, plus Meilisearch.
     """
+    from openedx.core.djangoapps.content.search import api as search_api  # pylint: disable=import-outside-toplevel
     return (
         ENABLE_CONTENT_LIBRARIES.is_enabled() and
         search_api.is_meilisearch_enabled() and
@@ -682,3 +642,45 @@ def enable_course_optimizer_check_prev_run_links(course_key):
     Returns a boolean if previous run course optimizer feature is enabled for the given course.
     """
     return ENABLE_COURSE_OPTIMIZER_CHECK_PREV_RUN_LINKS.is_enabled(course_key)
+
+
+# .. toggle_name: contentstore.enable_unit_expanded_view
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, the Unit Expanded View feature in the Course Outline is activated.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-01-01
+# .. toggle_target_removal_date: 2026-06-01
+# .. toggle_tickets: TNL2-473
+ENABLE_UNIT_EXPANDED_VIEW = CourseWaffleFlag(
+    f"{CONTENTSTORE_NAMESPACE}.enable_unit_expanded_view", __name__
+)
+
+
+def enable_unit_expanded_view(course_key):
+    """
+    Returns a boolean if the Unit Expanded View feature is enabled for the given course.
+    """
+    return ENABLE_UNIT_EXPANDED_VIEW.is_enabled(course_key)
+
+
+# .. toggle_name: contentstore.enable_outline_component_creation
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, the Add Component widget is displayed inside each
+# ..   expanded unit on the Course Outline page, allowing authors to add new XBlocks
+# ..   directly without navigating to the unit page.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-03-24
+# .. toggle_target_removal_date: 2026-09-24
+# .. toggle_tickets: TNL2-533
+ENABLE_OUTLINE_COMPONENT_CREATION = CourseWaffleFlag(
+    f"{CONTENTSTORE_NAMESPACE}.enable_outline_component_creation", __name__
+)
+
+
+def enable_outline_component_creation(course_key):
+    """
+    Returns a boolean if the Add Component in Outline feature is enabled for the given course.
+    """
+    return ENABLE_OUTLINE_COMPONENT_CREATION.is_enabled(course_key)
