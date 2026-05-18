@@ -18,7 +18,6 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 from django.http import Http404
 from django.urls import reverse
 from django.utils.html import strip_tags
@@ -1014,41 +1013,70 @@ def get_course_topics_v2(
                 accessible_vertical_keys.append(block.usage_key)
         accessible_vertical_keys.append(None)
 
-    topics_query = DiscussionTopicLink.objects.filter(
+    # Base query for all topics
+    base_query = DiscussionTopicLink.objects.filter(
         context_key=course_key,
         provider_id=provider_type,
     )
 
+    # Active topics
+    active_topics_query = base_query.filter(
+        usage_key__in=accessible_vertical_keys,
+        enabled_in_context=True,
+    )
+
+    # Archived topics
+    archived_topics_query = DiscussionTopicLink.objects.none()
+
     if user_is_privileged:
-        topics_query = topics_query.filter(
-            Q(usage_key__in=accessible_vertical_keys) | Q(enabled_in_context=False)
-        )
-    else:
-        topics_query = topics_query.filter(
-            usage_key__in=accessible_vertical_keys, enabled_in_context=True
-        )
+        archived_topics_query = base_query.filter(enabled_in_context=False)
 
     if topic_ids:
-        topics_query = topics_query.filter(external_id__in=topic_ids)
+        active_topics_query = active_topics_query.filter(
+            external_id__in=topic_ids,
+        )
+        archived_topics_query = archived_topics_query.filter(
+            external_id__in=topic_ids,
+        )
 
+    # Apply requested ordering consistently to both active and archived topics
     if order_by == TopicOrdering.ACTIVITY:
-        topics_query = sorted(
-            topics_query,
-            key=lambda topic: sum(thread_counts.get(topic.external_id, {}).values()),
+        active_topics_query = sorted(
+            active_topics_query,
+            key=lambda topic: sum(
+                thread_counts.get(topic.external_id, {}).values()
+            ),
             reverse=True,
         )
+
+        archived_topics_query = sorted(
+            archived_topics_query,
+            key=lambda topic: sum(
+                thread_counts.get(topic.external_id, {}).values()
+            ),
+            reverse=True,
+        )
+
     elif order_by == TopicOrdering.NAME:
-        topics_query = topics_query.order_by("title")
+        active_topics_query = active_topics_query.order_by("title")
+        archived_topics_query = archived_topics_query.order_by("title")
+
     else:
-        topics_query = topics_query.order_by("ordering")
+        active_topics_query = active_topics_query.order_by("ordering")
+        archived_topics_query = archived_topics_query.order_by("ordering")
+
+    topics_query = list(active_topics_query) + list(archived_topics_query)
 
     topics_data = DiscussionTopicSerializerV2(
-        topics_query, many=True, context={"thread_counts": thread_counts}
+        topics_query,
+        many=True,
+        context={"thread_counts": thread_counts},
     ).data
     return [
         topic_data
         for topic_data in topics_data
-        if topic_data["enabled_in_context"] or sum(topic_data["thread_counts"].values())
+        if topic_data["enabled_in_context"]
+        or sum(topic_data["thread_counts"].values())
     ]
 
 
