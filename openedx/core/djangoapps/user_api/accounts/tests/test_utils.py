@@ -45,6 +45,7 @@ def assert_update_before_delete(sql_list, num_redact_delete_pairs=1, table='soci
         assert 'UPDATE' in update_sql.upper(), f'Expected UPDATE at position {index} for {table}'
         assert 'DELETE' in delete_sql.upper(), f'Expected DELETE at position {index + 1} for {table}'
 
+
 # Use a context manager to guarantee signal reconnection between tests.
 @contextmanager
 def disconnected_social_auth_redaction_signal():

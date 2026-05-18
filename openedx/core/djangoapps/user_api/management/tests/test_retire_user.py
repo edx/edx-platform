@@ -31,6 +31,7 @@ from ...models import UserRetirementStatus
 pytestmark = pytest.mark.django_db
 user_file = 'userfile.csv'
 
+
 # Use a context manager to guarantee signal reconnection between tests.
 @contextmanager
 def disconnected_social_auth_redaction_signal():
