@@ -862,7 +862,7 @@ class SAMLProviderConfig(ProviderConfig):
             return other_settings[name]
         raise KeyError
 
-    def get_config(self, backend):
+    def get_config(self):
         """
         Return a SAMLIdentityProvider instance for use by SAMLAuthBackend.
 
@@ -922,7 +922,7 @@ class SAMLProviderConfig(ProviderConfig):
             SAMLConfiguration.current(self.site.id, 'default')
         )
         idp_class = get_saml_idp_class(self.identity_provider_type)
-        return idp_class(backend, self.slug, **conf)
+        return idp_class(self.slug, **conf)
 
 
 class SAMLProviderData(models.Model):

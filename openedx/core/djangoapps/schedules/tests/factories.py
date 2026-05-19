@@ -4,7 +4,7 @@ Factories for schedules tests
 
 
 import factory
-from zoneinfo import ZoneInfo
+import pytz
 
 from openedx.core.djangoapps.schedules import models
 from openedx.core.djangoapps.site_configuration.tests.factories import SiteFactory
@@ -22,8 +22,8 @@ class ScheduleFactory(factory.django.DjangoModelFactory):  # lint-amnesty, pylin
     class Meta:
         model = models.Schedule
 
-    start_date = factory.Faker('future_datetime', tzinfo=ZoneInfo("UTC"))
-    upgrade_deadline = factory.Faker('future_datetime', tzinfo=ZoneInfo("UTC"))
+    start_date = factory.Faker('future_datetime', tzinfo=pytz.UTC)
+    upgrade_deadline = factory.Faker('future_datetime', tzinfo=pytz.UTC)
     enrollment = factory.SubFactory(CourseEnrollmentFactory)
     experience = factory.RelatedFactory(ScheduleExperienceFactory, 'schedule')
 

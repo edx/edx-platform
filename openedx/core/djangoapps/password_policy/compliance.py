@@ -4,7 +4,7 @@ Utilities for enforcing and tracking compliance with password policy rules.
 
 from datetime import datetime
 
-from zoneinfo import ZoneInfo
+import pytz
 from django.conf import settings
 from django.utils.translation import gettext as _
 
@@ -69,7 +69,7 @@ def enforce_compliance_on_login(user, password):
     if deadline is None:
         return
 
-    now = datetime.now(ZoneInfo("UTC"))
+    now = datetime.now(pytz.UTC)
     if now >= deadline:  # lint-amnesty, pylint: disable=no-else-raise
         raise NonCompliantPasswordException(
             HTML(_(
