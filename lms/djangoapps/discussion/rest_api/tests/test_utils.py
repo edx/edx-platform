@@ -87,22 +87,22 @@ class DiscussionAPIUtilsTestCase(ModuleStoreTestCase):
         # Define some example inputs
         filtered_topic_ids = ['t1', 't2', 't3', 't4']
         topics = [
-            {'id': 't1', 'usage_key': 'u1', 'title': 'Topic 1'},
-            {'id': 't2', 'usage_key': None, 'title': 'Topic 2'},
-            {'id': 't3', 'usage_key': 'u3', 'title': 'Topic 3'},
-            {'id': 't4', 'usage_key': 'u4', 'title': 'Topic 4'},
-            {'id': 't5', 'usage_key': None, 'title': 'Topic 5'},
+            {'id': 't1', 'usage_key': 'u1', 'name': 'Topic 1'},
+            {'id': 't2', 'usage_key': None, 'name': 'Topic 2'},
+            {'id': 't3', 'usage_key': 'u3', 'name': 'Topic 3'},
+            {'id': 't4', 'usage_key': 'u4', 'name': 'Topic 4'},
+            {'id': 't5', 'usage_key': None, 'name': 'Topic 5'},
         ]
         expected_output = [
-            {'id': 't1', 'usage_key': 'u1', 'title': 'Topic 1'},
-            {'id': 't3', 'usage_key': 'u3', 'title': 'Topic 3'},
-            {'id': 't4', 'usage_key': 'u4', 'title': 'Topic 4'},
+            {'id': 't1', 'usage_key': 'u1', 'name': 'Topic 1'},
+            {'id': 't3', 'usage_key': 'u3', 'name': 'Topic 3'},
+            {'id': 't4', 'usage_key': 'u4', 'name': 'Topic 4'},
         ]
 
         # Call the function with the example inputs
         output = get_archived_topics(filtered_topic_ids, topics)
 
-        # Assert that the output matches the expected output
+        # Assert that the output matches the expected output (sorted alphabetically by name)
         assert output == expected_output
 
     @ddt.data(
