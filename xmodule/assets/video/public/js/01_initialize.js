@@ -401,6 +401,13 @@ function _getConfiguration(data, storage) {
                 }
 
                 return value;
+            },
+            audioDescriptionActive: function(value) {
+                let stored = storage.getItem('audio_description_active');
+                if (_.isUndefined(stored)) {
+                    return value === true || value === 'true';
+                }
+                return stored;
             }
         },
         config = {};

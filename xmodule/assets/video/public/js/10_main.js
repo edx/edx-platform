@@ -26,6 +26,7 @@ import VideoCommands from './10_commands.js';
 import VideoContextMenu from './095_video_context_menu.js';
 import VideoSocialSharing from './036_video_social_sharing.js';
 import VideoTranscriptFeedback from './037_video_transcript_feedback.js';
+import VideoAudioDescription from './09_video_audio_description.js';
 
 let youtubeXhr = null;
 
@@ -38,7 +39,9 @@ window.Video = function (runtime, element) {
         mainVideoModules = [
             FocusGrabber, VideoControl, VideoPlayPlaceholder,
             VideoPlayPauseControl, VideoProgressSlider, VideoSpeedControl,
-            VideoVolumeControl, VideoQualityControl, VideoFullScreen, VideoCaption, VideoCommands,
+            VideoVolumeControl, VideoQualityControl, VideoFullScreen,
+            VideoAudioDescription,
+            VideoCaption, VideoCommands,
             VideoContextMenu, VideoSaveStatePlugin, VideoEventsPlugin, VideoCompletionHandler, VideoTranscriptFeedback
         ].concat(autoAdvanceEnabled ? [VideoAutoAdvanceControl] : []),
         bumperVideoModules = [VideoControl, VideoPlaySkipControl, VideoSkipControl,
