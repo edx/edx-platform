@@ -8,7 +8,7 @@ import ddt
 from crum import set_current_request
 from django.test import RequestFactory
 from django.utils import timezone
-from zoneinfo import ZoneInfo
+from pytz import UTC
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 
 from common.djangoapps.course_modes.models import CourseMode
@@ -37,12 +37,9 @@ class TestAccess(ModuleStoreTestCase):
     def setUp(self):
         super().setUp()  # lint-amnesty, pylint: disable=super-with-arguments
 
-        CourseDurationLimitConfig.objects.create(
-            enabled=True,
-            enabled_as_of=datetime(2018, 1, 1, tzinfo=ZoneInfo("UTC"))
-        )
+        CourseDurationLimitConfig.objects.create(enabled=True, enabled_as_of=datetime(2018, 1, 1, tzinfo=UTC))
         DynamicUpgradeDeadlineConfiguration.objects.create(enabled=True)
-        self.course = CourseOverviewFactory.create(start=datetime(2018, 1, 1, tzinfo=ZoneInfo("UTC")), self_paced=True)
+        self.course = CourseOverviewFactory.create(start=datetime(2018, 1, 1, tzinfo=UTC), self_paced=True)
 
     def assertDateInMessage(self, date, message):  # lint-amnesty, pylint: disable=missing-function-docstring
         # First, check that the formatted version is in there
@@ -197,7 +194,7 @@ class TestAccess(ModuleStoreTestCase):
             course_id=enrollment.course.id,
             mode_slug=CourseMode.AUDIT,
         )
-        Schedule.objects.update(start_date=datetime(2017, 1, 1, tzinfo=ZoneInfo("UTC")))
+        Schedule.objects.update(start_date=datetime(2017, 1, 1, tzinfo=UTC))
 
         content_availability_date = max(enrollment.created, enrollment.course.start)
         access_duration = get_user_course_duration(enrollment.user, enrollment.course)

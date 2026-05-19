@@ -242,7 +242,8 @@ To support the Libraries Relaunch in Sumac:
     Video blocks.
 
 * We will define method(s) for syncing update on the XBlock runtime so that
-  they are available in the SplitModuleStoreRuntime.
+  they are available in the SplitModuleStore's XBlock Runtime
+  (CachingDescriptorSystem).
 
   * Either in the initial implementation or in a later implementation, it may
     make sense to declare abstract versions of the syncing method(s) higher up
@@ -354,10 +355,10 @@ inheritance hierarchy of CachingDescriptorSystem and SplitModuleStoreRuntime.)
 
 
     ###########################################################################
-    # xmodule/modulestore/split_mongo/runtime.py
+    # xmodule/modulestore/split_mongo/caching_descriptor_system.py
     ###########################################################################
 
-    class SplitModuleStoreRuntime(...):
+    class CachingDescriptorSystem(...):
 
         def validate_upstream_key(self, usage_key: UsageKey | str) -> UsageKey:
             """

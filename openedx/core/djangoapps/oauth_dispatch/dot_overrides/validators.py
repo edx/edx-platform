@@ -11,7 +11,7 @@ from django.dispatch import receiver
 from oauth2_provider.models import AccessToken
 from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.scopes import get_scopes_backend
-from zoneinfo import ZoneInfo
+from pytz import utc
 
 from ..models import RestrictedApplication
 # pylint: disable=W0223
@@ -23,7 +23,7 @@ def on_access_token_presave(sender, instance, *args, **kwargs):  # pylint: disab
     Mark AccessTokens as expired for 'restricted applications' if required.
     """
     if RestrictedApplication.should_expire_access_token(instance.application):
-        instance.expires = datetime(1970, 1, 1, tzinfo=ZoneInfo("UTC"))
+        instance.expires = datetime(1970, 1, 1, tzinfo=utc)
 
 
 class EdxOAuth2Validator(OAuth2Validator):
@@ -152,4 +152,4 @@ def _get_utc_now():
     """
     Return current time in UTC.
     """
-    return datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
+    return datetime.utcnow().replace(tzinfo=utc)

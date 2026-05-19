@@ -3,7 +3,7 @@
 
 from datetime import datetime
 
-from zoneinfo import ZoneInfo
+from pytz import UTC
 
 from openedx.core.djangoapps.course_groups.models import CourseUserGroupPartitionGroup
 from openedx.core.djangoapps.course_groups.tests.helpers import CohortFactory
@@ -32,7 +32,7 @@ class ContentGroupTestCase(ModuleStoreTestCase):
             # This test needs to use a course that has already started --
             # discussion topics only show up if the course has already started,
             # and the default start date for courses is Jan 1, 2030.
-            start=datetime(2012, 2, 3, tzinfo=ZoneInfo("UTC")),
+            start=datetime(2012, 2, 3, tzinfo=UTC),
             user_partitions=[
                 UserPartition(
                     0,

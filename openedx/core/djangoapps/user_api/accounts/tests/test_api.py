@@ -16,7 +16,7 @@ from django.http import HttpResponse
 from django.test import TestCase
 from django.test.client import RequestFactory
 from django.urls import reverse
-from zoneinfo import ZoneInfo
+from pytz import UTC
 from social_django.models import UserSocialAuth
 
 from common.djangoapps.student.models import (
@@ -328,7 +328,7 @@ class TestAccountApi(UserSettingsEventTestMixin, EmailTemplateTagMixin, CreateAc
         meta['old_names'] = []
         for num in range(3):
             meta['old_names'].append(
-                [f'old_name_{num}', 'test', datetime.datetime.now(ZoneInfo("UTC")).isoformat()]
+                [f'old_name_{num}', 'test', datetime.datetime.now(UTC).isoformat()]
             )
         user_profile.set_meta(meta)
         user_profile.save()

@@ -11,14 +11,15 @@ from opaque_keys.edx.keys import UsageKey
 from freezegun import freeze_time
 
 from openedx.core.djangoapps.content_libraries.tests import ContentLibrariesRestApiTest
-from cms.djangoapps.contentstore.xblock_storage_handlers.xblock_helpers import get_block_key_string
+from cms.djangoapps.contentstore.xblock_storage_handlers.xblock_helpers import get_block_key_dict
 from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase, ImmediateOnCommitMixin
+from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
+from xmodule.xml_block import serialize_field
 
 
 @ddt.ddt
-class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixin, ModuleStoreTestCase):
+class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ModuleStoreTestCase):
     """
     Tests that involve syncing content from libraries to courses.
     """
@@ -196,7 +197,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': False,
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
             # 'upstream_link': 'http://course-authoring-mfe/library/lib:CL-TEST:testlib/components?usageKey=...'
         })
         assert status["upstream_link"].startswith("http://course-authoring-mfe/library/")
@@ -253,7 +254,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': True,  # <--- updated
             'error_message': None,
-            'downstream_customized': ['display_name'],
+            'is_modified': True,
         })
 
         # 3️⃣ Now, sync and check the resulting OLX of the downstream
@@ -295,9 +296,9 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             parent_usage_key=str(self.course_subsection.usage_key),
             upstream_key=self.upstream_unit["id"],
         )
-        downstream_unit_block_key = get_block_key_string(
+        downstream_unit_block_key = serialize_field(get_block_key_dict(
             UsageKey.from_string(downstream_unit["locator"]),
-        )
+        )).replace('"', '&quot;')
         status = self._get_sync_status(downstream_unit["locator"])
         self.assertDictContainsEntries(status, {
             'upstream_ref': self.upstream_unit["id"],  # e.g. 'lct:CL-TEST:testlib:unit:u1'
@@ -306,7 +307,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': False,
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
             # 'upstream_link': 'http://course-authoring-mfe/library/lib:CL-TEST:testlib/units/...'
         })
         assert status["upstream_link"].startswith("http://course-authoring-mfe/library/")
@@ -383,7 +384,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_html1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 2,
@@ -401,7 +402,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_problem1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 3,
@@ -419,7 +420,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_problem2["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 1,
@@ -437,7 +438,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_unit["id"],
                 'upstream_type': 'container',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             }
         ]
         data = downstreams.json()
@@ -459,7 +460,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': True,  # <--- It's the top-level parent of the block
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
         })
 
         # Check the upstream/downstream status of [one of] the children
@@ -471,7 +472,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': False,  # <-- It has top-level parent, the parent is the one who must synchronize
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
         })
 
         # Sync and check the resulting OLX of the downstream
@@ -536,7 +537,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_html1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 2,
@@ -554,7 +555,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_problem1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 3,
@@ -572,7 +573,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_problem2["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 1,
@@ -590,7 +591,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_unit["id"],
                 'upstream_type': 'container',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             }
         ]
         data = downstreams.json()
@@ -620,7 +621,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': True,
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
         })
 
         # Sync and check the resulting OLX of the downstream
@@ -688,7 +689,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_html1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 2,
@@ -706,7 +707,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_problem1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 4,
@@ -724,7 +725,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': upstream_problem3["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 1,
@@ -742,7 +743,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_unit["id"],
                 'upstream_type': 'container',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             }
         ]
         data = downstreams.json()
@@ -821,7 +822,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_html1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 2,
@@ -839,7 +840,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_problem1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 4,
@@ -857,7 +858,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': upstream_problem3["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
             {
                 'id': 1,
@@ -875,7 +876,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_unit["id"],
                 'upstream_type': 'container',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             }
         ]
         data = downstreams.json()
@@ -897,9 +898,9 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             parent_usage_key=str(self.course_subsection.usage_key),
             upstream_key=self.upstream_unit["id"],
         )
-        downstream_unit_block_key = get_block_key_string(
+        downstream_unit_block_key = serialize_field(get_block_key_dict(
             UsageKey.from_string(downstream_unit["locator"]),
-        )
+        )).replace('"', '&quot;')
         status = self._get_sync_status(downstream_unit["locator"])
         self.assertDictContainsEntries(status, {
             'upstream_ref': self.upstream_unit["id"],  # e.g. 'lct:CL-TEST:testlib:unit:u1'
@@ -908,7 +909,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': False,
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
             # 'upstream_link': 'http://course-authoring-mfe/library/lib:CL-TEST:testlib/units/...'
         })
         assert status["upstream_link"].startswith("http://course-authoring-mfe/library/")
@@ -983,7 +984,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': True,  # <--- It's the top-level parent of the block
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
         })
 
         # Check the upstream/downstream status of [one of] the children
@@ -995,7 +996,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': False,  # <-- It has top-level parent, the parent is the one who must synchronize
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
         })
 
         self.assertDictContainsEntries(self._get_sync_status(downstream_html1), {
@@ -1005,7 +1006,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': False,  # <-- It has top-level parent, the parent is the one who must synchronize
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
         })
 
         # Now let's modify course html block
@@ -1076,7 +1077,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': False,
             'error_message': None,
-            'downstream_customized': [],
+            'is_modified': False,
             # 'upstream_link': 'http://course-authoring-mfe/library/lib:CL-TEST:testlib/components?usageKey=...'
         })
         assert status["upstream_link"].startswith("http://course-authoring-mfe/library/")
@@ -1116,7 +1117,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_html1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': [],
+                'downstream_is_modified': False,
             },
         ]
         data = downstreams.json()
@@ -1155,7 +1156,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             'version_declined': None,
             'ready_to_sync': True,  # <--- updated
             'error_message': None,
-            'downstream_customized': ['display_name'],
+            'is_modified': True,  # <--- updated
         })
 
         downstreams = self._get_downstream_links(
@@ -1178,7 +1179,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
                 'updated': date_format,
                 'upstream_key': self.upstream_html1["id"],
                 'upstream_type': 'component',
-                'downstream_customized': ["display_name"],  # <--- updated
+                'downstream_is_modified': True,  # <--- updated
             },
         ]
         data = downstreams.json()
@@ -1258,9 +1259,9 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             parent_usage_key=str(self.course_subsection.usage_key),
             upstream_key=self.upstream_unit["id"],
         )
-        downstream_unit_block_key = get_block_key_string(
+        downstream_unit_block_key = serialize_field(get_block_key_dict(
             UsageKey.from_string(downstream_unit["locator"]),
-        )
+        )).replace('"', '&quot;')
         children_downstream_keys = self._get_course_block_children(downstream_unit["locator"])
         downstream_problem1 = children_downstream_keys[1]
         assert "type@problem" in downstream_problem1

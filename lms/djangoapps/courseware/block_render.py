@@ -122,7 +122,7 @@ class LmsModuleRenderError(Exception):
 def make_track_function(request):
     '''
     Make a tracking function that logs what happened.
-    For use in ModuleStoreRuntime.
+    For use in DescriptorSystem.
     '''
     from common.djangoapps.track import views as track_views
 

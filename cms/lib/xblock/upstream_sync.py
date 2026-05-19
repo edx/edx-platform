@@ -17,17 +17,17 @@ from __future__ import annotations
 
 import logging
 import typing as t
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, asdict
 
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from opaque_keys import InvalidKeyError
-from opaque_keys.edx.keys import CourseKey, UsageKey
+from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import LibraryContainerLocator, LibraryUsageLocatorV2
-from xblock.core import XBlock, XBlockMixin
+from opaque_keys.edx.keys import UsageKey
 from xblock.exceptions import XBlockNotFoundError
-from xblock.fields import Integer, List, Scope, String
-
+from xblock.fields import Scope, String, Integer, Dict, List
+from xblock.core import XBlockMixin, XBlock
 from xmodule.util.keys import BlockKey
 
 if t.TYPE_CHECKING:
@@ -91,15 +91,8 @@ class UpstreamLink:
     version_available: int | None  # Latest version of the upstream that's available, or None if it couldn't be loaded.
     version_declined: int | None  # Latest version which the user has declined to sync with, if any.
     error_message: str | None  # If link is valid, None. Otherwise, a localized, human-friendly error message.
-    downstream_customized: list[str] | None  # List of fields modified in downstream
+    is_modified: bool | None  # If modified in course, True. Otherwise, False.
     has_top_level_parent: bool  # True if this Upstream link has a top-level parent
-
-    @property
-    def is_upstream_deleted(self) -> bool:
-        return bool(
-            self.upstream_ref and
-            self.version_available is None
-        )
 
     @property
     def is_ready_to_sync_individually(self) -> bool:
@@ -108,7 +101,7 @@ class UpstreamLink:
             self.version_available and
             self.version_available > (self.version_synced or 0) and
             self.version_available > (self.version_declined or 0)
-        ) or self.is_upstream_deleted
+        )
 
     def _check_children_ready_to_sync(self, xblock_downstream: XBlock, return_fast: bool) -> list[dict[str, str]]:
         """
@@ -135,8 +128,6 @@ class UpstreamLink:
                     child_info.append({
                         'name': child.display_name,
                         'upstream': getattr(child, 'upstream', None),
-                        'block_type': child.usage_key.block_type,
-                        'downstream_customized': child_upstream_link.downstream_customized,
                         'id': str(child.usage_key),
                     })
                     if return_fast:
@@ -196,7 +187,6 @@ class UpstreamLink:
             **asdict(self),
             "ready_to_sync": self.ready_to_sync,
             "upstream_link": self.upstream_link,
-            "is_ready_to_sync_individually": self.is_ready_to_sync_individually,
         }
         if (
             include_child_info
@@ -236,7 +226,7 @@ class UpstreamLink:
                 version_available=None,
                 version_declined=None,
                 error_message=str(exc),
-                downstream_customized=getattr(downstream, "downstream_customized", []),
+                is_modified=len(getattr(downstream, "downstream_customized", [])) > 0,
                 has_top_level_parent=getattr(downstream, "top_level_downstream_parent_key", None) is not None,
             )
 
@@ -319,7 +309,7 @@ class UpstreamLink:
             version_available=version_available,
             version_declined=downstream.upstream_version_declined,
             error_message=None,
-            downstream_customized=getattr(downstream, "downstream_customized", []),
+            is_modified=len(getattr(downstream, "downstream_customized", [])) > 0,
             has_top_level_parent=downstream.top_level_downstream_parent_key is not None,
         )
 
@@ -354,7 +344,7 @@ def decline_sync(downstream: XBlock, user_id=None) -> None:
 
 def _update_children_top_level_parent(
     downstream: XBlock,
-    new_top_level_parent_key: str | None,
+    new_top_level_parent_key: dict[str, str] | None
 ) -> list[XBlock]:
     """
     Given a new top-level parent block, update the `top_level_downstream_parent_key` field on the downstream block
@@ -374,7 +364,7 @@ def _update_children_top_level_parent(
         # If the `new_top_level_parent_key` is None, the current level assume the top-level
         # parent key for its children.
         child_top_level_parent_key = new_top_level_parent_key if new_top_level_parent_key is not None else (
-            str(BlockKey.from_usage_key(child.usage_key))
+            BlockKey.from_usage_key(child.usage_key)._asdict()
         )
 
         affected_blocks.extend(_update_children_top_level_parent(child, child_top_level_parent_key))
@@ -483,7 +473,7 @@ class UpstreamSyncMixin(XBlockMixin):
         default=None, scope=Scope.settings, hidden=True, enforce_type=True,
     )
 
-    top_level_downstream_parent_key = String(
+    top_level_downstream_parent_key = Dict(
         help=(
             "The block key ('block_type@block_id') of the downstream block that is the top-level parent of "
             "this block. This is present if the creation of this block is a consequence of "
