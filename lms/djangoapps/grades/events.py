@@ -177,7 +177,7 @@ def course_grade_passed_first_time(user_id, course_id):
             course_id,
         )
         raise
-    log.info(
+    log.debug(
         'GradeEventContextRequested succeeded for user_id=%s course_id=%s',
         user_id,
         course_id,
