@@ -811,6 +811,8 @@ openedx-atlas==0.7.0
     #   edx-enterprise
     #   enterprise-integrated-channels
     #   openedx-forum
+openedx-authz==0.20.1
+    # via -r requirements/edx/kernel.in
 openedx-calc==4.0.2
     # via -r requirements/edx/kernel.in
 openedx-django-pyfs==3.8.0
