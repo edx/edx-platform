@@ -98,6 +98,7 @@ babel==2.17.0
     #   -r requirements/edx/testing.txt
     #   enmerkar
     #   enmerkar-underscore
+    #   mako
     #   pydata-sphinx-theme
     #   sphinx
 backoff==1.10.0
@@ -1222,7 +1223,7 @@ mailsnake==1.6.4
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
-mako==1.3.10
+mako[babel]==1.3.10
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
