@@ -32,6 +32,9 @@ ignore_dirs:
     # Directories full of auto-generated JS
     - lms/static/js/i18n
     - cms/static/js/i18n
+    # Vendor/minified JS that causes extraction errors - exclude vendor directories
+    - common/static/common/js/vendor/*
+    - common/static/js/vendor/*
     # Directories with 3rd party apps.
     - src/acid-xblock
     - src/code-block-timer
@@ -44,14 +47,14 @@ ignore_dirs:
     - src/rate-xblock
     - src/xblock-google-drive
     # Ignore the file we use when translations are not setup in development environments.
-    - common/static/js/src/gettext_fallback.js
+    - common/static/js/src/gettext_fallback.js*
 
 
 # Third-party installed apps that we also extract strings from.  When adding a
 # file here, also add it to the django.po merge files below, and to the
 # Makefile `extract_translations` target to ensure it makes to Transifex.
-third_party:
-    - wiki
+third_party: []
+    # - wiki
 
 
 # How should .po files be segmented?  See i18n/segment.py for details. Strings
@@ -83,7 +86,7 @@ generate_merge:
         - django-studio.po
         - mako.po
         - mako-studio.po
-        - wiki.po
+        # - wiki.po
     djangojs.po:
         - djangojs-partial.po
         - djangojs-studio.po
