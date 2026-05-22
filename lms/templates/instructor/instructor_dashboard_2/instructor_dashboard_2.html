@@ -81,12 +81,14 @@ from openedx.core.djangolib.js_utils import (
     % endif
   % endfor
 
-   <script>
-	var beamer_config = {
-		product_id : "${settings.BEAMER_PRODUCT_ID | n, js_escaped_string}",
-	};
-</script>
-<script type="text/javascript" src="https://app.getbeamer.com/js/beamer-embed.js" defer="defer"></script>
+  % if settings.BEAMER_PRODUCT_ID:
+    <script>
+      var beamer_config = {
+        product_id : "${settings.BEAMER_PRODUCT_ID | n, js_escaped_string}",
+      };
+    </script>
+    <script type="text/javascript" src="https://app.getbeamer.com/js/beamer-embed.js" defer="defer"></script>
+  % endif
 </%block>
 
 ## Include Underscore templates
