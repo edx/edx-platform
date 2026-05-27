@@ -6,18 +6,14 @@ Tests for the course_overviews app's signal functionality.
 import datetime
 from unittest.mock import patch
 from collections import namedtuple
-from zoneinfo import ZoneInfo
 
 import pytest
 import ddt
+from pytz import UTC
 
 from xmodule.data import CertificatesDisplayBehaviors
 from xmodule.modulestore import ModuleStoreEnum
-from xmodule.modulestore.tests.django_utils import (
-    TEST_DATA_ONLY_SPLIT_MODULESTORE_DRAFT_PREFERRED,
-    ModuleStoreTestCase,
-    ImmediateOnCommitMixin,
-)
+from xmodule.modulestore.tests.django_utils import TEST_DATA_ONLY_SPLIT_MODULESTORE_DRAFT_PREFERRED, ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, check_mongo_calls
 
 from ..models import CourseOverview
@@ -27,13 +23,13 @@ Change = namedtuple("Change", ["field_name", "initial_value", "changed_value"])
 
 
 @ddt.ddt
-class CourseOverviewSignalsTestCase(ImmediateOnCommitMixin, ModuleStoreTestCase):
+class CourseOverviewSignalsTestCase(ModuleStoreTestCase):
     """
     Tests for CourseOverview signals.
     """
     MODULESTORE = TEST_DATA_ONLY_SPLIT_MODULESTORE_DRAFT_PREFERRED
     ENABLED_SIGNALS = ['course_deleted', 'course_published']
-    TODAY = datetime.datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
+    TODAY = datetime.datetime.utcnow().replace(tzinfo=UTC)
     NEXT_WEEK = TODAY + datetime.timedelta(days=7)
 
     def assert_changed_signal_sent(self, changes, mock_signal):
@@ -47,14 +43,16 @@ class CourseOverviewSignalsTestCase(ImmediateOnCommitMixin, ModuleStoreTestCase)
         )
 
         # changing display name doesn't fire the signal
-        course.display_name = course.display_name + 'changed'
-        course = self.store.update_item(course, ModuleStoreEnum.UserID.test)
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            course.display_name = course.display_name + 'changed'
+            course = self.store.update_item(course, ModuleStoreEnum.UserID.test)
         assert not mock_signal.called
 
         # changing the given field fires the signal
-        for change in changes:
-            setattr(course, change.field_name, change.changed_value)
-        self.store.update_item(course, ModuleStoreEnum.UserID.test)
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            for change in changes:
+                setattr(course, change.field_name, change.changed_value)
+            self.store.update_item(course, ModuleStoreEnum.UserID.test)
         assert mock_signal.called
 
     def test_caching(self):

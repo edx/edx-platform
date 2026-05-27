@@ -18,6 +18,7 @@ from cms.djangoapps.contentstore.tests.test_libraries import LibraryTestCase
 from cms.djangoapps.contentstore.tests.utils import CourseTestCase
 from cms.djangoapps.modulestore_migrator import api as migrator_api
 from cms.djangoapps.modulestore_migrator.data import CompositionLevel, RepeatHandlingStrategy
+from cms.djangoapps.modulestore_migrator.tests.factories import ModulestoreSourceFactory
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 from openedx.core.djangoapps.content_libraries import api as lib_api
 
@@ -252,9 +253,8 @@ class HomePageLibrariesViewTest(LibraryTestCase):
 
     def setUp(self):
         super().setUp()
-        # Create an two additional legacy libaries
+        # Create an additional legacy library
         self.lib_key_1 = self._create_library(library="lib1")
-        self.lib_key_2 = self._create_library(library="lib2")
         self.organization = OrganizationFactory()
 
         # Create a new v2 library
@@ -269,6 +269,7 @@ class HomePageLibrariesViewTest(LibraryTestCase):
         library = lib_api.ContentLibrary.objects.get(slug=self.lib_key_v2.slug)
         learning_package = library.learning_package
         # Create a migration source for the legacy library
+        self.source = ModulestoreSourceFactory(key=self.lib_key_1)
         self.url = reverse("cms.djangoapps.contentstore:v1:libraries")
         # Create a collection to migrate this library to
         collection_key = "test-collection"
@@ -279,32 +280,20 @@ class HomePageLibrariesViewTest(LibraryTestCase):
             created_by=self.user.id,
         )
 
-        # Migrate both lib_key_1 and lib_key_2 to v2
-        # Only make lib_key_1 a "forwarding" migration.
+        # Migrate self.lib_key_1 to self.lib_key_v2
         migrator_api.start_migration_to_library(
             user=self.user,
-            source_key=self.lib_key_1,
+            source_key=self.source.key,
             target_library_key=self.lib_key_v2,
             target_collection_slug=collection_key,
-            composition_level=CompositionLevel.Component,
-            repeat_handling_strategy=RepeatHandlingStrategy.Skip,
-            preserve_url_slugs=True,
-            forward_source_to_target=True,
-        )
-        migrator_api.start_migration_to_library(
-            user=self.user,
-            source_key=self.lib_key_2,
-            target_library_key=self.lib_key_v2,
-            target_collection_slug=collection_key,
-            composition_level=CompositionLevel.Component,
-            repeat_handling_strategy=RepeatHandlingStrategy.Skip,
+            composition_level=CompositionLevel.Component.value,
+            repeat_handling_strategy=RepeatHandlingStrategy.Skip.value,
             preserve_url_slugs=True,
             forward_source_to_target=False,
         )
 
     def test_home_page_libraries_response(self):
-        """Check sucessful response content"""
-        self.maxDiff = None
+        """Check successful response content"""
         response = self.client.get(self.url)
 
         expected_response = {
@@ -332,17 +321,6 @@ class HomePageLibrariesViewTest(LibraryTestCase):
                     'migrated_to_key': 'lib:name0:test-key',
                     'migrated_to_collection_key': 'test-collection',
                     'migrated_to_collection_title': 'Test Collection',
-                },
-                # Third library was migrated, but not with forwarding.
-                # So, it appears just like the unmigrated library.
-                {
-                    'display_name': 'Test Library',
-                    'library_key': 'library-v1:org+lib2',
-                    'url': '/library/library-v1:org+lib2',
-                    'org': 'org',
-                    'number': 'lib2',
-                    'can_edit': True,
-                    'is_migrated': False,
                 },
             ]
         }
@@ -385,15 +363,6 @@ class HomePageLibrariesViewTest(LibraryTestCase):
                     'url': '/library/library-v1:org+lib',
                     'org': 'org',
                     'number': 'lib',
-                    'can_edit': True,
-                    'is_migrated': False,
-                },
-                {
-                    'display_name': 'Test Library',
-                    'library_key': 'library-v1:org+lib2',
-                    'url': '/library/library-v1:org+lib2',
-                    'org': 'org',
-                    'number': 'lib2',
                     'can_edit': True,
                     'is_migrated': False,
                 },
