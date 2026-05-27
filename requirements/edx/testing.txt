@@ -1079,7 +1079,7 @@ openedx-learning==0.30.2
     #   -r requirements/edx/base.txt
 optimizely-sdk==5.2.0
     # via -r requirements/edx/base.txt
-ora2==7.0.0
+ora2==6.17.2
     # via -r requirements/edx/base.txt
 packaging==25.0
     # via
