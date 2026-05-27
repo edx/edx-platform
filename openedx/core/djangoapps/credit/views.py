@@ -6,7 +6,7 @@ Views for the credit Django app.
 import datetime
 import logging
 
-from zoneinfo import ZoneInfo
+import pytz
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -166,7 +166,7 @@ class CreditEligibilityView(generics.ListAPIView):
         return queryset.filter(
             username=username,
             course__course_key=course_key,
-            deadline__gt=datetime.datetime.now(ZoneInfo("UTC"))
+            deadline__gt=datetime.datetime.now(pytz.UTC)
         )
 
 
