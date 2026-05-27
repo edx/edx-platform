@@ -81,6 +81,7 @@ class ThreadListGetFormTest(FormTestMixin, PaginationTestMixin, TestCase):
             "order_by": "last_activity_at",
             "order_direction": "desc",
             "requested_fields": set(),
+            'include_muted': None,
         }
 
     def test_topic_id(self):
@@ -225,6 +226,7 @@ class CommentListGetFormTest(FormTestMixin, PaginationTestMixin, TestCase):
             "requested_fields": set(),
             "merge_question_type_responses": False,
             "show_deleted": None,
+            'include_muted': False,
         }
 
     def test_missing_thread_id(self):

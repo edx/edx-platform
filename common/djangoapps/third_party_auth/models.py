@@ -237,6 +237,10 @@ class ProviderConfig(ConfigurationModel):
         help_text="Use the presence of a profile from a trusted third party as proof of identity verification.",
     )
 
+    # Enterprise-only field: excludes this provider from the EnterpriseCustomer Django admin IDP
+    # dropdown. Added in ENT-1366 after social auth providers (Facebook, Google, etc.) were linked
+    # as enterprise IDPs, incorrectly associating all their users with an enterprise. Should ideally
+    # be migrated into the enterprise plugin.
     disable_for_enterprise_sso = models.BooleanField(
         default=False,
         verbose_name='Disabled for Enterprise TPA',
@@ -745,6 +749,23 @@ class SAMLProviderConfig(ProviderConfig):
             "immediately after authenticating with the third party instead of the login page."
         ),
     )
+    skip_registration_optional_checkboxes = models.BooleanField(
+        default=False,
+        help_text=_(
+            "If enabled, optional checkboxes (marketing emails opt-in, etc.) will not be rendered "
+            "on the registration form for users registering via this provider. When these checkboxes "
+            "are skipped, their values are inferred as False (opted out)."
+        ),
+    )
+    disable_email_editing = models.BooleanField(
+        default=False,
+        help_text=_(
+            "If enabled, and the identity provider supplies an email address, the email field "
+            "on the SSO registration form will be read-only and users will not be able to change "
+            "their email address in their account settings. If the identity provider does not "
+            "supply an email address, the field remains editable during registration."
+        ),
+    )
     other_settings = models.TextField(
         verbose_name="Advanced settings", blank=True,
         help_text=(
@@ -803,7 +824,10 @@ class SAMLProviderConfig(ProviderConfig):
 
     def is_active_for_pipeline(self, pipeline):
         """ Is this provider being used for the specified pipeline? """
-        return self.backend_name == pipeline['backend'] and self.slug == pipeline['kwargs']['response']['idp_name']
+        try:
+            return self.backend_name == pipeline['backend'] and self.slug == pipeline['kwargs']['response']['idp_name']
+        except KeyError:
+            return False
 
     def match_social_auth(self, social_auth):
         """ Is this provider being used for this UserSocialAuth entry? """
@@ -838,7 +862,7 @@ class SAMLProviderConfig(ProviderConfig):
             return other_settings[name]
         raise KeyError
 
-    def get_config(self):
+    def get_config(self, backend):
         """
         Return a SAMLIdentityProvider instance for use by SAMLAuthBackend.
 
@@ -898,7 +922,7 @@ class SAMLProviderConfig(ProviderConfig):
             SAMLConfiguration.current(self.site.id, 'default')
         )
         idp_class = get_saml_idp_class(self.identity_provider_type)
-        return idp_class(self.slug, **conf)
+        return idp_class(backend, self.slug, **conf)
 
 
 class SAMLProviderData(models.Model):

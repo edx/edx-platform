@@ -1,3 +1,4 @@
+# pylint: disable=too-many-statements
 """
 Discussion API internal interface
 """
@@ -15,12 +16,12 @@ from urllib.parse import urlencode, urlunparse
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 from django.http import Http404
 from django.urls import reverse
 from django.utils.html import strip_tags
-from edx_django_utils.monitoring import function_trace
+from edx_django_utils.monitoring import function_trace, set_custom_attribute
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.locator import CourseKey
 from pytz import UTC
@@ -37,6 +38,7 @@ from lms.djangoapps.courseware.exceptions import CourseAccessRedirect
 from lms.djangoapps.discussion.rate_limit import is_content_creation_rate_limited
 from lms.djangoapps.discussion.toggles import (
     ENABLE_DISCUSSIONS_MFE,
+    ENABLE_DISCUSSION_BAN,
     ONLY_VERIFIED_USERS_CAN_POST,
 )
 from lms.djangoapps.discussion.views import is_privileged_user
@@ -46,7 +48,6 @@ from openedx.core.djangoapps.discussions.models import (
     Provider,
 )
 from openedx.core.djangoapps.discussions.utils import get_accessible_discussion_xblocks
-from openedx.core.djangoapps.django_comment_common import comment_client
 from openedx.core.djangoapps.django_comment_common.comment_client.comment import Comment
 from openedx.core.djangoapps.django_comment_common.comment_client.course import (
     get_course_commentable_counts,
@@ -143,12 +144,109 @@ from .utils import (
     get_usernames_for_course,
     get_usernames_from_search_string,
     is_captcha_enabled,
+    send_signal_after_commit,
     is_posting_allowed,
-    set_attribute,
 )
 
 log = logging.getLogger(__name__)
 User = get_user_model()
+
+
+def filter_muted_content(request_user, course_key, content_list, return_muted_ids=False):
+    """
+    Filter out content from muted users.
+
+    Args:
+        request_user: The user making the request
+        course_key: The course key
+        content_list: List of thread or comment objects (or None if only getting muted IDs)
+        return_muted_ids: If True, return (filtered_list, muted_user_ids) tuple
+
+    Returns:
+        list: Filtered list with muted users' content removed
+        tuple: (filtered_list, muted_user_ids) if return_muted_ids=True
+    """
+
+    if not request_user.is_authenticated:
+        if return_muted_ids:
+            return (content_list if content_list is not None else [], set())
+        return content_list if content_list is not None else []
+
+    # Get muted user IDs directly from forum_api.
+    # Personal mutes are requester-specific; course-wide mutes should affect ALL users.
+    try:
+        muted_user_ids = set()
+
+        # Always include requester's personal mutes.
+        personal_mutes = forum_api.get_all_muted_users_for_course(
+            course_id=str(course_key),
+            requester_id=str(request_user.id),
+            scope="personal",
+            requester_is_privileged=False,
+        )
+
+        muted_user_ids.update(
+            {
+                int(str(user["muted_user_id"]))
+                for user in personal_mutes.get("muted_users", [])
+                if (
+                    user.get("muted_user_id")
+                    and str(user.get("muted_user_id")).isdigit()
+                    and user.get("scope") == "personal"
+                    and str(user.get("muter_id")) == str(request_user.id)
+                )
+            }
+        )
+
+        # Always apply course-wide mutes for ALL users (learners and staff).
+        # Course-wide muted users should only appear in the "Muted" section (include_muted=True).
+        course_mutes = forum_api.get_all_muted_users_for_course(
+            course_id=str(course_key),
+            requester_id=str(request_user.id),
+            scope="course",
+            requester_is_privileged=True,
+        )
+        muted_user_ids.update(
+            {
+                int(str(user["muted_user_id"]))
+                for user in course_mutes.get("muted_users", [])
+                if (
+                    user.get("muted_user_id")
+                    and str(user.get("muted_user_id")).isdigit()
+                    and user.get("scope") == "course"
+                )
+            }
+        )
+
+        muted_user_ids = muted_user_ids - {request_user.id}  # Exclude self-muting
+    except Exception:  # pylint: disable=broad-except
+        log.exception("Error getting muted user IDs")
+        if return_muted_ids:
+            return (content_list if content_list is not None else [], set())
+        return content_list if content_list is not None else []
+
+    if not muted_user_ids:
+        if return_muted_ids:
+            return (content_list if content_list is not None else [], set())
+        return content_list if content_list is not None else []
+
+    # Filter content with optimized comprehension (if content_list provided)
+    if content_list is not None:
+        filtered_list = [
+            item for item in content_list
+            if (
+                not item.get("user_id") or
+                not str(item.get("user_id")).isdigit() or
+                int(str(item["user_id"])) == request_user.id or
+                int(str(item["user_id"])) not in muted_user_ids
+            )
+        ]
+    else:
+        filtered_list = []
+
+    if return_muted_ids:
+        return (filtered_list, muted_user_ids)
+    return filtered_list
 
 ThreadType = Literal["discussion", "question"]
 ViewType = Literal["unread", "unanswered"]
@@ -229,6 +327,12 @@ def _get_thread_and_context(request, thread_id, retrieve_kwargs=None, course_id=
     both the user's access to the course and to the thread's cohort if
     applicable). Raises ThreadNotFoundError if the thread does not exist or the
     user cannot access it.
+
+    Args:
+        request: The django request object
+        thread_id: The id for the thread to retrieve
+        retrieve_kwargs: Additional kwargs for thread retrieval
+        course_id: The course id
     """
     retrieve_kwargs = retrieve_kwargs or {}
     try:
@@ -373,9 +477,22 @@ def get_course(request, course_key, check_tab=True):
     discussion_tab = CourseTabList.get_tab_by_type(course.tabs, "discussion")
     is_course_staff = CourseStaffRole(course_key).has_user(request.user)
     is_course_admin = CourseInstructorRole(course_key).has_user(request.user)
+
+    # Check if the user is banned from discussions
+    is_user_banned_func = getattr(forum_api, 'is_user_banned', None)
+    is_user_banned = False
+    # Only check ban status if feature flag is enabled
+    if ENABLE_DISCUSSION_BAN.is_enabled(course_key) and is_user_banned_func is not None:
+        try:
+            is_user_banned = is_user_banned_func(request.user, course_key)
+        except Exception:  # pylint: disable=broad-except
+            # If ban check fails, default to False
+            is_user_banned = False
+
     return {
         "id": str(course_key),
         "is_posting_enabled": is_posting_enabled,
+        "is_user_banned": is_user_banned,
         "blackouts": [
             {
                 "start": _format_datetime(blackout["start"]),
@@ -436,6 +553,7 @@ def get_course(request, course_key, check_tab=True):
         "content_creation_rate_limited": is_content_creation_rate_limited(
             request, course_key, increment=False
         ),
+        "enable_discussion_ban": ENABLE_DISCUSSION_BAN.is_enabled(course_key),
     }
 
 
@@ -572,6 +690,96 @@ def get_non_courseware_topics(
     return non_courseware_topics, existing_topic_ids
 
 
+def filter_muted_thread_counts(
+    request_user,
+    course_key: CourseKey,
+    thread_counts: Dict[str, Dict[str, int]],
+) -> Dict[str, Dict[str, int]]:
+    """
+    Remove muted users' threads from topic counts.
+
+    This ensures counts match visible posts by excluding muted users based on:
+    - Personal mutes: Always excluded
+    - Course-wide mutes: Excluded for everyone
+
+    Args:
+        request_user: The user requesting the counts
+        course_key: The course key
+        thread_counts: Base thread counts
+
+    Returns:
+        Thread counts with muted users' content excluded
+    """
+
+    if not request_user or not request_user.is_authenticated:
+        return thread_counts
+
+    try:
+        _, muted_user_ids = filter_muted_content(
+            request_user,
+            course_key,
+            None,
+            return_muted_ids=True,
+        )
+
+        if not muted_user_ids:
+            return thread_counts
+
+        adjusted_counts = {
+            topic_id: counts.copy()
+            for topic_id, counts in thread_counts.items()
+        }
+
+        for user_id in muted_user_ids:
+            cache_key = f"muted_user_threads:{course_key}:{user_id}"
+            user_threads = cache.get(cache_key)
+
+            if user_threads is None:
+                try:
+                    user_threads = forum_api.get_user_threads(
+                        user_id=str(request_user.id),
+                        author_id=str(user_id),
+                        course_id=str(course_key),
+                        per_page=1000,
+                        page=1,
+                        context="course",
+                        is_deleted=False,
+                    )
+
+                    # Cache for 5 minutes to reduce repeated API calls
+                    cache.set(cache_key, user_threads, 300)
+
+                except Exception:  # pylint: disable=broad-except
+                    log.exception(
+                        "Failed to fetch threads for muted user_id=%s in course_key=%s",
+                        user_id,
+                        course_key,
+                    )
+                    continue
+
+            for thread in user_threads.get("collection", []):
+                topic_id = thread.get("commentable_id")
+                thread_type = thread.get("thread_type", "discussion")
+
+                if (
+                    topic_id in adjusted_counts
+                    and thread_type in adjusted_counts[topic_id]
+                ):
+                    adjusted_counts[topic_id][thread_type] = max(
+                        0,
+                        adjusted_counts[topic_id][thread_type] - 1,
+                    )
+
+        return adjusted_counts
+
+    except Exception:  # pylint: disable=broad-except
+        log.exception(
+            "Failed to filter muted thread counts for course_key=%s",
+            course_key,
+        )
+        return thread_counts
+
+
 def get_course_topics(
     request: Request, course_key: CourseKey, topic_ids: Optional[Set[str]] = None
 ):
@@ -594,6 +802,9 @@ def get_course_topics(
     """
     course = _get_course(course_key, request.user)
     thread_counts = get_course_commentable_counts(course.id)
+
+    # Adjust counts to exclude muted users' threads for this specific requester
+    thread_counts = filter_muted_thread_counts(request.user, course_key, thread_counts)
 
     courseware_topics, existing_courseware_topic_ids = get_courseware_topics(
         request, course_key, course, topic_ids, thread_counts
@@ -765,6 +976,8 @@ def get_course_topics_v2(
 
     if provider_type in [Provider.OPEN_EDX, Provider.LEGACY]:
         thread_counts = get_course_commentable_counts(course_key)
+        # Adjust counts to exclude muted users' threads for this specific requester
+        thread_counts = filter_muted_thread_counts(user, course_key, thread_counts)
     else:
         thread_counts = {}
         # For other providers we can't sort by activity since we don't have activity information.
@@ -800,41 +1013,70 @@ def get_course_topics_v2(
                 accessible_vertical_keys.append(block.usage_key)
         accessible_vertical_keys.append(None)
 
-    topics_query = DiscussionTopicLink.objects.filter(
+    # Base query for all topics
+    base_query = DiscussionTopicLink.objects.filter(
         context_key=course_key,
         provider_id=provider_type,
     )
 
+    # Active topics
+    active_topics_query = base_query.filter(
+        usage_key__in=accessible_vertical_keys,
+        enabled_in_context=True,
+    )
+
+    # Archived topics
+    archived_topics_query = DiscussionTopicLink.objects.none()
+
     if user_is_privileged:
-        topics_query = topics_query.filter(
-            Q(usage_key__in=accessible_vertical_keys) | Q(enabled_in_context=False)
-        )
-    else:
-        topics_query = topics_query.filter(
-            usage_key__in=accessible_vertical_keys, enabled_in_context=True
-        )
+        archived_topics_query = base_query.filter(enabled_in_context=False)
 
     if topic_ids:
-        topics_query = topics_query.filter(external_id__in=topic_ids)
+        active_topics_query = active_topics_query.filter(
+            external_id__in=topic_ids,
+        )
+        archived_topics_query = archived_topics_query.filter(
+            external_id__in=topic_ids,
+        )
 
+    # Apply requested ordering consistently to both active and archived topics
     if order_by == TopicOrdering.ACTIVITY:
-        topics_query = sorted(
-            topics_query,
-            key=lambda topic: sum(thread_counts.get(topic.external_id, {}).values()),
+        active_topics_query = sorted(
+            active_topics_query,
+            key=lambda topic: sum(
+                thread_counts.get(topic.external_id, {}).values()
+            ),
             reverse=True,
         )
+
+        archived_topics_query = sorted(
+            archived_topics_query,
+            key=lambda topic: sum(
+                thread_counts.get(topic.external_id, {}).values()
+            ),
+            reverse=True,
+        )
+
     elif order_by == TopicOrdering.NAME:
-        topics_query = topics_query.order_by("title")
+        active_topics_query = active_topics_query.order_by("title")
+        archived_topics_query = archived_topics_query.order_by("title")
+
     else:
-        topics_query = topics_query.order_by("ordering")
+        active_topics_query = active_topics_query.order_by("ordering")
+        archived_topics_query = archived_topics_query.order_by("ordering")
+
+    topics_query = list(active_topics_query) + list(archived_topics_query)
 
     topics_data = DiscussionTopicSerializerV2(
-        topics_query, many=True, context={"thread_counts": thread_counts}
+        topics_query,
+        many=True,
+        context={"thread_counts": thread_counts},
     ).data
     return [
         topic_data
         for topic_data in topics_data
-        if topic_data["enabled_in_context"] or sum(topic_data["thread_counts"].values())
+        if topic_data["enabled_in_context"]
+        or sum(topic_data["thread_counts"].values())
     ]
 
 
@@ -857,6 +1099,7 @@ def _get_user_profile_dict(request, usernames):
     else:
         username_list = []
     user_profile_details = get_account_settings(request, username_list)
+
     return {user["username"]: user for user in user_profile_details}
 
 
@@ -993,7 +1236,7 @@ def _serialize_discussion_entities(
     return results
 
 
-def get_thread_list(
+def get_thread_list(  # pylint: disable=too-many-statements
     request: Request,
     course_key: CourseKey,
     page: int,
@@ -1009,6 +1252,7 @@ def get_thread_list(
     order_direction: Literal["desc"] = "desc",
     requested_fields: Optional[List[Literal["profile_image"]]] = None,
     count_flagged: bool = None,
+    include_muted: bool = None,
     show_deleted: bool = False,
 ):
     """
@@ -1132,10 +1376,10 @@ def get_thread_list(
         "group_id": group_id,
         "page": page,
         "per_page": page_size,
-        "text": text_search,
         "sort_key": cc_map.get(order_by),
         "author_id": author_id,
         "flagged": flagged,
+        "include_muted": include_muted,
         "thread_type": thread_type,
         "count_flagged": count_flagged,
         "show_deleted": show_deleted,
@@ -1164,10 +1408,22 @@ def get_thread_list(
     if paginated_results.page != page:
         raise PageNotFoundError("Page not found (No results on this page).")
 
+    # Always filter muted content for All Posts tab (unless include_muted is explicitly True)
+    if include_muted:
+        # Only the muted section should set include_muted True
+        filtered_threads = paginated_results.collection
+    else:
+        # Always filter out muted content for All Posts, even after restoration
+        filtered_threads = filter_muted_content(
+            request.user,
+            course_key,
+            paginated_results.collection
+        )
+
     results = _serialize_discussion_entities(
         request,
         context,
-        paginated_results.collection,
+        filtered_threads,
         requested_fields,
         DiscussionEntity.thread,
     )
@@ -1278,10 +1534,10 @@ def get_learner_active_thread_list(request, course_key, query_params):
     course = _get_course(course_key, request.user)
     context = get_context(course, request)
 
-    group_id = query_params.get("group_id", None)
     user_id = query_params.get("user_id", None)
     count_flagged = query_params.get("count_flagged", None)
     show_deleted = query_params.get("show_deleted", False)
+
     if isinstance(show_deleted, str):
         show_deleted = show_deleted.lower() == "true"
 
@@ -1294,62 +1550,74 @@ def get_learner_active_thread_list(request, course_key, query_params):
         raise PermissionDenied(
             "count_flagged can only be set by users with moderation roles."
         )
+
     if "flagged" in query_params.keys() and not context["has_moderation_privilege"]:
         raise PermissionDenied("Flagged filter is only available for moderators")
+
     if show_deleted and not context["has_moderation_privilege"]:
         raise PermissionDenied(
             "show_deleted can only be set by users with moderation roles."
         )
 
-    if group_id is None:
-        comment_client_user = comment_client.User(id=user_id, course_id=course_key)
-    else:
-        comment_client_user = comment_client.User(
-            id=user_id, course_id=course_key, group_id=group_id
-        )
+    include_muted = query_params.pop('include_muted', False)
 
     try:
-        threads, page, num_pages = comment_client_user.active_threads(query_params)
-        threads = set_attribute(threads, "pinned", False)
+        # Use forum v2 API for MySQL backend support
+        # Extract author_id (stored as user_id in query_params)
+        author_id = str(query_params.pop('user_id'))
+        course_id_str = str(course_key)
 
-        # This portion below is temporary until we migrate to forum v2
-        filtered_threads = []
-        for thread in threads:
-            try:
-                forum_thread = forum_api.get_thread(
-                    thread.get("id"), course_id=str(course_key)
-                )
-                is_deleted = forum_thread.get("is_deleted", False)
+        # Remove course_id if present since we pass it explicitly
+        query_params.pop('course_id', None)
 
-                if show_deleted and is_deleted:
-                    thread["is_deleted"] = True
-                    thread["deleted_at"] = forum_thread.get("deleted_at")
-                    thread["deleted_by"] = forum_thread.get("deleted_by")
-                    filtered_threads.append(thread)
-                elif not show_deleted and not is_deleted:
-                    filtered_threads.append(thread)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                log.warning(
-                    "Failed to check thread %s deletion status: %s", thread.get("id"), e
-                )
-                if not show_deleted:  # Fail safe: include thread for regular users
-                    filtered_threads.append(thread)
+        response = forum_api.get_user_threads(
+            course_id=course_id_str,
+            author_id=author_id,
+            user_id=str(request.user.id),  # Current user viewing the threads (for read state)
+            context="course",
+            **query_params
+        )
+
+        threads = response.get("collection", [])
+        page = response.get("page", 1)
+        num_pages = response.get("num_pages", 1)
+
+        if include_muted:
+            filtered_threads = threads
+        else:
+            filtered_threads = filter_muted_content(
+                request.user,
+                course_key,
+                threads
+            )
+
+        # Filter by deletion status
+        filtered_threads_with_deletion_status = []
+        for thread in filtered_threads:
+            is_deleted = thread.get("is_deleted", False)
+
+            if show_deleted and is_deleted:
+                filtered_threads_with_deletion_status.append(thread)
+            elif not show_deleted and not is_deleted:
+                filtered_threads_with_deletion_status.append(thread)
 
         results = _serialize_discussion_entities(
             request,
             context,
-            filtered_threads,
+            filtered_threads_with_deletion_status,
             {"profile_image"},
             DiscussionEntity.thread,
         )
+
         paginator = DiscussionAPIPagination(
-            request, page, num_pages, len(filtered_threads)
+            request, page, num_pages, len(filtered_threads_with_deletion_status)
         )
         return paginator.get_paginated_response(
             {
                 "results": results,
             }
         )
+
     except CommentClient500Error:
         return DiscussionAPIPagination(
             request,
@@ -1371,6 +1639,7 @@ def get_comment_list(
     flagged=False,
     requested_fields=None,
     merge_question_type_responses=False,
+    include_muted=False,
     show_deleted=False,
 ):
     """
@@ -1466,11 +1735,22 @@ def get_comment_list(
                 "`show_deleted` can only be set by users with moderation roles."
             )
 
+    # Always filter muted content for All Posts tab
+    if include_muted:
+        filtered_responses = responses
+    else:
+        # Always filter out muted content for All Posts, even after restoration
+        filtered_responses = filter_muted_content(
+            request.user,
+            context["course"].id,
+            responses
+        )
+
     results = _serialize_discussion_entities(
-        request, context, responses, requested_fields, DiscussionEntity.comment
+        request, context, filtered_responses, requested_fields, DiscussionEntity.comment
     )
 
-    paginator = DiscussionAPIPagination(request, page, num_pages, len(responses))
+    paginator = DiscussionAPIPagination(request, page, num_pages, len(filtered_responses))
     track_thread_viewed_event(request, context["course"], cc_thread, from_mfe_sidebar)
     return paginator.get_paginated_response(results)
 
@@ -1592,7 +1872,9 @@ def _handle_following_field(form_value, user, cc_content, request):
     else:
         user.unfollow(cc_content)
     signal = thread_followed if form_value else thread_unfollowed
-    signal.send(sender=None, user=user, post=cc_content)
+    send_signal_after_commit(
+        lambda: signal.send(sender=None, user=user, post=cc_content)
+    )
     track_thread_followed_event(request, course, cc_content, form_value)
 
 
@@ -1604,13 +1886,13 @@ def _handle_abuse_flagged_field(form_value, user, cc_content, request):
         cc_content.flagAbuse(user, cc_content)
         track_discussion_reported_event(request, course, cc_content)
         if ENABLE_DISCUSSIONS_MFE.is_enabled(course_key):
-            if cc_content.type == "thread":
-                thread_flagged.send(
-                    sender="flag_abuse_for_thread", user=user, post=cc_content
+            if cc_content.type == 'thread':
+                send_signal_after_commit(
+                    lambda: thread_flagged.send(sender='flag_abuse_for_thread', user=user, post=cc_content)
                 )
             else:
-                comment_flagged.send(
-                    sender="flag_abuse_for_comment", user=user, post=cc_content
+                send_signal_after_commit(
+                    lambda: comment_flagged.send(sender='flag_abuse_for_comment', user=user, post=cc_content)
                 )
     else:
         remove_all = bool(is_privileged_user(course_key, User.objects.get(id=user.id)))
@@ -1620,8 +1902,10 @@ def _handle_abuse_flagged_field(form_value, user, cc_content, request):
 
 def _handle_voted_field(form_value, cc_content, api_content, request, context):
     """vote or undo vote on thread/comment"""
-    signal = thread_voted if cc_content.type == "thread" else comment_voted
-    signal.send(sender=None, user=context["request"].user, post=cc_content)
+    signal = thread_voted if cc_content.type == 'thread' else comment_voted
+    send_signal_after_commit(
+        lambda: signal.send(sender=None, user=context["request"].user, post=cc_content)
+    )
     if form_value:
         context["cc_requester"].vote(cc_content, "up")
         api_content["vote_count"] += 1
@@ -1670,7 +1954,9 @@ def _handle_comment_signals(update_data, comment, user, sender=None):
     """
     for key, value in update_data.items():
         if key == "endorsed" and value is True:
-            comment_endorsed.send(sender=sender, user=user, post=comment)
+            send_signal_after_commit(
+                lambda: comment_endorsed.send(sender=sender, user=user, post=comment)
+            )
 
 
 def create_thread(request, thread_data):
@@ -1703,6 +1989,22 @@ def create_thread(request, thread_data):
     if not discussion_open_for_user(course, user):
         raise DiscussionBlackOutException
 
+    # Check if user is banned from discussions
+    is_user_banned_func = getattr(forum_api, 'is_user_banned', None)
+    user_banned = False
+    if ENABLE_DISCUSSION_BAN.is_enabled(course_key) and is_user_banned_func:
+        try:
+            user_banned = is_user_banned_func(user, course_key)
+        except (CommentClientRequestError, CommentClient500Error) as exc:
+            log.warning(
+                "Error while checking discussion ban status for user %s in course %s: %s",
+                getattr(user, "id", None),
+                course_key,
+                exc,
+            )
+    if user_banned:
+        raise PermissionDenied("You are banned from posting in this course's discussions.")
+
     notify_all_learners = thread_data.pop("notify_all_learners", False)
 
     context = get_context(course, request)
@@ -1721,8 +2023,10 @@ def create_thread(request, thread_data):
         )
     serializer.save()
     cc_thread = serializer.instance
-    thread_created.send(
-        sender=None, user=user, post=cc_thread, notify_all_learners=notify_all_learners
+    set_custom_attribute("forum.entity_id", str(cc_thread.id))
+    # Use send_signal_after_commit() to ensure the signal is sent only after the transaction commits.
+    send_signal_after_commit(
+        lambda: thread_created.send(sender=None, user=user, post=cc_thread, notify_all_learners=notify_all_learners)
     )
     api_thread = serializer.data
     _do_extra_actions(
@@ -1767,6 +2071,22 @@ def create_comment(request, comment_data):
     if not discussion_open_for_user(course, request.user):
         raise DiscussionBlackOutException
 
+    # Check if user is banned from discussions
+    is_user_banned_func = getattr(forum_api, 'is_user_banned', None)
+    user_banned = False
+    if ENABLE_DISCUSSION_BAN.is_enabled(course.id) and is_user_banned_func:
+        try:
+            user_banned = is_user_banned_func(request.user, course.id)
+        except (CommentClientRequestError, CommentClient500Error) as exc:
+            log.warning(
+                "Error while checking discussion ban status for user %s in course %s: %s",
+                getattr(request.user, "id", None),
+                course.id,
+                exc,
+            )
+    if user_banned:
+        raise PermissionDenied("You are banned from posting in this course's discussions.")
+
     # if a thread is closed; no new comments could be made to it
     if cc_thread["closed"]:
         raise PermissionDenied
@@ -1781,7 +2101,10 @@ def create_comment(request, comment_data):
     context["cc_requester"].follow(cc_thread)
     serializer.save()
     cc_comment = serializer.instance
-    comment_created.send(sender=None, user=request.user, post=cc_comment)
+    set_custom_attribute("forum.entity_id", str(cc_comment.id))
+    send_signal_after_commit(
+        lambda: comment_created.send(sender=None, user=request.user, post=cc_comment)
+    )
     api_comment = serializer.data
     _do_extra_actions(
         api_comment,
@@ -1836,7 +2159,9 @@ def update_thread(request, thread_id, update_data):
     if set(update_data) - set(actions_form.fields):
         serializer.save()
         # signal to update Teams when a user edits a thread
-        thread_edited.send(sender=None, user=request.user, post=cc_thread)
+        send_signal_after_commit(
+            lambda: thread_edited.send(sender=None, user=request.user, post=cc_thread)
+        )
     api_thread = serializer.data
     _do_extra_actions(
         api_thread, cc_thread, list(update_data.keys()), actions_form, context, request
@@ -1891,7 +2216,9 @@ def update_comment(request, comment_id, update_data):
     # Only save comment object if some of the edited fields are in the comment data, not extra actions
     if set(update_data) - set(actions_form.fields):
         serializer.save()
-        comment_edited.send(sender=None, user=request.user, post=cc_comment)
+        send_signal_after_commit(
+            lambda: comment_edited.send(sender=None, user=request.user, post=cc_comment)
+        )
     api_comment = serializer.data
     _do_extra_actions(
         api_comment,
@@ -1939,7 +2266,7 @@ def get_thread(request, thread_id, requested_fields=None, course_id=None):
     )[0]
 
 
-def get_response_comments(request, comment_id, page, page_size, requested_fields=None):
+def get_response_comments(request, comment_id, page, page_size, requested_fields=None, include_muted=False):
     """
     Return the list of comments for the given thread response.
 
@@ -2008,6 +2335,15 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
                 raise PermissionDenied(
                     "`show_deleted` can only be set by users with moderation roles."
                 )
+
+        # Apply muting filter if not including muted content
+        if not include_muted:
+            paged_response_comments = filter_muted_content(
+                request.user,
+                context["course"].id,
+                paged_response_comments
+            )
+
         results = _serialize_discussion_entities(
             request,
             context,
@@ -2016,11 +2352,14 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
             DiscussionEntity.comment,
         )
 
-        comments_count = len(paged_response_comments)
+        total_comments_count = len(response_comments)
         num_pages = (
-            (comments_count + page_size - 1) // page_size if comments_count else 1
+            (total_comments_count + page_size - 1) // page_size
+            if total_comments_count else 1
         )
-        paginator = DiscussionAPIPagination(request, page, num_pages, comments_count)
+        paginator = DiscussionAPIPagination(
+            request, page, num_pages, total_comments_count
+        )
         return paginator.get_paginated_response(results)
     except CommentClientRequestError as err:
         raise CommentNotFoundError("Comment not found") from err
@@ -2117,7 +2456,9 @@ def delete_thread(request, thread_id):
     cc_thread, context = _get_thread_and_context(request, thread_id)
     if can_delete(cc_thread, context):
         cc_thread.delete(deleted_by=str(request.user.id))
-        thread_deleted.send(sender=None, user=request.user, post=cc_thread)
+        send_signal_after_commit(
+            lambda: thread_deleted.send(sender=None, user=request.user, post=cc_thread)
+        )
         track_thread_deleted_event(request, context["course"], cc_thread)
     else:
         raise PermissionDenied
@@ -2142,7 +2483,9 @@ def delete_comment(request, comment_id):
     cc_comment, context = _get_comment_and_context(request, comment_id)
     if can_delete(cc_comment, context):
         cc_comment.delete(deleted_by=str(request.user.id))
-        comment_deleted.send(sender=None, user=request.user, post=cc_comment)
+        send_signal_after_commit(
+            lambda: comment_deleted.send(sender=None, user=request.user, post=cc_comment)
+        )
         track_comment_deleted_event(request, context["course"], cc_comment)
     else:
         raise PermissionDenied
@@ -2189,6 +2532,7 @@ def get_course_discussion_user_stats(
         "page": page,
         "per_page": page_size,
     }
+
     comma_separated_usernames = matched_users_count = matched_users_pages = None
     if username_search_string:
         comma_separated_usernames, matched_users_count, matched_users_pages = (
@@ -2217,12 +2561,97 @@ def get_course_discussion_user_stats(
 
     course_stats_response = get_course_user_stats(course_key, params)
 
+    # Filter out muted users from regular learner list (user-specific filtering)
+    if request.user.is_authenticated:
+        # Reuse filter_muted_content logic to get muted user IDs
+        _, muted_user_ids = filter_muted_content(
+            request.user, course_key, None, return_muted_ids=True
+        )
+
+        if muted_user_ids:
+            # Convert user IDs to usernames to filter
+            muted_usernames = set(
+                User.objects.filter(id__in=muted_user_ids).values_list('username', flat=True)
+            )
+
+            # Filter out muted users from the stats
+            course_stats_response["user_stats"] = [
+                stat for stat in course_stats_response["user_stats"]
+                if stat.get('username') not in muted_usernames
+            ]
+            # Update the count to reflect filtered results
+            course_stats_response["count"] = len(course_stats_response["user_stats"])
+
+    # Exclude banned users from the learners list
+    # Get all active bans for this course using forum API
+    get_banned_usernames = getattr(forum_api, 'get_banned_usernames', None)
+    banned_usernames = []
+    # Only filter banned users if feature flag is enabled
+    if ENABLE_DISCUSSION_BAN.is_enabled(course_key) and get_banned_usernames is not None:
+        try:
+            banned_usernames = get_banned_usernames(
+                course_id=course_key,
+                org_key=course_key.org
+            )
+        except Exception:  # pylint: disable=broad-except
+            log.exception(
+                "Error retrieving banned usernames for course %s; returning unfiltered discussion stats.",
+                course_key,
+            )
+            banned_usernames = []
+
+    # Filter out banned users from the stats
+    if banned_usernames:
+        course_stats_response["user_stats"] = [
+            stats for stats in course_stats_response["user_stats"]
+            if stats.get('username') not in banned_usernames
+        ]
+        # Update count to reflect filtered results
+        course_stats_response["count"] = len(course_stats_response["user_stats"])
+
     if comma_separated_usernames:
         updated_course_stats = add_stats_for_users_with_no_discussion_content(
             course_stats_response["user_stats"],
             comma_separated_usernames,
         )
         course_stats_response["user_stats"] = updated_course_stats
+
+    # Course-wide muted users should only be visible to staff and privileged users
+    if not is_privileged:
+        try:
+            # Non-privileged users need to see which users are course-wide muted to filter them out
+            # Pass requester_is_privileged=False since the requester is not privileged
+            course_mutes = forum_api.get_all_muted_users_for_course(
+                course_id=str(course_key),
+                requester_id=None,
+                scope="course",
+                requester_is_privileged=False,
+            )
+
+            # Get course-wide muted user IDs and convert to usernames in one operation
+            course_wide_muted_user_ids = {
+                int(user.get('muted_user_id'))
+                for user in course_mutes.get('muted_users', [])
+                if user.get('muted_user_id') is not None
+            }
+
+            if course_wide_muted_user_ids:
+                # Get usernames for muted users and filter user stats
+                course_wide_muted_usernames = set(
+                    User.objects.filter(id__in=course_wide_muted_user_ids)
+                    .values_list('username', flat=True)
+                )
+
+                # Filter out course-wide muted users from stats, but allow muted users to see themselves
+                requester_username = request.user.username
+                course_stats_response["user_stats"] = [
+                    user_stat for user_stat in course_stats_response["user_stats"]
+                    if (user_stat.get("username") not in course_wide_muted_usernames or
+                        user_stat.get("username") == requester_username)
+                ]
+
+        except Exception as e:  # pylint: disable=broad-except
+            log.warning(f"Failed to filter course-wide muted users: {e}")
 
     serializer = UserStatsSerializer(
         course_stats_response["user_stats"],
@@ -2365,7 +2794,18 @@ def _process_deleted_thread(thread_data, get_user_label_fn, usernames_set):
     Returns:
         dict: Formatted content item for the thread
     """
-    author_username = thread_data.get("author_username", "")
+    author_username = thread_data.get("author_username", "") or None
+    author_id = thread_data.get("author_id", "")
+
+    # If author_username is missing or empty, try to get it from author_id
+    if not author_username and author_id:
+        try:
+            author_user = User.objects.get(id=int(author_id))
+            author_username = author_user.username
+        except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, use placeholder
+            author_username = None
+
     deleted_by_id = thread_data.get("deleted_by")
     deleted_by_username = None
 
@@ -2387,28 +2827,59 @@ def _process_deleted_thread(thread_data, get_user_label_fn, usernames_set):
     preview_text = strip_tags(body_text)[:100] if body_text else ""
 
     thread_id = thread_data.get("_id", thread_data.get("id"))
+
+    # Calculate vote information
+    votes = thread_data.get("votes", {})
+    vote_count = votes.get("up_count", 0) if isinstance(votes, dict) else thread_data.get("vote_count", 0)
+
+    # Get abuse flaggers
+    abuse_flaggers = thread_data.get("abuse_flaggers", [])
+    abuse_flagged_count = len(abuse_flaggers) if abuse_flaggers else None
+
     return {
         "id": str(thread_id) + "-thread",
         "type": "thread",
         "title": thread_data.get("title", ""),
-        "body": body_text,
+        "raw_body": body_text,
+        "rendered_body": body_text,  # For deleted content, just use raw body
         "preview_body": preview_text,
         "course_id": thread_data.get("course_id", ""),
         "author": author_username,
         "author_id": thread_data.get("author_id", ""),
         "author_label": get_user_label_fn(thread_data.get("author_id")),
+        "topic_id": thread_data.get("commentable_id", ""),
         "commentable_id": thread_data.get("commentable_id", ""),
+        "group_id": thread_data.get("group_id"),
+        "group_name": None,  # Will be populated by API layer if needed
         "created_at": thread_data.get("created_at"),
         "updated_at": thread_data.get("updated_at"),
+        "thread_type": thread_data.get("thread_type", "discussion"),
+        "anonymous": thread_data.get("anonymous", False),
+        "anonymous_to_peers": thread_data.get("anonymous_to_peers", False),
+        "pinned": thread_data.get("pinned", False),
+        "closed": thread_data.get("closed", False),
+        "following": False,  # Deleted content is not followable
+        "abuse_flagged": len(abuse_flaggers) > 0 if abuse_flaggers else False,
+        "abuse_flagged_count": abuse_flagged_count,
+        "voted": False,  # Cannot vote on deleted content
+        "vote_count": vote_count,
+        "comment_count": thread_data.get("comment_count", 0),
+        "unread_comment_count": 0,  # Deleted content has no unread count
+        "comment_list_url": None,
+        "endorsed_comment_list_url": None,
+        "non_endorsed_comment_list_url": None,
+        "read": True,  # Treat deleted content as read
+        "has_endorsed": thread_data.get("endorsed", False),
+        "editable_fields": [],  # Deleted content is not editable
+        "can_delete": False,  # Already deleted
         "is_deleted": True,
         "deleted_at": thread_data.get("deleted_at"),
         "deleted_by": deleted_by_username,
         "deleted_by_label": get_user_label_fn(deleted_by_id) if deleted_by_id else None,
-        "thread_type": thread_data.get("thread_type", "discussion"),
-        "anonymous": thread_data.get("anonymous", False),
-        "anonymous_to_peers": thread_data.get("anonymous_to_peers", False),
-        "vote_count": thread_data.get("vote_count", 0),
-        "comment_count": thread_data.get("comment_count", 0),
+        "close_reason_code": thread_data.get("close_reason_code"),
+        "close_reason": None,
+        "closed_by": thread_data.get("closed_by"),
+        "closed_by_label": None,
     }
 
 
@@ -2424,7 +2895,18 @@ def _process_deleted_comment(comment_data, get_user_label_fn, usernames_set):
     Returns:
         dict: Formatted content item for the comment
     """
-    author_username = comment_data.get("author_username", "")
+    author_username = comment_data.get("author_username", "") or None
+    author_id = comment_data.get("author_id", "")
+
+    # If author_username is missing or empty, try to get it from author_id
+    if not author_username and author_id:
+        try:
+            author_user = User.objects.get(id=int(author_id))
+            author_username = author_user.username
+        except (User.DoesNotExist, ValueError):
+            # If user not found or invalid ID, use placeholder
+            author_username = None
+
     deleted_by_id = comment_data.get("deleted_by")
     deleted_by_username = None
 
@@ -2460,16 +2942,27 @@ def _process_deleted_comment(comment_data, get_user_label_fn, usernames_set):
     preview_text = strip_tags(body_text)[:100] if body_text else ""
 
     comment_id = comment_data.get("_id", comment_data.get("id"))
+
+    # Calculate vote information
+    votes = comment_data.get("votes", {})
+    vote_count = votes.get("up_count", 0) if isinstance(votes, dict) else comment_data.get("vote_count", 0)
+
+    # Get abuse flaggers
+    abuse_flaggers = comment_data.get("abuse_flaggers", [])
+    abuse_flagged_count = len(abuse_flaggers) if abuse_flaggers else None
+
     return {
         "id": str(comment_id) + "-comment",
         "type": comment_type,
-        "body": body_text,
+        "raw_body": body_text,
+        "rendered_body": body_text,  # For deleted content, just use raw body
         "preview_body": preview_text,
         "title": thread_title,  # Use parent thread title for comments/responses
         "course_id": comment_data.get("course_id", ""),
         "author": author_username,
         "author_id": comment_data.get("author_id", ""),
         "author_label": get_user_label_fn(comment_data.get("author_id")),
+        "thread_id": str(thread_id),
         "comment_thread_id": str(thread_id),
         "thread_title": thread_title,
         "parent_id": (
@@ -2479,15 +2972,24 @@ def _process_deleted_comment(comment_data, get_user_label_fn, usernames_set):
         ),
         "created_at": comment_data.get("created_at"),
         "updated_at": comment_data.get("updated_at"),
-        "is_deleted": True,
-        "deleted_at": comment_data.get("deleted_at"),
-        "deleted_by": deleted_by_username,
-        "deleted_by_label": get_user_label_fn(deleted_by_id) if deleted_by_id else None,
         "depth": depth,
         "anonymous": comment_data.get("anonymous", False),
         "anonymous_to_peers": comment_data.get("anonymous_to_peers", False),
         "endorsed": comment_data.get("endorsed", False),
-        "vote_count": comment_data.get("vote_count", 0),
+        "endorsed_by": comment_data.get("endorsed_by"),
+        "endorsed_by_label": None,
+        "endorsed_at": comment_data.get("endorsed_at"),
+        "abuse_flagged": len(abuse_flaggers) > 0 if abuse_flaggers else False,
+        "abuse_flagged_count": abuse_flagged_count,
+        "voted": False,  # Cannot vote on deleted content
+        "vote_count": vote_count,
+        "editable_fields": [],  # Deleted content is not editable
+        "can_delete": False,  # Already deleted
+        "child_count": comment_data.get("child_count", 0),
+        "is_deleted": True,
+        "deleted_at": comment_data.get("deleted_at"),
+        "deleted_by": deleted_by_username,
+        "deleted_by_label": get_user_label_fn(deleted_by_id) if deleted_by_id else None,
     }
 
 

@@ -76,6 +76,7 @@ from lms.djangoapps.lms_xblock.mixin import NONSENSICAL_ACCESS_RESTRICTION
 from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration
 from openedx.core.djangoapps.content_tagging import api as tagging_api
 
+from ..block import _get_safe_return_to
 from ..component import component_handler, get_component_templates
 from cms.djangoapps.contentstore.xblock_storage_handlers.view_handlers import (
     ALWAYS,
@@ -86,6 +87,7 @@ from cms.djangoapps.contentstore.xblock_storage_handlers.view_handlers import (
     add_container_page_publishing_info,
     create_xblock_info,
 )
+from common.test.utils import assert_dict_contains_subset
 
 
 class AsideTest(XBlockAside):
@@ -863,7 +865,8 @@ class TestDuplicateItem(ItemTest, DuplicateHelper, OpenEdxEventsTestMixin):
         XBLOCK_DUPLICATED.connect(event_receiver)
         usage_key = self._duplicate_and_verify(self.vert_usage_key, self.seq_usage_key)
         event_receiver.assert_called()
-        self.assertDictContainsSubset(
+        assert_dict_contains_subset(
+            self,
             {
                 "signal": XBLOCK_DUPLICATED,
                 "sender": None,
@@ -1853,7 +1856,7 @@ class TestDuplicateItemWithAsides(ItemTest, DuplicateHelper):
 
     @XBlockAside.register_temp_plugin(AsideTest, "test_aside")
     @patch(
-        "xmodule.modulestore.split_mongo.caching_descriptor_system.CachingDescriptorSystem.applicable_aside_types",
+        "xmodule.modulestore.split_mongo.runtime.SplitModuleStoreRuntime.applicable_aside_types",
         lambda self, block: ["test_aside"],
     )
     def test_duplicate_equality_with_asides(self):
@@ -2698,8 +2701,8 @@ class TestEditSplitModule(ItemTest):
         group_id_to_child = split_test.group_id_to_child.copy()
         self.assertEqual(2, len(group_id_to_child))
 
-        # CachingDescriptorSystem is used in tests.
-        # CachingDescriptorSystem doesn't have user service, that's needed for
+        # SplitModuleStoreRuntime is used in tests.
+        # SplitModuleStoreRuntime doesn't have user service, that's needed for
         # SplitTestBlock. So, in this line of code we add this service manually.
         split_test.runtime._services["user"] = DjangoXBlockUserService(  # pylint: disable=protected-access
             self.user
@@ -4454,7 +4457,7 @@ class TestXBlockPublishingInfo(ItemTest):
 
 
 @patch(
-    "xmodule.modulestore.split_mongo.caching_descriptor_system.CachingDescriptorSystem.applicable_aside_types",
+    "xmodule.modulestore.split_mongo.runtime.SplitModuleStoreRuntime.applicable_aside_types",
     lambda self, block: ["test_aside"],
 )
 class TestUpdateFromSource(ModuleStoreTestCase):
@@ -4635,3 +4638,93 @@ class TestXblockEditView(CourseTestCase):
 
         self.assertGreater(len(resource_links), 0, f"No CSS resources found in HTML. Found: {resource_links}")
         self.assertGreater(len(script_sources), 0, f"No JS resources found in HTML. Found: {script_sources}")
+
+
+class TestGetSafeReturnTo(TestCase):
+    """
+    Tests for _get_safe_return_to validation.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.factory = RequestFactory()
+
+    def _make_request(self, return_to=None):
+        """Build a GET request with an optional returnTo query parameter."""
+        url = '/dummy'
+        if return_to is not None:
+            url = f'/dummy?returnTo={return_to}'
+        return self.factory.get(url)
+
+    # -- valid inputs --------------------------------------------------------
+
+    def test_valid_relative_path(self):
+        request = self._make_request('/course/123')
+        self.assertEqual(_get_safe_return_to(request), '/course/123')
+
+    def test_valid_root_path(self):
+        request = self._make_request('/')
+        self.assertEqual(_get_safe_return_to(request), '/')
+
+    def test_valid_relative_path_with_query_string(self):
+        request = self.factory.get('/dummy', {'returnTo': '/course/123?tab=outline'})
+        self.assertEqual(_get_safe_return_to(request), '/course/123?tab=outline')
+
+    def test_valid_absolute_url_same_origin(self):
+        request = self.factory.get('/dummy', {'returnTo': 'http://testserver/course/123'})
+        self.assertEqual(_get_safe_return_to(request), 'http://testserver/course/123')
+
+    # -- empty / missing values ----------------------------------------------
+
+    def test_missing_parameter(self):
+        request = self.factory.get('/dummy')
+        self.assertIsNone(_get_safe_return_to(request))
+
+    def test_empty_string(self):
+        request = self._make_request('')
+        self.assertIsNone(_get_safe_return_to(request))
+
+    def test_whitespace_only(self):
+        request = self.factory.get('/dummy', {'returnTo': '   '})
+        self.assertIsNone(_get_safe_return_to(request))
+
+    # -- protocol-relative / different origin --------------------------------
+
+    def test_protocol_relative_url_rejected(self):
+        request = self._make_request('//evil.com/path')
+        self.assertIsNone(_get_safe_return_to(request))
+
+    def test_absolute_url_different_origin_rejected(self):
+        request = self.factory.get('/dummy', {'returnTo': 'https://evil.com/steal'})
+        self.assertIsNone(_get_safe_return_to(request))
+
+    def test_absolute_url_different_scheme_rejected(self):
+        request = self.factory.get('/dummy', {'returnTo': 'https://testserver/course'})
+        self.assertIsNone(_get_safe_return_to(request))
+
+    # -- relative paths that don't start with / ------------------------------
+
+    def test_bare_relative_path_rejected(self):
+        request = self._make_request('course/123')
+        self.assertIsNone(_get_safe_return_to(request))
+
+    # -- control characters --------------------------------------------------
+
+    def test_null_byte_rejected(self):
+        request = self.factory.get('/dummy', {'returnTo': '/course/\x00'})
+        self.assertIsNone(_get_safe_return_to(request))
+
+    def test_newline_rejected(self):
+        request = self.factory.get('/dummy', {'returnTo': '/course/\n/path'})
+        self.assertIsNone(_get_safe_return_to(request))
+
+    def test_tab_character_rejected(self):
+        request = self.factory.get('/dummy', {'returnTo': '/course/\t/path'})
+        self.assertIsNone(_get_safe_return_to(request))
+
+    # -- length limit --------------------------------------------------------
+
+    def test_url_over_2048_chars_rejected(self):
+        long_url = '/' + 'a' * 2048
+        request = self.factory.get('/dummy', {'returnTo': long_url})
+        self.assertIsNone(_get_safe_return_to(request))

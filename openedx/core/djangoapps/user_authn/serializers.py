@@ -32,6 +32,16 @@ class PipelineUserDetailsSerializer(serializers.Serializer):
     lastName = serializers.CharField(source='last_name', allow_null=True)
 
 
+class EnterpriseBrandingSerializer(serializers.Serializer):
+    """Serializer for enterprise branding data."""
+
+    enterpriseName = serializers.CharField(allow_null=True, required=False)
+    enterpriseLogoUrl = serializers.CharField(allow_null=True, required=False)
+    enterpriseBrandedWelcomeString = serializers.CharField(allow_null=True, required=False)
+    enterpriseSlug = serializers.CharField(allow_null=True, required=False)
+    platformWelcomeString = serializers.CharField(allow_null=True, required=False)
+
+
 class ContextDataSerializer(serializers.Serializer):
     """
     Context Data Serializers
@@ -54,6 +64,10 @@ class ContextDataSerializer(serializers.Serializer):
     syncLearnerProfileData = serializers.BooleanField(default=False)
     countryCode = serializers.CharField(allow_null=True)
     welcomePageRedirectUrl = serializers.CharField(allow_null=True)
+    enterpriseBranding = EnterpriseBrandingSerializer(
+        allow_null=True,
+        required=False,
+    )
     pipelineUserDetails = serializers.SerializerMethodField()
 
     def get_pipelineUserDetails(self, obj):

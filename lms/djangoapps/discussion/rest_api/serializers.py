@@ -2,7 +2,6 @@
 Discussion API serializers
 """
 
-import html
 import re
 from typing import Dict
 from urllib.parse import urlencode, urlunparse
@@ -90,13 +89,11 @@ def get_context(course, request, thread=None):
     cc_requester["course_id"] = course.id
     course_discussion_settings = CourseDiscussionSettings.get(course.id)
     is_global_staff = GlobalStaff().has_user(requester)
-    has_moderation_privilege = (
-        requester.id in moderator_user_ids
-        or requester.id in ta_user_ids
-        or is_global_staff
-    )
+    all_privileged_ids = set(moderator_user_ids) | set(ta_user_ids)
+    has_moderation_privilege = requester.id in all_privileged_ids or is_global_staff
     return {
         "course": course,
+        "course_id": course.id,
         "request": request,
         "thread": thread,
         "discussion_division_enabled": course_discussion_division_enabled(
@@ -167,7 +164,9 @@ def filter_spam_urls_from_html(html_string):
     Returns:
         clean_post, is_spam
     """
-    html_string = html.unescape(html_string)
+    # BeautifulSoup automatically handles HTML entities correctly.
+    # Do NOT call html.unescape() here as it breaks properly escaped content in code blocks
+    # (e.g., &lt;div&gt; inside <code> tags would become real <div> tags).
     soup = BeautifulSoup(html_string, "html.parser")
     patterns = []
     is_spam = False
@@ -201,6 +200,7 @@ class _ContentSerializer(serializers.Serializer):
     """
     id = serializers.CharField(read_only=True)  # pylint: disable=invalid-name
     author = serializers.SerializerMethodField()
+    author_id = serializers.SerializerMethodField()
     author_label = serializers.SerializerMethodField()
     learner_status = serializers.SerializerMethodField()
     created_at = serializers.CharField(read_only=True)
@@ -223,6 +223,8 @@ class _ContentSerializer(serializers.Serializer):
     deleted_at = serializers.SerializerMethodField(read_only=True)
     deleted_by = serializers.SerializerMethodField(read_only=True)
     deleted_by_label = serializers.SerializerMethodField(read_only=True)
+    is_author_banned = serializers.SerializerMethodField(read_only=True)
+    author_ban_scope = serializers.SerializerMethodField(read_only=True)
 
     non_updatable_fields = set()
 
@@ -241,13 +243,28 @@ class _ContentSerializer(serializers.Serializer):
 
     def _is_user_privileged(self, user_id):
         """
-        Returns a boolean indicating whether the given user_id identifies a
-        privileged user.
+        Returns a boolean indicating whether the given user_id identifies a privileged user.
         """
-        return (
+        is_privileged = (
             user_id in self.context["moderator_user_ids"]
             or user_id in self.context["ta_user_ids"]
         )
+
+        if not is_privileged:
+            try:
+                user = User.objects.get(id=user_id)
+                is_privileged = GlobalStaff().has_user(user)
+            except User.DoesNotExist:
+                pass
+
+        return is_privileged
+
+    def _is_content_anonymous(self, obj):
+        """
+        Returns True if the content is marked as anonymous, regardless of viewer privileges.
+        Used to hide author identity (author_id, author_label) for any anonymous content.
+        """
+        return obj.get("anonymous", False) or obj.get("anonymous_to_peers", False)
 
     def _is_anonymous(self, obj):
         """
@@ -255,31 +272,77 @@ class _ContentSerializer(serializers.Serializer):
         the requester.
         """
         user_id = self.context["request"].user.id
-        is_user_staff = (
-            user_id in self.context["moderator_user_ids"]
-            or user_id in self.context["ta_user_ids"]
-        )
 
-        return obj["anonymous"] or obj["anonymous_to_peers"] and not is_user_staff
+        # Fully anonymous posts are always anonymous to everyone
+        if obj.get("anonymous", False):
+            return True
+
+        # For anonymous_to_peers posts
+        if obj.get("anonymous_to_peers", False):
+            is_privileged_staff = (
+                user_id in self.context["moderator_user_ids"]
+                or self.context.get("is_global_staff", False)
+            )
+
+            if is_privileged_staff:
+                # Privileged users can see all author names, including their own
+                return False
+
+            # Non-privileged authors should see their own posts as anonymous
+            if obj.get("user_id") and int(obj["user_id"]) == user_id:
+                return True
+
+            # Everyone else sees anonymous
+            return True
+
+        return False
 
     def get_author(self, obj):
         """
-        Returns the author's username, or None if the content is anonymous.
+        Returns the author's username, or None if the content is anonymous to the viewer.
+        For anonymous_to_peers posts, staff/moderators/admins can see the author.
         """
         return None if self._is_anonymous(obj) else obj["username"]
 
+    def get_author_id(self, obj):
+        """
+        Returns the author's user ID.
+        - For non-anonymous posts: available to everyone
+        - For anonymous posts: null to preserve anonymity
+        - For anonymous_to_peers posts: available to staff/moderators/admins
+
+        Note: The backend still has access to the actual author_id through the
+        raw content object (obj["user_id"]) for permission checks like can_delete,
+        so authors can still delete their own anonymous posts.
+        """
+        user_id = obj.get("user_id")
+        if user_id is None:
+            return None
+
+        # For posts anonymous to the viewer, hide the author_id
+        if self._is_anonymous(obj):
+            return None
+
+        return str(user_id)
+
     def _get_user_label(self, user_id):
         """
-        Returns the role label (i.e. "Staff", "Moderator" or "Community TA") for the user
-        with the given id.
+        Returns the role label for the user with the given id.
         """
-        is_staff = user_id in self.context["course_staff_user_ids"]
         is_moderator = user_id in self.context["moderator_user_ids"]
         is_ta = user_id in self.context["ta_user_ids"]
 
+        is_global_staff = False
+        if not (is_moderator or is_ta):
+            try:
+                user = User.objects.get(id=user_id)
+                is_global_staff = GlobalStaff().has_user(user)
+            except User.DoesNotExist:
+                pass
+
         return (
             "Staff"
-            if is_staff
+            if is_global_staff
             else "Moderator" if is_moderator else "Community TA" if is_ta else None
         )
 
@@ -297,6 +360,8 @@ class _ContentSerializer(serializers.Serializer):
     def get_author_label(self, obj):
         """
         Returns the role label for the content author.
+        Returns None for posts that are anonymous to the viewer.
+        For anonymous_to_peers posts, staff/moderators/admins can see the label.
         """
         if self._is_anonymous(obj) or obj["user_id"] is None:
             return None
@@ -448,6 +513,179 @@ class _ContentSerializer(serializers.Serializer):
                 return self._get_user_label(int(deleted_by_id))
             except (ValueError, TypeError):
                 return None
+        return None
+
+    def _get_author_ban_cache_key(self, course_id, user_id):
+        """Build a stable cache key for author ban lookups."""
+        return (str(course_id), int(user_id))
+
+    def _get_author_from_cache(self, user_id):
+        """Fetch author from per-request cache or database."""
+        user_cache = self.context.setdefault("_author_ban_user_cache", {})
+        if user_id not in user_cache:
+            try:
+                user_cache[user_id] = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                user_cache[user_id] = None
+        return user_cache[user_id]
+
+    def get_is_author_banned(self, obj):
+        """
+        Returns True if the content author is banned from discussions.
+        Returns False for anonymous content or if ban check fails.
+        """
+        from forum import api as forum_api
+        from lms.djangoapps.discussion.toggles import ENABLE_DISCUSSION_BAN
+
+        # Skip for anonymous content
+        if self._is_anonymous(obj) or obj.get("user_id") is None:
+            return False
+
+        # Skip if ban function not available
+        is_user_banned_func = getattr(forum_api, 'is_user_banned', None)
+        if not is_user_banned_func:
+            return False
+
+        # Skip if feature flag is not enabled
+        course_id = self.context.get("course_id")
+        if not course_id or not ENABLE_DISCUSSION_BAN.is_enabled(course_id):
+            return False
+
+        try:
+            user_id = int(obj["user_id"])
+        except (ValueError, TypeError):
+            return False
+
+        cache_key = self._get_author_ban_cache_key(course_id, user_id)
+        ban_status_cache = self.context.setdefault("_author_ban_status_cache", {})
+        if cache_key in ban_status_cache:
+            return ban_status_cache[cache_key]
+
+        try:
+            user = self._get_author_from_cache(user_id)
+            if not user:
+                ban_status_cache[cache_key] = False
+                return False
+
+            is_banned = is_user_banned_func(user, course_id)
+            ban_status_cache[cache_key] = is_banned
+            return is_banned
+        except (User.DoesNotExist, ValueError, Exception):  # pylint: disable=broad-except
+            ban_status_cache[cache_key] = False
+
+        return False
+
+    def get_author_ban_scope(self, obj):
+        """
+        Returns the scope of the author's ban ('course' or 'organization').
+        Returns None for anonymous content, unbanned users, or if check fails.
+        """
+        from forum import api as forum_api
+        from lms.djangoapps.discussion.toggles import ENABLE_DISCUSSION_BAN
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Skip for anonymous content
+        if self._is_anonymous(obj) or obj.get("user_id") is None:
+            return None
+
+        # Skip if required functions not available
+        is_user_banned_func = getattr(forum_api, 'is_user_banned', None)
+        get_user_bans_func = getattr(forum_api, 'get_user_bans', None)
+        if not is_user_banned_func:
+            return None
+
+        # Skip if feature flag is not enabled
+        course_id = self.context.get("course_id")
+        if not course_id or not ENABLE_DISCUSSION_BAN.is_enabled(course_id):
+            return None
+
+        try:
+            user_id = int(obj["user_id"])
+        except (ValueError, TypeError):
+            return None
+
+        cache_key = self._get_author_ban_cache_key(course_id, user_id)
+        ban_scope_cache = self.context.setdefault("_author_ban_scope_cache", {})
+        if cache_key in ban_scope_cache:
+            return ban_scope_cache[cache_key]
+
+        ban_status_cache = self.context.setdefault("_author_ban_status_cache", {})
+
+        try:
+            user = self._get_author_from_cache(user_id)
+            if not user:
+                ban_scope_cache[cache_key] = None
+                return None
+
+            if not course_id:
+                ban_scope_cache[cache_key] = None
+                return None
+
+            # First check if user is banned at all
+            user_banned = ban_status_cache.get(cache_key)
+            if user_banned is None:
+                user_banned = is_user_banned_func(user, course_id)
+                ban_status_cache[cache_key] = user_banned
+
+            if not user_banned:
+                ban_scope_cache[cache_key] = None
+                return None
+
+            # Try to get all active bans for this user and course
+            if get_user_bans_func:
+                try:
+                    bans = get_user_bans_func(user=user, course_id=course_id)
+                    # Check for organization-level ban first (higher precedence)
+                    for ban in bans:
+                        if ban.get('is_active') and ban.get('scope') == 'organization':
+                            ban_scope_cache[cache_key] = 'organization'
+                            return 'organization'
+                    # Then check for course-level ban
+                    for ban in bans:
+                        if ban.get('is_active') and ban.get('scope') == 'course':
+                            ban_scope_cache[cache_key] = 'course'
+                            return 'course'
+                except Exception as e:  # pylint: disable=broad-except
+                    logger.debug(
+                        "Unable to fetch ban list for ban-scope detection. course_id=%s user_id=%s error=%s",
+                        course_id,
+                        obj.get("user_id"),
+                        e,
+                    )
+
+            # Fallback: Try checking each scope individually using is_user_banned
+            # check_org parameter: True = include org checks, False = course-only
+            try:
+                # Check course-only (check_org=False means don't check org)
+                course_only = is_user_banned_func(user, course_id, check_org=False)
+
+                # If course-only check returns False but user IS banned, must be org-banned
+                if not course_only:
+                    ban_scope_cache[cache_key] = 'organization'
+                    return 'organization'
+
+                # If course-only check returns True, it's course-level ban
+                ban_scope_cache[cache_key] = 'course'
+                return 'course'
+            except TypeError as e:
+                # check_org parameter might not exist in older versions
+                logger.debug(
+                    "check_org parameter unsupported during ban-scope detection. course_id=%s user_id=%s error=%s",
+                    course_id,
+                    obj.get("user_id"),
+                    e,
+                )
+
+        except (User.DoesNotExist, ValueError, Exception) as e:  # pylint: disable=broad-except
+            logger.warning(
+                "Unable to determine author ban scope. course_id=%s user_id=%s error=%s",
+                self.context.get("course_id"),
+                obj.get("user_id"),
+                e,
+            )
+
+        ban_scope_cache[cache_key] = None
         return None
 
 
@@ -1095,4 +1333,204 @@ class CourseMetadataSerailizer(serializers.Serializer):
     edit_reasons = serializers.ListField(
         child=ReasonCodeSeralizer(),
         help_text="A list of reasons that can be specified by moderators for editing a post, response, or comment",
+    )
+
+
+class BulkDeleteBanRequestSerializer(serializers.Serializer):
+    """
+    Request payload for bulk delete + ban action.
+
+    Accepts either user_id (for programmatic access) or username (for UI/human convenience).
+    Internally normalizes to user_id before processing.
+    """
+
+    user_id = serializers.IntegerField(
+        required=False,
+        help_text="User ID to ban. Either user_id or username must be provided."
+    )
+    username = serializers.CharField(
+        required=False,
+        max_length=150,
+        help_text="Username to ban. Converted to user_id internally. Either user_id or username must be provided."
+    )
+    course_id = serializers.CharField(max_length=255, required=True)
+    ban_user = serializers.BooleanField(default=False)
+    ban_scope = serializers.ChoiceField(
+        choices=['course', 'organization'],
+        default='course',
+        help_text="Scope of the ban: 'course' for course-level or 'organization' for organization-level"
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=1000
+    )
+
+    def validate(self, data):
+        """
+        Validate and normalize user identification.
+
+        - Ensures either user_id or username is provided
+        - Converts username to user_id if needed
+        - Validates ban requirements (reason, permissions)
+        """
+        # Validate that either user_id or username is provided
+        if not data.get('user_id') and not data.get('username'):
+            raise serializers.ValidationError({
+                'user_id': "Either user_id or username must be provided."
+            })
+
+        # Normalize username to user_id for internal processing
+        # This allows the view/task to always work with user_id
+        if data.get('username') and not data.get('user_id'):
+            try:
+                user = User.objects.get(username=data['username'])
+                data['user_id'] = user.id
+                # Keep username for logging/audit purposes
+                data['resolved_username'] = user.username
+            except User.DoesNotExist as exc:
+                raise serializers.ValidationError({
+                    'username': f"User with username '{data['username']}' does not exist."
+                }) from exc
+        elif data.get('user_id'):
+            # If user_id provided directly, resolve username for consistency
+            try:
+                user = User.objects.get(id=data['user_id'])
+                data['resolved_username'] = user.username
+            except User.DoesNotExist as exc:
+                raise serializers.ValidationError({
+                    'user_id': f"User with ID {data['user_id']} does not exist."
+                }) from exc
+
+        if data.get('ban_user'):
+            reason = data.get('reason', '').strip()
+            if not reason:
+                raise serializers.ValidationError({
+                    'reason': "Reason is required when banning a user."
+                })
+
+        # Validate that organization-level bans require elevated permissions
+        # only when a ban is requested.
+        if data.get('ban_user') and data.get('ban_scope') == 'organization':
+            request = self.context.get('request')
+            if request and not (
+                GlobalStaff().has_user(request.user) or request.user.is_staff
+            ):
+                raise serializers.ValidationError({
+                    'ban_scope': "Organization-level bans require global staff permissions."
+                })
+
+        return data
+
+
+class BanUserRequestSerializer(serializers.Serializer):
+    """
+    Request payload for standalone ban action (without bulk delete).
+
+    For direct ban from UI moderation actions.
+    """
+
+    user_id = serializers.IntegerField(
+        required=False,
+        help_text="User ID to ban. Either user_id or username must be provided."
+    )
+    username = serializers.CharField(
+        required=False,
+        max_length=150,
+        help_text="Username to ban. Converted to user_id internally. Either user_id or username must be provided."
+    )
+    course_id = serializers.CharField(
+        max_length=255,
+        required=True,
+        help_text="Course ID for course-level bans or org context for organization-level bans"
+    )
+    scope = serializers.ChoiceField(
+        choices=['course', 'organization'],
+        default='course',
+        help_text="Scope of the ban: 'course' for course-level or 'organization' for organization-level"
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=1000,
+        help_text="Reason for the ban (optional)"
+    )
+
+    def validate(self, data):
+        """
+        Validate and normalize user identification.
+        """
+        # Validate that either user_id or username is provided
+        if not data.get('user_id') and not data.get('username'):
+            raise serializers.ValidationError({
+                'user_id': "Either user_id or username must be provided."
+            })
+
+        # Normalize username to user_id if provided (view will validate existence)
+        if data.get('username') and not data.get('user_id'):
+            # Don't validate user existence here - let the view return 404
+            # Just record the username for the view to resolve
+            data['lookup_username'] = data['username']
+        return data
+
+# Muting-related serializers
+
+
+class MuteRequestSerializer(serializers.Serializer):
+    """
+    Serializer for mute user requests.
+    """
+    muted_user_id = serializers.IntegerField(
+        help_text="ID of the user to be muted"
+    )
+    course_id = serializers.CharField(
+        help_text="Course ID where the mute applies"
+    )
+    scope = serializers.ChoiceField(
+        choices=['personal', 'course'],
+        default='personal',
+        help_text="Scope of the mute (personal or course-wide)"
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional reason for muting"
+    )
+
+
+class MuteAndReportRequestSerializer(MuteRequestSerializer):
+    """
+    Serializer for mute and report requests.
+    """
+    thread_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="ID of the thread being reported"
+    )
+    comment_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="ID of the comment being reported"
+    )
+    post_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Generic post ID (could be thread or comment) - used for retry logic"
+    )
+
+
+class UnmuteRequestSerializer(serializers.Serializer):
+    """
+    Serializer for unmute user requests.
+    """
+    muted_user_id = serializers.IntegerField(
+        help_text="ID of the user to be unmuted"
+    )
+    course_id = serializers.CharField(
+        help_text="Course ID where the unmute applies"
+    )
+    scope = serializers.ChoiceField(
+        choices=['personal', 'course'],
+        default='personal',
+        help_text="Scope of the unmute (personal or course-wide)"
     )

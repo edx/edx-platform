@@ -10,8 +10,9 @@ import pytest
 import datetime  # lint-amnesty, pylint: disable=wrong-import-order
 import itertools  # lint-amnesty, pylint: disable=wrong-import-order
 import math  # lint-amnesty, pylint: disable=wrong-import-order
+from zoneinfo import ZoneInfo
+
 import ddt
-import pytz
 from django.conf import settings
 from django.db.utils import IntegrityError
 from django.test.utils import override_settings
@@ -93,7 +94,7 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
             """
             if date_time is None:
                 return None
-            epoch = datetime.datetime.utcfromtimestamp(0).replace(tzinfo=pytz.utc)
+            epoch = datetime.datetime.utcfromtimestamp(0).replace(tzinfo=ZoneInfo("UTC"))
             return math.floor((date_time - epoch).total_seconds())
 
         # Load the CourseOverview from the cache twice. The first load will be a cache miss (because the cache
@@ -458,8 +459,11 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
                         # Make sure that tbe second call skips the cache and
                         # IntegrityError is triggered and handled gracefully
                         mock_log.info.assert_called_with(
-                            "Multiple CourseOverviews for course %s requested simultaneously; will only save one.",
-                            course.id
+                            "IntegrityError when saving CourseOverview for course %s: %s. This is likely due to "
+                            "multiple CourseOverviews being requested simultaneously; will only save one.",
+                            course.id,
+                            mock.ANY,
+                            exc_info=True
                         )
 
     def test_course_overview_version_update(self):
@@ -621,6 +625,16 @@ class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, Cache
 
         CourseOverview.load_from_module_store(course_key)
         assert CourseOverview.objects.filter(id=course_key).exists()
+
+    @override_settings(ENTRANCE_EXAM_MIN_SCORE_PCT=0.5)
+    def test_null_entrance_exam_minimum_score(self):
+        """
+        Tests that course overview can be created when entrance_exam_minimum_score is null.
+        """
+        course = CourseFactory.create()
+        course.entrance_exam_minimum_score_pct = None
+        course_overview = CourseOverview._create_or_update(course)  # pylint: disable=protected-access
+        assert course_overview.entrance_exam_minimum_score_pct == 0.5
 
 
 @ddt.ddt

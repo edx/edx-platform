@@ -20,6 +20,7 @@ from lms.djangoapps.discussion.rest_api.views import (
     CourseView,
     CourseViewV2,
     DeletedContentView,
+    DiscussionModerationViewSet,
     LearnerThreadView,
     ReplaceUsernamesView,
     RestoreContent,
@@ -27,12 +28,45 @@ from lms.djangoapps.discussion.rest_api.views import (
     ThreadViewSet,
     UploadFileView,
 )
+from lms.djangoapps.discussion.rest_api.forum_mute_views import (
+    ForumMuteUserView,
+    ForumUnmuteUserView,
+    ForumMuteAndReportView,
+    ForumMutedUsersListView,
+    ForumMuteStatusView,
+)
 
 ROUTER = SimpleRouter()
 ROUTER.register("threads", ThreadViewSet, basename="thread")
 ROUTER.register("comments", CommentViewSet, basename="comment")
 
 urlpatterns = [
+    # Moderation endpoints (defined first to avoid router conflicts)
+    path(
+        'v1/moderation/ban-user/',
+        DiscussionModerationViewSet.as_view({'post': 'ban_user'}),
+        name='discussion-moderation-ban-user'
+    ),
+    path(
+        'v1/moderation/unban-user/',
+        DiscussionModerationViewSet.as_view({'post': 'unban_user'}),
+        name='discussion-moderation-unban-user'
+    ),
+    path(
+        'v1/moderation/<int:pk>/unban/',
+        DiscussionModerationViewSet.as_view({'post': 'unban_user_by_id'}),
+        name='discussion-moderation-unban-by-id'
+    ),
+    path(
+        'v1/moderation/bulk-delete-ban/',
+        DiscussionModerationViewSet.as_view({'post': 'bulk_delete_ban'}),
+        name='discussion-moderation-bulk-delete-ban'
+    ),
+    re_path(
+        fr'^v1/moderation/banned-users/{settings.COURSE_ID_PATTERN}/?$',
+        DiscussionModerationViewSet.as_view({'get': 'banned_users'}),
+        name='discussion-moderation-banned-users'
+    ),
     re_path(
         r"^v1/courses/{}/settings$".format(settings.COURSE_ID_PATTERN),
         CourseDiscussionSettingsAPIView.as_view(),
@@ -110,6 +144,31 @@ urlpatterns = [
         rf"^v1/deleted_content/{settings.COURSE_ID_PATTERN}",
         DeletedContentView.as_view(),
         name="deleted_content",
+    ),
+    re_path(
+        fr"^v1/moderation/forum-mute/{settings.COURSE_ID_PATTERN}/$",
+        ForumMuteUserView.as_view(),
+        name="forum_mute_user"
+    ),
+    re_path(
+        fr"^v1/moderation/forum-unmute/{settings.COURSE_ID_PATTERN}/$",
+        ForumUnmuteUserView.as_view(),
+        name="forum_unmute_user"
+    ),
+    re_path(
+        fr"^v1/moderation/forum-mute-and-report/{settings.COURSE_ID_PATTERN}/$",
+        ForumMuteAndReportView.as_view(),
+        name="forum_mute_and_report"
+    ),
+    re_path(
+        fr"^v1/moderation/forum-muted-users/{settings.COURSE_ID_PATTERN}/$",
+        ForumMutedUsersListView.as_view(),
+        name="forum_muted_users_list"
+    ),
+    re_path(
+        fr"^v1/moderation/forum-mute-status/{settings.COURSE_ID_PATTERN}/(?P<user_id>[0-9]+)/$",
+        ForumMuteStatusView.as_view(),
+        name="forum_mute_status"
     ),
     path("v1/", include(ROUTER.urls)),
 ]

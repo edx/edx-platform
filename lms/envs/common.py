@@ -41,10 +41,8 @@ Conventions
 # pylint: disable=invalid-name
 
 import importlib.util
-import sys
 import os
 
-import django
 from corsheaders.defaults import default_headers as corsheaders_default_headers
 from path import Path as path
 from django.utils.translation import gettext_lazy as _
@@ -325,6 +323,67 @@ ALLOW_WIKI_ROOT_ACCESS = True
 # .. toggle_use_cases: open_edx
 # .. toggle_creation_date: 2014-09-15
 ENABLE_THIRD_PARTY_AUTH = False
+
+# Third-party auth settings for python-social-auth
+# These are defined unconditionally; they only take effect when
+# AUTHENTICATION_BACKENDS includes social auth backends.
+
+# Where to send the user if there's an error during social authentication
+SOCIAL_AUTH_LOGIN_ERROR_URL = '/'
+# Where to send the user once social authentication is successful
+SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/dashboard'
+# Disable sanitizing of redirect urls in social-auth since the platform
+# already does its own sanitization via the LOGIN_REDIRECT_WHITELIST setting.
+SOCIAL_AUTH_SANITIZE_REDIRECTS = False
+# Adding extra key value pair in the url query string for microsoft as per request
+SOCIAL_AUTH_AZUREAD_OAUTH2_AUTH_EXTRA_ARGUMENTS = {'msafed': 0}
+# Required so that we can use unmodified PSA OAuth2 backends:
+SOCIAL_AUTH_STRATEGY = 'common.djangoapps.third_party_auth.strategy.ConfigurationModelStrategy'
+# We let the user specify their email address during signup.
+SOCIAL_AUTH_PROTECTED_USER_FIELDS = ['email']
+# Disable exceptions by default for prod so you get redirect behavior
+# instead of a Django error page.
+SOCIAL_AUTH_RAISE_EXCEPTIONS = False
+# Clean username to make sure username is compatible with our system requirements
+SOCIAL_AUTH_CLEAN_USERNAME_FUNCTION = 'common.djangoapps.third_party_auth.models.clean_username'
+# Allow users to login using social auth even if their account is not verified yet
+SOCIAL_AUTH_INACTIVE_USER_LOGIN = True
+SOCIAL_AUTH_INACTIVE_USER_URL = '/auth/inactive'
+SOCIAL_AUTH_UUID_LENGTH = 10
+# Whitelisted URL query parameters retained in the pipeline session.
+FIELDS_STORED_IN_SESSION = ['auth_entry', 'next']
+
+# Computed setting: disable clean usernames check when unicode usernames are enabled
+SOCIAL_AUTH_CLEAN_USERNAMES = Derived(
+    lambda settings: not settings.ENABLE_UNICODE_USERNAME
+)
+
+# Social auth pipeline for third-party authentication.
+# Operators can override SOCIAL_AUTH_PIPELINE directly in their settings
+# to customize the pipeline.
+# Note: Enterprise pipeline steps (enterprise_associate_by_email, handle_enterprise_logistration)
+# are inserted dynamically via enterprise/settings/common.py plugin_settings().
+SOCIAL_AUTH_PIPELINE = [
+    'common.djangoapps.third_party_auth.pipeline.parse_query_params',
+    'social_core.pipeline.social_auth.social_details',
+    'social_core.pipeline.social_auth.social_uid',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'social_core.pipeline.social_auth.social_user',
+    'common.djangoapps.third_party_auth.pipeline.associate_by_email_if_login_api',
+    'common.djangoapps.third_party_auth.pipeline.associate_by_email_if_oauth',
+    'common.djangoapps.third_party_auth.pipeline.get_username',
+    'common.djangoapps.third_party_auth.pipeline.set_pipeline_timeout',
+    'common.djangoapps.third_party_auth.pipeline.ensure_user_information',
+    'social_core.pipeline.user.create_user',
+    'social_core.pipeline.social_auth.associate_user',
+    'social_core.pipeline.social_auth.load_extra_data',
+    'social_core.pipeline.user.user_details',
+    'common.djangoapps.third_party_auth.pipeline.user_details_force_sync',
+    'common.djangoapps.third_party_auth.pipeline.set_id_verification_status',
+    'common.djangoapps.third_party_auth.pipeline.set_logged_in_cookies',
+    'common.djangoapps.third_party_auth.pipeline.login_analytics',
+    'common.djangoapps.third_party_auth.pipeline.ensure_redirect_url_is_safe',
+]
 
 # Prevent concurrent logins per user
 PREVENT_CONCURRENT_LOGINS = True
@@ -856,6 +915,10 @@ CONTEXT_PROCESSORS = [
 
     # Context processor necessary for the survey report message appear on the admin site
     'openedx.features.survey_report.context_processors.admin_extra_context',
+
+    # Third-party auth context processors for social_django
+    'social_django.context_processors.backends',
+    'social_django.context_processors.login_redirect',
 ]
 
 # Django templating
@@ -1489,6 +1552,9 @@ MIDDLEWARE = [
 
     # Handles automatically storing user ids in django-simple-history tables when possible.
     'simple_history.middleware.HistoryRequestMiddleware',
+
+    # Third-party auth exception handling for social auth redirects
+    'common.djangoapps.third_party_auth.middleware.ExceptionMiddleware',
 
     # This must be last
     'openedx.core.djangoapps.site_configuration.middleware.SessionCookieDomainOverrideMiddleware',
@@ -2678,9 +2744,8 @@ OPTIONAL_APPS = [
     # edxval
     ('edxval', 'openedx.core.djangoapps.content.course_overviews.apps.CourseOverviewsConfig'),
 
-    # Enterprise Apps (http://github.com/openedx/edx-enterprise)
-    ('enterprise', None),
-    ('consent', None),
+    # Deprecated apps from the edx-enterprise package. We're working on removing these as part of
+    # pluginifying edx-enterprise (<https://discuss.openedx.org/t/18316>)
     ('integrated_channels.integrated_channel', None),
     ('integrated_channels.degreed', None),
     ('integrated_channels.degreed2', None),
@@ -2841,7 +2906,6 @@ ACCOUNT_VISIBILITY_CONFIGURATION["admin_fields"] = (
         "secondary_email_enabled",
         "year_of_birth",
         "phone_number",
-        "activation_key",
         "pending_name_change",
     ]
 )
@@ -3342,6 +3406,16 @@ VIDEO_UPLOAD_PIPELINE = {
     'ROOT_PATH': '',
 }
 
+############### Settings for video audio description ##################
+VIDEO_AUDIO_DESCRIPTION_SETTINGS = dict(
+    VIDEO_AUDIO_DESCRIPTION_MAX_BYTES=200 * 1024 * 1024,  # 200 MB
+    STORAGE_KWARGS=dict(
+        location=MEDIA_ROOT,
+    ),
+    DIRECTORY_PREFIX='audio-descriptions/',
+    BASE_URL=MEDIA_URL,
+)
+
 ### Proctoring configuration (redirct URLs and keys shared between systems) ####
 PROCTORING_BACKENDS = {
     'DEFAULT': 'null',
@@ -3488,6 +3562,36 @@ ENTERPRISE_VSF_UUID = "e815503343644ac7845bc82325c34460"
 ENTERPRISE_MANUAL_REPORTING_CUSTOMER_UUIDS = []
 
 AVAILABLE_DISCUSSION_TOURS = []
+
+############## DISCUSSION MODERATION ##############
+
+# .. toggle_name: settings.DISCUSSION_MODERATION_BAN_EMAIL_ENABLED
+# .. toggle_implementation: DjangoSetting
+# .. toggle_default: True
+# .. toggle_description: Enable/disable email notifications when users are banned from discussions.
+#   Set to False in development/test environments to prevent spam to partner-support@edx.org.
+#   When enabled, escalation emails are sent to DISCUSSION_MODERATION_ESCALATION_EMAIL address.
+# .. toggle_use_cases: opt_in
+# .. toggle_creation_date: 2024-11-24
+# .. toggle_tickets: COSMO2-736
+DISCUSSION_MODERATION_BAN_EMAIL_ENABLED = True
+
+# .. setting_name: DISCUSSION_MODERATION_ESCALATION_EMAIL
+# .. setting_default: 'partner-support@edx.org'
+# .. setting_description: Email address to receive ban escalation notifications when users are banned
+#   from discussions. Override in development to use a test email address.
+# .. setting_use_cases: opt_in
+# .. setting_creation_date: 2024-11-24
+# .. setting_tickets: COSMO2-736
+DISCUSSION_MODERATION_ESCALATION_EMAIL = 'partner-support@edx.org'
+
+# .. setting_name: DISCUSSION_MODERATION_BAN_REASON_MAX_LENGTH
+# .. setting_default: 1000
+# .. setting_description: Maximum character length for ban reason text.
+# .. setting_use_cases: opt_in
+# .. setting_creation_date: 2024-11-24
+# .. setting_tickets: COSMO2-736
+DISCUSSION_MODERATION_BAN_REASON_MAX_LENGTH = 1000
 
 ############## NOTIFICATIONS ##############
 NOTIFICATION_TYPE_ICONS = {}

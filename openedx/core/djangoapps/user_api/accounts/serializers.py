@@ -14,6 +14,7 @@ from django.urls import reverse
 from rest_framework import serializers
 
 
+from common.djangoapps.third_party_auth.utils import get_saml_provider_for_user
 from common.djangoapps.student.models import (
     LanguageProficiency,
     PendingNameChange,
@@ -142,11 +143,6 @@ class UserReadOnlySerializer(serializers.Serializer):  # lint-amnesty, pylint: d
         except ObjectDoesNotExist:
             account_recovery = None
 
-        try:
-            activation_key = user.registration.activation_key
-        except ObjectDoesNotExist:
-            activation_key = None
-
         data = {
             "username": user.username,
             "url": self.context.get('request').build_absolute_uri(
@@ -161,7 +157,6 @@ class UserReadOnlySerializer(serializers.Serializer):  # lint-amnesty, pylint: d
             "date_joined": user.date_joined.replace(microsecond=0),
             "last_login": user.last_login,
             "is_active": user.is_active,
-            "activation_key": activation_key,
             "bio": None,
             "country": None,
             "state": None,
@@ -239,10 +234,26 @@ class UserReadOnlySerializer(serializers.Serializer):  # lint-amnesty, pylint: d
         else:
             fields = self.configuration.get('public_fields')
 
-        return self._filter_fields(
-            fields,
-            data
-        )
+        result = self._filter_fields(fields, data)
+
+        if self.custom_fields and self._is_email_change_disabled(user):
+            result["email_change_disabled"] = True
+
+        return result
+
+    def _is_email_change_disabled(self, user):
+        """
+        Return True if email editing is disabled for this user via their SAML provider.
+
+        Checks self.context["email_change_disabled_by_user_id"] first (a pre-fetched
+        {user_id: bool} mapping) to avoid an extra DB query in bulk serialization.
+        Falls back to a direct DB lookup.
+        """
+        prefetched = self.context.get("email_change_disabled_by_user_id")
+        if prefetched is not None:
+            return bool(prefetched.get(user.id, False))
+        saml_provider = get_saml_provider_for_user(user)
+        return bool(saml_provider and saml_provider.disable_email_editing)
 
     def _filter_fields(self, field_whitelist, serialized_account):
         """

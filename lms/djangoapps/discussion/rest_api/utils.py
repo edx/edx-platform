@@ -3,13 +3,14 @@ Utils for discussion API.
 """
 import logging
 from datetime import datetime
-from typing import Dict, List
+from typing import Callable, Dict, List
 
 import requests
 from crum import get_current_request
 from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models.functions import Length
 from pytz import UTC
 
@@ -364,13 +365,15 @@ def get_archived_topics(filtered_topic_ids: List[str], topics: List[Dict[str, st
     - Each dictionary should have a 'id' and a 'usage_key' field.
 
     Returns:
-    - A list of archived topic dictionaries, with the same format as the input topics.
+    - A list of archived topic dictionaries, sorted alphabetically by name, with the same format as the input topics.
     """
     archived_topics = []
     for topic_id in filtered_topic_ids:
         for topic in topics:
             if topic['id'] == topic_id and topic['usage_key'] is not None:
                 archived_topics.append(topic)
+    # Sort archived topics alphabetically by name (case-insensitive)
+    archived_topics.sort(key=lambda topic: topic.get('name', '').lower())
     return archived_topics
 
 
@@ -501,19 +504,20 @@ def get_captcha_site_key_by_platform(platform: str) -> str | None:
 
 def _is_privileged_user(user, course_id):
     """
-    Check if a user has privileged roles (staff, moderator, TA, etc.) in the course.
-
-    This helper function checks both forum roles and course access roles to determine
-    if a user should be considered privileged.
+    Check if a user has discussion privileged roles in the course.
 
     Args:
         user: User object to check
         course_id: Course key to check roles in
 
     Returns:
-        bool: True if user has any privileged role, False otherwise
+        bool: True if user has any discussion moderation role, False otherwise
     """
-    # Check forum-specific privileged roles
+    from common.djangoapps.student.roles import GlobalStaff
+
+    if GlobalStaff().has_user(user):
+        return True
+
     user_roles = get_user_role_names(user, course_id)
     privileged_roles = {
         FORUM_ROLE_ADMINISTRATOR,
@@ -522,16 +526,7 @@ def _is_privileged_user(user, course_id):
         FORUM_ROLE_GROUP_MODERATOR
     }
 
-    if any(role in privileged_roles for role in user_roles):
-        return True
-
-    # Check for staff roles using CourseAccessRole
-    # Include limited_staff for consistency with is_only_student check
-    return CourseAccessRole.objects.filter(
-        user=user,
-        course_id=course_id,
-        role__in=['instructor', 'staff', 'limited_staff']
-    ).exists()
+    return any(role in privileged_roles for role in user_roles)
 
 
 def _check_user_engagement(user, course_id):
@@ -580,3 +575,24 @@ def get_user_learner_status(user, course_id):
     # Engagement-based learner type
     has_engagement = _check_user_engagement(user, course_id)
     return "regular" if has_engagement else "new"
+
+
+def send_signal_after_commit(signal_func: Callable):
+    """
+    Schedule a signal to be sent after the current database transaction commits.
+
+    This helper ensures that signals are only sent after the transaction commits,
+    preventing race conditions where async tasks (like Celery workers) may try to
+    access database records before they are visible (especially important for MySQL
+    backend with transaction isolation).
+
+    Args:
+        signal_func: A callable that sends the signal. This will be executed
+                     after the transaction commits.
+
+    Example:
+        send_signal_after_commit(
+            lambda: thread_created.send(sender=None, user=user, post=thread, notify_all_learners=False)
+        )
+    """
+    transaction.on_commit(signal_func)

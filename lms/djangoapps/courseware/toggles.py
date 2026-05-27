@@ -2,7 +2,7 @@
 Toggles for courseware in-course experience.
 """
 
-from edx_toggles.toggles import SettingToggle, WaffleFlag, WaffleSwitch
+from edx_toggles.toggles import SettingToggle, WaffleSwitch, WaffleFlag
 
 from openedx.core.djangoapps.waffle_utils import CourseWaffleFlag
 
@@ -215,3 +215,10 @@ def courseware_disable_navigation_sidebar_blocks_caching(course_key=None):
     Return whether the courseware.disable_navigation_sidebar_blocks_caching flag is on.
     """
     return COURSEWARE_MICROFRONTEND_NAVIGATION_SIDEBAR_BLOCKS_DISABLE_CACHING.is_enabled(course_key)
+
+
+def unified_site_and_translation_language_is_enabled():
+    """
+    Return whether the courseware.unify_site_and_translation_language flag is on.
+    """
+    return ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE.is_enabled()

@@ -43,3 +43,25 @@ def is_apple_user_migration_enabled():
     Returns a boolean if Apple users migration is in process.
     """
     return APPLE_USER_MIGRATION_FLAG.is_enabled()
+
+
+# .. toggle_name: third_party_auth.tpa_next_url_on_dispatch
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, the third-party auth pipeline will forward
+#    session['next'] as a ?next= query parameter when redirecting to the login or
+#    registration page. This ensures the post-auth destination is preserved for new
+#    users who must complete registration before being redirected.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-02-13
+# .. toggle_target_removal_date: 2026-06-01
+# .. toggle_warning: None.
+TPA_NEXT_URL_ON_DISPATCH_FLAG = WaffleFlag(f'{THIRD_PARTY_AUTH_NAMESPACE}.tpa_next_url_on_dispatch', __name__)
+
+
+def is_tpa_next_url_on_dispatch_enabled():
+    """
+    Returns True if the pipeline should forward session['next'] as a query parameter
+    when dispatching to login/register pages.
+    """
+    return TPA_NEXT_URL_ON_DISPATCH_FLAG.is_enabled()

@@ -9,8 +9,7 @@ import datetime
 import logging
 from functools import wraps
 
-import pytz
-from consent.models import DataSharingConsent
+from zoneinfo import ZoneInfo
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, logout
@@ -26,7 +25,6 @@ from edx_ace.recipient import Recipient
 from edx_django_utils.monitoring import record_exception
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
-from enterprise.models import EnterpriseCourseEnrollment, EnterpriseCustomerUser, PendingEnterpriseCustomerUser
 from rest_framework import permissions, status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.exceptions import UnsupportedMediaType
@@ -95,15 +93,6 @@ from .serializers import (
 )
 from .signals import USER_RETIRE_LMS_CRITICAL, USER_RETIRE_LMS_MISC, USER_RETIRE_MAILINGS
 from .utils import create_retirement_request_and_deactivate_account, username_suffix_generator
-
-# This is a temporary import path while we transition from integrated_channels to channel_integrations
-if getattr(settings, 'ENABLE_LEGACY_INTEGRATED_CHANNELS', True):
-    from integrated_channels.degreed.models import DegreedLearnerDataTransmissionAudit
-    from integrated_channels.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
-else:
-    from channel_integrations.degreed2.models import Degreed2LearnerDataTransmissionAudit \
-        as DegreedLearnerDataTransmissionAudit
-    from channel_integrations.sap_success_factors.models import SapSuccessFactorsLearnerDataTransmissionAudit
 
 log = logging.getLogger(__name__)
 
@@ -206,11 +195,11 @@ class AccountViewSet(ViewSet):
             if is_email_retired(user_email):
                 can_cancel_retirement = True
                 retirement_id = None
-                earliest_datetime = datetime.datetime.now(pytz.UTC) - datetime.timedelta(days=settings.COOL_OFF_DAYS)
+                earliest_datetime = datetime.datetime.now(ZoneInfo("UTC")) - datetime.timedelta(days=settings.COOL_OFF_DAYS)
                 try:
                     retirement_status = UserRetirementStatus.objects.get(
                         created__gt=earliest_datetime,
-                        created__lt=datetime.datetime.now(pytz.UTC),
+                        created__lt=datetime.datetime.now(ZoneInfo("UTC")),
                         original_email=user_email,
                     )
                     retirement_id = retirement_status.id
@@ -305,7 +294,6 @@ class AccountViewSet(ViewSet):
         If the user makes the request for her own account, or makes a request for another account and has "is_staff" access, an HTTP 200 "OK" response is returned. The response contains the following values.
 
         * `id`: numerical lms user id in db
-        * `activation_key`: auto-genrated activation key when signed up via email
         * `bio`: null or textual representation of user biographical information ("about me").
         * `country`: An ISO 3166 country code or null.
         * `date_joined`: The date the account was created, in the string format provided by datetime. For example, "2014-08-26T17:52:11Z".
@@ -899,7 +887,7 @@ class AccountRetirementStatusView(ViewSet):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-            earliest_datetime = datetime.datetime.now(pytz.UTC) - datetime.timedelta(days=cool_off_days)
+            earliest_datetime = datetime.datetime.now(ZoneInfo("UTC")) - datetime.timedelta(days=cool_off_days)
 
             retirements = (
                 UserRetirementStatus.objects.select_related("user", "current_state", "last_state")
@@ -929,9 +917,12 @@ class AccountRetirementStatusView(ViewSet):
         so to get one day you would set both dates to that day.
         """
         try:
-            start_date = datetime.datetime.strptime(request.GET["start_date"], "%Y-%m-%d").replace(tzinfo=pytz.UTC)
-            end_date = datetime.datetime.strptime(request.GET["end_date"], "%Y-%m-%d").replace(tzinfo=pytz.UTC)
-            now = datetime.datetime.now(pytz.UTC)
+            start_date = (
+                datetime.datetime.strptime(request.GET["start_date"], "%Y-%m-%d")
+                .replace(tzinfo=ZoneInfo("UTC"))
+            )
+            end_date = datetime.datetime.strptime(request.GET["end_date"], "%Y-%m-%d").replace(tzinfo=ZoneInfo("UTC"))
+            now = datetime.datetime.now(ZoneInfo("UTC"))
             if start_date > now or end_date > now or start_date > end_date:
                 raise RetirementStateError("Dates must be today or earlier, and start must be earlier than end.")
 
@@ -1029,19 +1020,26 @@ class AccountRetirementStatusView(ViewSet):
 
         ```
         {
-            'usernames': ['user1', 'user2', ...]
+            'usernames': ['user1', 'user2', ...],
+            'redacted_username': 'Value to store in username field',
+            'redacted_email': 'Value to store in email field',
+            'redacted_name': 'Value to store in name field'
         }
         ```
 
-        Deletes a batch of retirement requests by username.
+        Redacts and then deletes a batch of retirement requests by username.
         """
         try:
             usernames = request.data["usernames"]
+            redacted_username = request.data.get("redacted_username", "redacted")
+            redacted_email = request.data.get("redacted_email", "redacted")
+            redacted_name = request.data.get("redacted_name", "redacted")
 
             if not isinstance(usernames, list):
                 raise TypeError("Usernames should be an array.")
 
             complete_state = RetirementState.objects.get(state_name="COMPLETE")
+            # Get the retirement records to delete
             retirements = UserRetirementStatus.objects.filter(
                 original_username__in=usernames, current_state=complete_state
             )
@@ -1050,7 +1048,21 @@ class AccountRetirementStatusView(ViewSet):
             if len(usernames) != len(retirements):
                 raise UserRetirementStatus.DoesNotExist("Not all usernames exist in the COMPLETE state.")
 
-            retirements.delete()
+            # Redact PII fields first, then delete. In case an ETL tool is syncing data
+            # to a downstream data warehouse, and treats the deletes as soft-deletes,
+            # the data will have first been redacted, protecting the sensitive PII.
+            # Get the IDs of the retirements to update/delete
+            retirement_ids = list(retirements.values_list('id', flat=True))
+
+            # Update by IDs
+            UserRetirementStatus.objects.filter(id__in=retirement_ids).update(
+                original_username=redacted_username,
+                original_email=redacted_email,
+                original_name=redacted_name
+            )
+
+            # Delete by IDs
+            UserRetirementStatus.objects.filter(id__in=retirement_ids, current_state=complete_state).delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except (RetirementStateError, UserRetirementStatus.DoesNotExist, TypeError) as exc:
             return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
@@ -1182,11 +1194,6 @@ class AccountRetirementView(ViewSet):
             # Retire user information from any certificate records associated with the learner
             self.clear_pii_from_certificate_records(user)
 
-            # Retire data from Enterprise models
-            self.retire_users_data_sharing_consent(username, retired_username)
-            self.retire_sapsf_data_transmission(user)
-            self.retire_degreed_data_transmission(user)
-            self.retire_user_from_pending_enterprise_customer_user(user, retired_email)
             self.retire_entitlement_support_detail(user)
 
             # Retire misc. models that may contain PII of this user
@@ -1198,7 +1205,12 @@ class AccountRetirementView(ViewSet):
             UnregisteredLearnerCohortAssignments.delete_by_user_value(original_email, field="email")
 
             # This signal allows code in higher points of LMS to retire the user as necessary
-            USER_RETIRE_LMS_CRITICAL.send(sender=self.__class__, user=user)
+            USER_RETIRE_LMS_CRITICAL.send(
+                sender=self.__class__,
+                user=user,
+                retired_email=retired_email,
+                retired_username=retired_username,
+            )
 
             user.first_name = ""
             user.last_name = ""
@@ -1236,32 +1248,6 @@ class AccountRetirementView(ViewSet):
     def delete_users_country_cache(user):
         cache_key = UserProfile.country_cache_key_name(user.id)
         cache.delete(cache_key)
-
-    @staticmethod
-    def retire_users_data_sharing_consent(username, retired_username):
-        DataSharingConsent.objects.filter(username=username).update(username=retired_username)
-
-    @staticmethod
-    def retire_sapsf_data_transmission(user):  # lint-amnesty, pylint: disable=missing-function-docstring
-        for ent_user in EnterpriseCustomerUser.objects.filter(user_id=user.id):
-            for enrollment in EnterpriseCourseEnrollment.objects.filter(enterprise_customer_user=ent_user):
-                audits = SapSuccessFactorsLearnerDataTransmissionAudit.objects.filter(
-                    enterprise_course_enrollment_id=enrollment.id
-                )
-                audits.update(sapsf_user_id="")
-
-    @staticmethod
-    def retire_degreed_data_transmission(user):  # lint-amnesty, pylint: disable=missing-function-docstring
-        for ent_user in EnterpriseCustomerUser.objects.filter(user_id=user.id):
-            for enrollment in EnterpriseCourseEnrollment.objects.filter(enterprise_customer_user=ent_user):
-                audits = DegreedLearnerDataTransmissionAudit.objects.filter(
-                    enterprise_course_enrollment_id=enrollment.id
-                )
-                audits.update(degreed_user_email="")
-
-    @staticmethod
-    def retire_user_from_pending_enterprise_customer_user(user, retired_email):
-        PendingEnterpriseCustomerUser.objects.filter(user_email=user.email).update(user_email=retired_email)
 
     @staticmethod
     def retire_entitlement_support_detail(user):

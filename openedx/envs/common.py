@@ -37,6 +37,8 @@ from openedx.core.djangoapps.theming.helpers_dirs import (
     get_theme_base_dirs_from_settings
 )
 
+# We have legacy components that reference these constants via the settings module.
+# New code should import them directly from `openedx.core.constants` instead.
 from openedx.core.constants import (  # pylint: disable=unused-import
     ASSET_KEY_PATTERN,
     COURSE_KEY_REGEX,
@@ -1329,6 +1331,17 @@ VIDEO_TRANSCRIPTS_SETTINGS = dict(
 
 VIDEO_TRANSCRIPTS_MAX_AGE = 31536000
 
+####################### Video Audio Description Storage ######################
+
+VIDEO_AUDIO_DESCRIPTION_SETTINGS = dict(
+    VIDEO_AUDIO_DESCRIPTION_MAX_BYTES=200 * 1024 * 1024,  # 200 MB
+    STORAGE_KWARGS=dict(
+        location=MEDIA_ROOT,
+    ),
+    DIRECTORY_PREFIX='audio-descriptions/',
+    BASE_URL=MEDIA_URL,
+)
+
 ############################ Parental Controls #############################
 
 # .. setting_name: PARENTAL_CONSENT_AGE_LIMIT
@@ -1573,6 +1586,19 @@ SOCIAL_AUTH_SAML_SP_PRIVATE_KEY = ""
 SOCIAL_AUTH_SAML_SP_PUBLIC_CERT = ""
 SOCIAL_AUTH_SAML_SP_PRIVATE_KEY_DICT = {}
 SOCIAL_AUTH_SAML_SP_PUBLIC_CERT_DICT = {}
+
+# pylint: disable=setting-boolean-default-value
+# .. setting_name: SAML_METADATA_URL_ALLOW_PRIVATE_IPS
+# .. setting_default: False
+# .. setting_description: When False (the default), fetching SAML metadata from
+#   private IP address ranges (RFC 1918: 10.x, 172.16.x, 192.168.x) is blocked
+#   as a defense against SSRF attacks. Set to True only in deployments where the
+#   SAML Identity Provider is hosted on the same private network as the Open edX
+#   server. Note: loopback (127.x) and link-local (169.254.x) addresses remain
+#   blocked regardless of this setting. Operators are also encouraged to enforce
+#   network-level egress filtering as a complementary control, particularly to
+#   cover hostname-based URLs that are not subject to IP validation.
+SAML_METADATA_URL_ALLOW_PRIVATE_IPS = False
 
 ########################### django-fernet-fields ###########################
 

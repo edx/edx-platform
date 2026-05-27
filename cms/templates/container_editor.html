@@ -77,10 +77,6 @@ from openedx.core.release import RELEASE_LINE
             <%static:include path="common/templates/image-modal.underscore" />
         </script>
 
-        % if not settings.STUDIO_FRONTEND_CONTAINER_URL:
-            <link rel="stylesheet" type="text/css" href="${static.url('common/css/vendor/common.min.css')}" />
-            <link rel="stylesheet" type="text/css" href="${static.url('common/css/vendor/editImageModal.min.css')}" />
-        % endif
         <link rel="stylesheet" type="text/css" href="${static.url('js/vendor/timepicker/jquery.timepicker.css')}" />
         % for _, resource in resources:
             % if resource['kind'] == 'url' and resource['mimetype'] == 'text/css':
@@ -119,12 +115,13 @@ from openedx.core.release import RELEASE_LINE
             function (XBlockInfo, EditXBlockModal) {
                 var decodedActionName = '${action_name|n, decode.utf8}';
                 var encodedXBlockDetails = ${xblock_info | n, dump_js_escaped_json};
+                var returnTo = '${return_to or "" | n, js_escaped_string}';
 
                 if (decodedActionName === 'edit') {
                     var editXBlockModal = new EditXBlockModal();
                     var xblockInfoInstance = new XBlockInfo(encodedXBlockDetails);
 
-                    editXBlockModal.edit([], xblockInfoInstance, {});
+                    editXBlockModal.edit([], xblockInfoInstance, {returnTo: returnTo || null});
                 }
             });
         </%static:webpack>

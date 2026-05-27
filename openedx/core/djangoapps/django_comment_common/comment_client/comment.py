@@ -1,6 +1,5 @@
 # pylint: disable=missing-docstring,protected-access
 import logging
-import time
 
 from bs4 import BeautifulSoup
 
@@ -140,53 +139,53 @@ class Comment(models.Model):
         return soup.get_text()
 
     @classmethod
+    def retrieve_all(cls, params=None):
+        """
+        Retrieve all comments for a user in a course using Forum v2 API.
+
+        Arguments:
+            params: Dictionary with keys:
+                - user_id: The ID of the user
+                - course_id: The ID of the course
+                - flagged: Boolean for flagged comments
+                - page: Page number
+                - per_page: Items per page
+
+        Returns:
+            Dictionary with collection, comment_count, num_pages, page
+        """
+        if params is None:
+            params = {}
+        return forum_api.get_user_comments(
+            user_id=params.get('user_id'),
+            course_id=params.get('course_id'),
+            flagged=params.get('flagged', False),
+            page=params.get('page', 1),
+            per_page=params.get('per_page', 10),
+        )
+
+    @classmethod
     def get_user_comment_count(cls, user_id, course_ids):
         """
         Returns comments and responses count of user in the given course_ids.
-        TODO: Add support for MySQL backend as well
+        Uses forum_api to support both MongoDB and MySQL backends.
         """
-        query_params = {
-            "course_id": {"$in": course_ids},
-            "author_id": str(user_id),
-            "is_deleted": {"$ne": True},
-            "_type": "Comment",
-        }
-        return ForumComment()._collection.count_documents(
-            query_params
-        )  # pylint: disable=protected-access
+        return forum_api.get_user_comment_count(
+            user_id=str(user_id),
+            course_ids=course_ids
+        )
 
     @classmethod
     def delete_user_comments(cls, user_id, course_ids, deleted_by=None):
         """
         Deletes comments and responses of user in the given course_ids.
-        TODO: Add support for MySQL backend as well
+        Uses forum_api to support both MongoDB and MySQL backends.
         """
-        start_time = time.time()
-        query_params = {
-            "course_id": {"$in": course_ids},
-            "author_id": str(user_id),
-            "is_deleted": {"$ne": True},
-        }
-        comments_deleted = 0
-        comments = ForumComment().get_list(**query_params)
-        log.info(
-            f"<<Bulk Delete>> Fetched comments for user {user_id} in {time.time() - start_time} seconds"
+        return forum_api.delete_user_comments(
+            user_id=str(user_id),
+            course_ids=course_ids,
+            deleted_by=deleted_by
         )
-        for comment in comments:
-            start_time = time.time()
-            comment_id = comment.get("_id")
-            course_id = comment.get("course_id")
-            if comment_id:
-                # Use forum_api.delete_comment which supports deleted_by parameter
-                forum_api.delete_comment(  # pylint: disable=unexpected-keyword-arg
-                    comment_id, course_id=course_id, deleted_by=deleted_by
-                )
-                comments_deleted += 1
-            log.info(
-                f"<<Bulk Delete>> Deleted comment {comment_id} in {time.time() - start_time} seconds."
-                f" Comment Found: {comment_id is not None}"
-            )
-        return comments_deleted
 
     @classmethod
     def get_user_deleted_comment_count(cls, user_id, course_ids):
@@ -232,11 +231,3 @@ def _url_for_thread_comments(thread_id):
 
 def _url_for_comment(comment_id):
     return f"{settings.PREFIX}/comments/{comment_id}"
-
-
-def _url_for_flag_abuse_comment(comment_id):
-    return f"{settings.PREFIX}/comments/{comment_id}/abuse_flag"
-
-
-def _url_for_unflag_abuse_comment(comment_id):
-    return f"{settings.PREFIX}/comments/{comment_id}/abuse_unflag"

@@ -14,6 +14,7 @@ from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import StaffFactory, UserFactory
 from lms.djangoapps.discussion.django_comment_client.tests.factories import RoleFactory
 from lms.djangoapps.discussion.rest_api.tasks import (
+    delete_course_post_for_user,
     send_response_endorsed_notifications,
     send_response_notifications,
     send_thread_created_notification
@@ -60,46 +61,19 @@ class TestSendResponseNotifications(DiscussionAPIViewTestMixin, ModuleStoreTestC
 
         self.course = CourseFactory.create()
 
-        # Patch 1
-        patcher1 = mock.patch(
-            'openedx.core.djangoapps.django_comment_common.comment_client.thread.is_forum_v2_enabled_for_thread',
-            autospec=True
-        )
-        mock_forum_v2 = patcher1.start()
-        mock_forum_v2.return_value = (True, str(self.course.id))
-        self.addCleanup(patcher1.stop)
-
-        # Patch 2
-        patcher2 = mock.patch(
-            'openedx.core.djangoapps.discussions.config.waffle.ENABLE_FORUM_V2.is_enabled',
-            return_value=False
-        )
-        patcher2.start()
-        self.addCleanup(patcher2.stop)
-
-        # Patch 3
-        patcher3 = mock.patch(
+        patcher = mock.patch(
             "openedx.core.djangoapps.django_comment_common.comment_client.thread.forum_api.get_course_id_by_thread",
             return_value=self.course.id
         )
-        self.mock_get_course_id_by_thread = patcher3.start()
-        self.addCleanup(patcher3.stop)
+        self.mock_get_course_id_by_thread = patcher.start()
+        self.addCleanup(patcher.stop)
 
-        # Patch 4
-        patcher4 = mock.patch(
+        patcher = mock.patch(
             "openedx.core.djangoapps.django_comment_common.comment_client.models.forum_api.get_course_id_by_comment",
             return_value=self.course.id
         )
-        self.mock_get_course_id_by_comment = patcher4.start()
-        self.addCleanup(patcher4.stop)
-
-        # Patch 5
-        patcher5 = mock.patch(
-            "openedx.core.djangoapps.django_comment_common.comment_client.models.is_forum_v2_enabled_for_comment",
-            return_value=(True, str(self.course.id))
-        )
-        self.mock_is_forum_v2_enabled_for_comment = patcher5.start()
-        self.addCleanup(patcher5.stop)
+        self.mock_get_course_id_by_comment = patcher.start()
+        self.addCleanup(patcher.stop)
 
         self.user_1 = UserFactory.create()
         CourseEnrollment.enroll(self.user_1, self.course.id)
@@ -410,20 +384,6 @@ class TestSendCommentNotification(DiscussionAPIViewTestMixin, ModuleStoreTestCas
         super().setUp()
         httpretty.reset()
         httpretty.enable()
-        patcher = mock.patch(
-            'openedx.core.djangoapps.discussions.config.waffle.ENABLE_FORUM_V2.is_enabled',
-            return_value=False
-        )
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-        patcher = mock.patch(
-            'openedx.core.djangoapps.django_comment_common.comment_client.thread.is_forum_v2_enabled_for_thread',
-            autospec=True
-        )
-        mock_forum_v2 = patcher.start()
-        mock_forum_v2.return_value = (True, str(self.course.id))
-        self.addCleanup(patcher.stop)
 
         self.course = CourseFactory.create()
         patcher = mock.patch(
@@ -437,13 +397,6 @@ class TestSendCommentNotification(DiscussionAPIViewTestMixin, ModuleStoreTestCas
             return_value=self.course.id
         )
         self.mock_get_course_id_by_comment = patcher.start()
-        self.addCleanup(patcher.stop)
-
-        patcher = mock.patch(
-            "openedx.core.djangoapps.django_comment_common.comment_client.models.is_forum_v2_enabled_for_comment",
-            return_value=(True, str(self.course.id))
-        )
-        self.mock_is_forum_v2_enabled_for_comment = patcher.start()
         self.addCleanup(patcher.stop)
 
         self.user_1 = UserFactory.create()
@@ -802,3 +755,50 @@ class TestResponseEndorsedNotifications(DiscussionAPIViewTestMixin, ModuleStoreT
         self.assertEqual(notification_data.content_url, _get_mfe_url(self.course.id, thread.id))
         self.assertEqual(notification_data.app_name, 'discussion')
         self.assertEqual('response_endorsed', notification_data.notification_type)
+
+
+class TestDeleteCoursePostForUserTask(ModuleStoreTestCase):
+    """Tests for delete_course_post_for_user task behavior."""
+
+    def setUp(self):
+        super().setUp()
+        self.course = CourseFactory.create()
+        self.target_user = UserFactory.create()
+        self.moderator = UserFactory.create()
+
+    def test_ban_succeeds_when_email_send_fails(self):
+        """Ban should still succeed even if escalation email raises an exception."""
+        with mock.patch(
+            'lms.djangoapps.discussion.rest_api.tasks.Thread.delete_user_threads',
+            return_value=2,
+        ), mock.patch(
+            'lms.djangoapps.discussion.rest_api.tasks.Comment.delete_user_comments',
+            return_value=3,
+        ), mock.patch(
+            'forum.api.ban_user',
+            return_value={'id': 42},
+            create=True,
+        ) as mock_ban_user, mock.patch(
+            'lms.djangoapps.discussion.rest_api.emails.send_ban_escalation_email',
+            side_effect=Exception('email failure'),
+        ) as mock_send_email, mock.patch(
+            'lms.djangoapps.discussion.rest_api.tasks.tracker.emit',
+        ), mock.patch(
+            'lms.djangoapps.discussion.rest_api.tasks.segment.track',
+        ):
+            result = delete_course_post_for_user.run(
+                user_id=self.target_user.id,
+                username=self.target_user.username,
+                course_ids=[str(self.course.id)],
+                event_data={'triggered_by_user_id': self.moderator.id},
+                ban_user=True,
+                ban_scope='course',
+                moderator_id=self.moderator.id,
+                reason='test reason',
+            )
+
+        mock_ban_user.assert_called_once()
+        mock_send_email.assert_called_once()
+        self.assertTrue(result['ban_created'])
+        self.assertEqual(result['ban_id'], 42)
+        self.assertIsNone(result['ban_error'])

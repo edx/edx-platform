@@ -41,7 +41,6 @@ from openedx.core.djangoapps.common_views.xblock import xblock_resource
 from openedx.core.djangoapps.cors_csrf import views as cors_csrf_views
 from openedx.core.djangoapps.course_groups import views as course_groups_views
 from openedx.core.djangoapps.debug import views as openedx_debug_views
-from openedx.core.djangoapps.django_comment_common.models import ForumsConfig
 from openedx.core.djangoapps.lang_pref import views as lang_pref_views
 from openedx.core.djangoapps.password_policy import compliance as password_policy_compliance
 from openedx.core.djangoapps.password_policy.forms import PasswordPolicyAwareAdminAuthForm
@@ -760,6 +759,14 @@ urlpatterns += [
 
 urlpatterns += [
     re_path(
+        r'^api/unified-translations/enabled/$',
+        courseware_views.unified_site_and_translation_language_enabled,
+        name='unified_translations_enabled_view'
+    )
+]
+
+urlpatterns += [
+    re_path(
         r'^courses/{}/lti_tab/(?P<provider_uuid>[^/]+)/$'.format(
             settings.COURSE_ID_PATTERN,
         ),
@@ -917,7 +924,6 @@ if settings.FEATURES.get('ENABLE_LTI_PROVIDER'):
 urlpatterns += [
     path('config/programs', ConfigurationModelCurrentAPIView.as_view(model=ProgramsApiConfig)),
     path('config/catalog', ConfigurationModelCurrentAPIView.as_view(model=CatalogIntegration)),
-    path('config/forums', ConfigurationModelCurrentAPIView.as_view(model=ForumsConfig)),
 ]
 
 if settings.DEBUG:

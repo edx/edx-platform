@@ -62,6 +62,7 @@ import base64
 import hashlib
 import hmac
 import json
+import urllib.parse
 from collections import OrderedDict
 from logging import getLogger
 from smtplib import SMTPException
@@ -92,15 +93,12 @@ from openedx.core.djangoapps.user_api.accounts.utils import username_suffix_gene
 from openedx.core.djangoapps.user_authn import cookies as user_authn_cookies
 from openedx.core.djangoapps.user_authn.toggles import is_auto_generated_username_enabled
 from openedx.core.djangoapps.user_authn.utils import is_safe_login_or_logout_redirect
-from openedx.core.djangoapps.user_authn.views.utils import get_auto_generated_username
 from common.djangoapps.third_party_auth.utils import (
     get_associated_user_by_email_response,
-    get_user_from_email,
-    is_enterprise_customer_user,
     is_oauth_provider,
-    is_saml_provider,
     user_exists,
 )
+from common.djangoapps.third_party_auth.toggles import is_tpa_next_url_on_dispatch_enabled
 from common.djangoapps.track import segment
 from common.djangoapps.util.json_request import JsonResponse
 
@@ -358,7 +356,11 @@ def get_complete_url(backend_name):
         ValueError: if no provider is enabled with the given backend_name.
     """
     if not any(provider.Registry.get_enabled_by_backend_name(backend_name)):
-        raise ValueError('Provider with backend %s not enabled' % backend_name)
+        # For tpa-saml, the provider may not be visible to the site-filtered registry
+        # even though SAML auth already completed via a site-independent lookup.
+        # Allow get_complete_url to proceed in that case.
+        if backend_name != 'tpa-saml':
+            raise ValueError('Provider with backend %s not enabled' % backend_name)
 
     return _get_url('social:complete', backend_name)
 
@@ -576,13 +578,23 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
     # It is important that we always execute the entire pipeline. Even if
     # behavior appears correct without executing a step, it means important
     # invariants have been violated and future misbehavior is likely.
+    def _build_redirect_url(base_url):
+        """Append ?next=… to the redirect URL if the session carries a destination."""
+        if not is_tpa_next_url_on_dispatch_enabled():
+            return base_url
+        next_url = strategy.session_get('next')
+        if next_url and isinstance(next_url, str):
+            separator = '&' if '?' in base_url else '?'
+            base_url = f'{base_url}{separator}next={urllib.parse.quote(next_url)}'
+        return base_url
+
     def dispatch_to_login():
         """Redirects to the login page."""
-        return redirect(AUTH_DISPATCH_URLS[AUTH_ENTRY_LOGIN])
+        return redirect(_build_redirect_url(AUTH_DISPATCH_URLS[AUTH_ENTRY_LOGIN]))
 
     def dispatch_to_register():
         """Redirects to the registration page."""
-        return redirect(AUTH_DISPATCH_URLS[AUTH_ENTRY_REGISTER])
+        return redirect(_build_redirect_url(AUTH_DISPATCH_URLS[AUTH_ENTRY_REGISTER]))
 
     def should_force_account_creation():
         """ For some third party providers, we auto-create user accounts """
@@ -590,26 +602,22 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
         return (current_provider and
                 (current_provider.skip_email_verification or current_provider.send_to_registration_first))
 
-    def is_provider_saml():
-        """ Verify that the third party provider uses SAML """
-        current_provider = provider.Registry.get_from_pipeline({'backend': current_partial.backend, 'kwargs': kwargs})
-        saml_providers_list = list(provider.Registry.get_enabled_by_backend_name('tpa-saml'))
-        return (current_provider and
-                current_provider.slug in [saml_provider.slug for saml_provider in saml_providers_list])
-
     if current_partial:
         strategy.session_set('partial_pipeline_token_', current_partial.token)
         strategy.storage.partial.store(current_partial)
 
     if not user:
-        # Use only email for user existence check in case of saml provider
-        if is_provider_saml():
+        # Use only email for user existence check in case of saml provider.
+        # Check the backend name directly rather than the site-filtered registry,
+        # since the provider may only be visible via the site-independent fallback.
+        if current_partial.backend == 'tpa-saml':
             user_details = {'email': details.get('email')} if details else None
         else:
             user_details = details
         if user_exists(user_details or {}):
             # User has not already authenticated and the details sent over from
             # identity provider belong to an existing user.
+            logger.info('[THIRD_PARTY_AUTH] ensure_user_information: dispatching to login (user exists)')
             return dispatch_to_login()
 
         if is_api(auth_entry):
@@ -619,6 +627,7 @@ def ensure_user_information(strategy, auth_entry, backend=None, user=None, socia
             # account corresponds to them yet, if any.
             if should_force_account_creation():
                 return dispatch_to_register()
+            logger.info('[THIRD_PARTY_AUTH] ensure_user_information: dispatching to login (no force create)')
             return dispatch_to_login()
         elif auth_entry == AUTH_ENTRY_REGISTER:
             # User has authenticated with the third party provider and now wants to finish
@@ -781,80 +790,18 @@ def associate_by_email_if_oauth(auth_entry, backend, details, user, strategy, *a
             return association_response
 
 
-@partial.partial
 def associate_by_email_if_saml(auth_entry, backend, details, user, strategy, *args, **kwargs):
     """
-    This pipeline step associates the current social auth with the user with the
-    same email address in the database.  It defers to the social library's associate_by_email
-    implementation, which verifies that only a single database user is associated with the email.
+    Deprecated — enterprise SAML email association moved to
+    enterprise.tpa_pipeline.enterprise_associate_by_email.
 
-    This association is done ONLY if the user entered the pipeline belongs to SAML provider.
+    Retained as a no-op for backwards compatibility with custom pipeline configs.
     """
-    from openedx.features.enterprise_support.api import enterprise_is_enabled
-
-    def get_user():
-        """
-        This is the helper method to get the user from system by matching email.
-        """
-        user_details = {'email': details.get('email')} if details else None
-        return get_user_from_email(user_details or {})
-
-    @enterprise_is_enabled()
-    def associate_by_email_if_enterprise_user():
-        """
-        If the learner arriving via SAML is already linked to the enterprise customer linked to the same IdP,
-        they should not be prompted for their edX password.
-        """
-        try:
-            enterprise_customer_user = is_enterprise_customer_user(current_provider.provider_id, current_user)
-            logger.info(
-                '[Multiple_SSO_SAML_Accounts_Association_to_User] Enterprise user verification:'
-                'User Email: {email}, User ID: {user_id}, Provider ID: {provider_id},'
-                ' is_enterprise_customer_user: {enterprise_customer_user}'.format(
-                    email=current_user.email,
-                    user_id=current_user.id,
-                    provider_id=current_provider.provider_id,
-                    enterprise_customer_user=enterprise_customer_user,
-                )
-            )
-
-            if enterprise_customer_user:
-                # this is python social auth pipeline default method to automatically associate social accounts
-                # if the email already matches a user account.
-                association_response, user_is_active = get_associated_user_by_email_response(
-                    backend, details, user, *args, **kwargs)
-
-                if not user_is_active:
-                    logger.info(
-                        '[Multiple_SSO_SAML_Accounts_Association_to_User] User association account is not'
-                        ' active: User Email: {email}, User ID: {user_id}, Provider ID: {provider_id},'
-                        ' is_enterprise_customer_user: {enterprise_customer_user}'.format(
-                            email=current_user.email,
-                            user_id=current_user.id,
-                            provider_id=current_provider.provider_id,
-                            enterprise_customer_user=enterprise_customer_user
-                        )
-                    )
-                    return None
-
-                return association_response
-
-        except Exception as ex:  # pylint: disable=broad-except
-            logger.exception('[Multiple_SSO_SAML_Accounts_Association_to_User] Error in'
-                             ' saml multiple accounts association: User ID: %s, User Email: %s:,'
-                             'Provider ID: %s, Exception: %s', current_user.id, current_user.email,
-                             current_provider.provider_id, ex)
-
-    saml_provider, current_provider = is_saml_provider(strategy.request.backend.name, kwargs)
-
-    if saml_provider:
-        # get the user by matching email if the pipeline user is not available.
-        current_user = user if user else get_user()
-
-        # Verify that the user linked to enterprise customer of current identity provider and an active user
-        associate_response = associate_by_email_if_enterprise_user() if current_user else None
-        if associate_response:
-            return associate_response
+    logger.warning(
+        "associate_by_email_if_saml is deprecated and is now a no-op. "
+        "Enterprise SAML email association has moved to "
+        "enterprise.tpa_pipeline.enterprise_associate_by_email."
+    )
 
 
 def user_details_force_sync(auth_entry, strategy, details, user=None, *args, **kwargs):  # lint-amnesty, pylint: disable=keyword-arg-before-vararg
@@ -1010,6 +957,7 @@ def get_username(strategy, details, backend, user=None, *args, **kwargs):  # lin
             slug_func = lambda val: val
 
         if is_auto_generated_username_enabled() and details.get('username') is None:
+            from openedx.core.djangoapps.user_authn.views.utils import get_auto_generated_username   # pylint: disable=import-outside-toplevel
             username = get_auto_generated_username(details)
         else:
             if email_as_username and details.get('email'):

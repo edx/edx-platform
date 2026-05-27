@@ -47,7 +47,7 @@ from xmodule.modulestore.inheritance import own_metadata
 from xmodule.modulestore.tests.django_utils import TEST_DATA_SPLIT_MODULESTORE
 # noinspection PyUnresolvedReferences
 from xmodule.tests.helpers import override_descriptor_system  # pylint: disable=unused-import
-from xmodule.tests.test_import import DummySystem
+from xmodule.tests.test_import import DummyModuleStoreRuntime
 from xmodule.tests.test_video import VideoBlockTestBase
 from xmodule.video_block import VideoBlock, bumper_utils, video_utils
 from xmodule.video_block.transcripts_utils import Transcript, save_to_store, subs_filename
@@ -63,6 +63,7 @@ from openedx.core.djangolib.testing.utils import CacheIsolationTestCase
 
 from .test_video_handlers import BaseTestVideoXBlock, TestVideo
 from .test_video_xml import SOURCE_XML, PUBLIC_SOURCE_XML
+from common.test.utils import assert_dict_contains_subset
 
 TRANSCRIPT_FILE_SRT_DATA = """
 1
@@ -132,6 +133,7 @@ class TestVideoYouTube(TestVideo):  # lint-amnesty, pylint: disable=missing-clas
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
+                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -141,6 +143,7 @@ class TestVideoYouTube(TestVideo):  # lint-amnesty, pylint: disable=missing-clas
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': '',
         }
 
@@ -221,6 +224,7 @@ class TestVideoNonYouTube(TestVideo):  # pylint: disable=test-inherits-tests
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
+                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -230,6 +234,7 @@ class TestVideoNonYouTube(TestVideo):  # pylint: disable=test-inherits-tests
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': '',
         }
 
@@ -380,6 +385,7 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             'completionPercentage': 0.95,
             'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
             'prioritizeHls': False,
+            'audioDescriptionEnabled': False,
         })
 
     def get_handler_url(self, handler, suffix):
@@ -476,6 +482,7 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': '',
         }
 
@@ -609,6 +616,7 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': '',
         }
         initial_context['metadata']['duration'] = None
@@ -748,6 +756,7 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             'poster': 'null',
             'metadata': metadata,
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': 'mock item',
         }
 
@@ -936,6 +945,7 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             'poster': 'null',
             'metadata': metadata,
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': data['edx_video_id'].replace('\t', ' '),
         }
 
@@ -1057,6 +1067,7 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': 'vid-v1:12345',
         }
         initial_context['metadata']['duration'] = None
@@ -1158,6 +1169,7 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': 'vid-v1:12345',
         }
         initial_context['metadata']['duration'] = None
@@ -1692,7 +1704,8 @@ class TestVideoBlockStudentViewJson(BaseTestVideoXBlock, CacheIsolationTestCase)
         """
         Verifies the result is as expected when returning video data from VAL.
         """
-        self.assertDictContainsSubset(
+        assert_dict_contains_subset(
+            self,
             result.pop("encoded_videos")[self.TEST_PROFILE],
             self.TEST_ENCODED_VIDEO,
         )
@@ -1987,7 +2000,7 @@ class VideoBlockTest(TestCase, VideoBlockTestBase):
         Test that import val data internal works as expected.
         """
         create_profile('mobile')
-        module_system = DummySystem(load_error_blocks=True)
+        module_system = DummyModuleStoreRuntime(load_error_blocks=True)
 
         edx_video_id = 'test_edx_video_id'
         sub_id = '0CzPOIIdUsA'
@@ -2057,31 +2070,34 @@ class VideoBlockTest(TestCase, VideoBlockTestBase):
         assert video_data['encoded_videos'][0]['bitrate'] == 333
 
         # Verify that VAL transcript is imported.
-        self.assertDictContainsSubset(
+        assert_dict_contains_subset(
+            self,
             self.get_video_transcript_data(
                 edx_video_id,
                 language_code=val_transcript_language_code,
                 provider=val_transcript_provider
             ),
-            get_video_transcript(video.edx_video_id, val_transcript_language_code)
+            get_video_transcript(video.edx_video_id, val_transcript_language_code),
         )
 
         # Verify that transcript from sub field is imported.
-        self.assertDictContainsSubset(
+        assert_dict_contains_subset(
+            self,
             self.get_video_transcript_data(
                 edx_video_id,
                 language_code=self.block.transcript_language
             ),
-            get_video_transcript(video.edx_video_id, self.block.transcript_language)
+            get_video_transcript(video.edx_video_id, self.block.transcript_language),
         )
 
         # Verify that transcript from transcript field is imported.
-        self.assertDictContainsSubset(
+        assert_dict_contains_subset(
+            self,
             self.get_video_transcript_data(
                 edx_video_id,
                 language_code=external_transcript_language_code
             ),
-            get_video_transcript(video.edx_video_id, external_transcript_language_code)
+            get_video_transcript(video.edx_video_id, external_transcript_language_code),
         )
 
     def test_import_no_video_id(self):
@@ -2090,7 +2106,7 @@ class VideoBlockTest(TestCase, VideoBlockTestBase):
         """
         xml_data = """<video><video_asset></video_asset></video>"""
         xml_object = etree.fromstring(xml_data)
-        module_system = DummySystem(load_error_blocks=True)
+        module_system = DummyModuleStoreRuntime(load_error_blocks=True)
 
         # Verify edx_video_id is empty before.
         assert self.block.edx_video_id == ''
@@ -2126,7 +2142,7 @@ class VideoBlockTest(TestCase, VideoBlockTestBase):
             val_transcript_provider=val_transcript_provider
         )
         xml_object = etree.fromstring(xml_data)
-        module_system = DummySystem(load_error_blocks=True)
+        module_system = DummyModuleStoreRuntime(load_error_blocks=True)
 
         # Create static directory in import file system and place transcript files inside it.
         module_system.resources_fs.makedirs(EXPORT_IMPORT_STATIC_DIR, recreate=True)
@@ -2151,13 +2167,14 @@ class VideoBlockTest(TestCase, VideoBlockTestBase):
         assert video_data['status'] == 'external'
 
         # Verify that VAL transcript is imported.
-        self.assertDictContainsSubset(
+        assert_dict_contains_subset(
+            self,
             self.get_video_transcript_data(
                 edx_video_id,
                 language_code=val_transcript_language_code,
                 provider=val_transcript_provider
             ),
-            get_video_transcript(video.edx_video_id, val_transcript_language_code)
+            get_video_transcript(video.edx_video_id, val_transcript_language_code),
         )
 
     @ddt.data(
@@ -2231,7 +2248,7 @@ class VideoBlockTest(TestCase, VideoBlockTestBase):
         edx_video_id = 'test_edx_video_id'
         language_code = 'en'
 
-        module_system = DummySystem(load_error_blocks=True)
+        module_system = DummyModuleStoreRuntime(load_error_blocks=True)
 
         # Create static directory in import file system and place transcript files inside it.
         module_system.resources_fs.makedirs(EXPORT_IMPORT_STATIC_DIR, recreate=True)
@@ -2292,14 +2309,15 @@ class VideoBlockTest(TestCase, VideoBlockTestBase):
         assert video_data['status'] == 'external'
 
         # Verify that correct transcripts are imported.
-        self.assertDictContainsSubset(
+        assert_dict_contains_subset(
+            self,
             expected_transcript,
-            get_video_transcript(video.edx_video_id, language_code)
+            get_video_transcript(video.edx_video_id, language_code),
         )
 
     def test_import_val_data_invalid(self):
         create_profile('mobile')
-        module_system = DummySystem(load_error_blocks=True)
+        module_system = DummyModuleStoreRuntime(load_error_blocks=True)
 
         # Negative file_size is invalid
         xml_data = """
@@ -2434,6 +2452,7 @@ class TestVideoWithBumper(TestVideo):  # pylint: disable=test-inherits-tests
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
+                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -2446,6 +2465,7 @@ class TestVideoWithBumper(TestVideo):  # pylint: disable=test-inherits-tests
                 'type': 'youtube'
             })),
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': '',
         }
 
@@ -2522,6 +2542,7 @@ class TestAutoAdvanceVideo(TestVideo):  # lint-amnesty, pylint: disable=test-inh
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
+                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -2531,6 +2552,7 @@ class TestAutoAdvanceVideo(TestVideo):  # lint-amnesty, pylint: disable=test-inh
             ],
             'poster': 'null',
             'transcript_feedback_enabled': False,
+            'audio_description_enabled': False,
             'video_id': '',
         }
         return context

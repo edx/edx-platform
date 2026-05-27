@@ -23,6 +23,7 @@ from openedx.core.djangoapps.user_api.accounts.utils import (
 )
 from openedx.core.djangoapps.user_api.helpers import FormDescription
 from openedx.core.djangoapps.user_authn.cookies import set_logged_in_cookies
+from openedx.core.djangoapps.user_authn.config.waffle import ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN
 from openedx.core.djangoapps.user_authn.toggles import should_redirect_to_authn_microfrontend
 from openedx.core.djangoapps.user_authn.views.password_reset import get_password_reset_form
 from openedx.core.djangoapps.user_authn.views.registration_form import RegistrationFormFactory
@@ -160,6 +161,24 @@ def login_and_registration_form(request, initial_mode="login"):
     # Retrieve the form descriptions from the user API
     form_descriptions = _get_form_descriptions(request)
 
+    # Detect a running TPA pipeline early so it can guard against redirect loops below.
+    saml_provider = False
+    running_pipeline = None
+    if third_party_auth.is_enabled():
+        running_pipeline = pipeline.get(request)
+        if running_pipeline:
+            saml_provider, __ = third_party_auth.utils.is_saml_provider(
+                running_pipeline.get('backend'), running_pipeline.get('kwargs')
+            )
+    # Also check for the partial token directly in the session. In deployments with
+    # DB read replicas, pipeline.get() can return None due to replication lag even
+    # when the pipeline IS running (token is in session but the partial object hasn't
+    # propagated to the replica yet). Checking the session key avoids a false None.
+    pipeline_token_in_session = not running_pipeline and bool(
+        request.session.get('partial_pipeline_token') or
+        request.session.get('partial_pipeline_token_')
+    )
+
     # Our ?next= URL may itself contain a parameter 'tpa_hint=x' that we need to check.
     # If present, we display a login page focused on third-party auth with that provider.
     third_party_auth_hint = None
@@ -170,10 +189,12 @@ def login_and_registration_form(request, initial_mode="login"):
             if 'tpa_hint' in next_args:
                 provider_id = next_args['tpa_hint'][0]
                 tpa_hint_provider = third_party_auth.provider.Registry.get(provider_id=provider_id)
+                pipeline_in_progress = running_pipeline or pipeline_token_in_session
                 if tpa_hint_provider:
-                    if tpa_hint_provider.skip_hinted_login_dialog:
+                    if tpa_hint_provider.skip_hinted_login_dialog and not pipeline_in_progress:
                         # Forward the user directly to the provider's login URL when the provider is configured
-                        # to skip the dialog.
+                        # to skip the dialog. Do not redirect if a TPA pipeline is already running, as that
+                        # would cause an infinite loop (e.g. new SAML users dispatched back to /login).
                         if initial_mode == "register":
                             auth_entry = pipeline.AUTH_ENTRY_REGISTER
                         else:
@@ -182,7 +203,13 @@ def login_and_registration_form(request, initial_mode="login"):
                             pipeline.get_login_url(provider_id, auth_entry, redirect_url=redirect_to)
                         )
                     third_party_auth_hint = provider_id
-                    initial_mode = "hinted_login"
+                    # Only switch to hinted_login if no pipeline is currently running.
+                    # If a pipeline IS running (e.g. a new SAML user was dispatched back
+                    # here after authenticating at the IdP), keep the original mode so the
+                    # register/login form is shown instead of re-offering the IdP button,
+                    # which would restart the SAML flow and create a redirect loop.
+                    if not pipeline_in_progress:
+                        initial_mode = "hinted_login"
         except (KeyError, ValueError, IndexError) as ex:
             log.exception("Unknown tpa_hint provider: %s", ex)
 
@@ -193,19 +220,27 @@ def login_and_registration_form(request, initial_mode="login"):
     #   tpa_hint_provider is not available
     # AND
     #   user is not coming from a SAML IDP.
-    saml_provider = False
-    running_pipeline = pipeline.get(request)
-    if running_pipeline:
-        saml_provider, __ = third_party_auth.utils.is_saml_provider(
-            running_pipeline.get('backend'), running_pipeline.get('kwargs')
-        )
 
     enterprise_customer = enterprise_customer_for_request(request)
 
+    # Check for external providers (SAML/TPA) which must NEVER redirect to MFE
+    has_external_provider = bool(tpa_hint_provider or saml_provider)
+
+    # Determine eligibility based on segment
+    if enterprise_customer:
+        # Enterprise/B2B: Requires the specific rollout waffle flag
+        is_segment_eligible = ENABLE_ENTERPRISE_REDIRECT_TO_AUTHN.is_enabled()
+    else:
+        # B2C: Eligible by default
+        is_segment_eligible = True
+
+    # Redirect to authn MFE if all conditions are met:
+    # 1. MFE is globally enabled (should_redirect_to_authn_microfrontend)
+    # 2. User segment is eligible (B2C by default, or Enterprise with flag enabled)
+    # 3. No external auth provider is present (SAML/TPA must use legacy flow)
     if should_redirect_to_authn_microfrontend() and \
-            not enterprise_customer and \
-            not tpa_hint_provider and \
-            not saml_provider:
+            is_segment_eligible and \
+            not has_external_provider:
 
         # This is to handle a case where a logged-in cookie is not present but the user is authenticated.
         # Note: If we don't handle this learner is redirected to authn MFE and then back to dashboard

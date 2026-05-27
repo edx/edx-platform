@@ -97,6 +97,7 @@ class MockCommentServiceServer(HTTPServer):
     A mock Comment Service server that responds
     to POST requests to localhost.
     '''
+
     def __init__(self, port_num,
                  response={'username': 'new', 'external_id': 1}):
         '''

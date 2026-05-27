@@ -97,6 +97,19 @@ class Registry:
             if enabled.is_active_for_pipeline(running_pipeline):
                 return enabled
 
+        # Fallback for SAML: SAMLAuthBackend.get_idp() uses SAMLProviderConfig.current()
+        # which has no site check. If the provider's site_id doesn't match the current
+        # site (or SAMLConfiguration isn't enabled for the current site), _enabled_providers()
+        # won't yield it — but the SAML handshake already completed. Look up the provider
+        # directly by idp_name so that pipeline steps like should_force_account_creation()
+        # can still read provider flags.
+        if running_pipeline.get('backend') == 'tpa-saml':
+            try:
+                idp_name = running_pipeline['kwargs']['response']['idp_name']
+                return SAMLProviderConfig.current(idp_name)
+            except (KeyError, SAMLProviderConfig.DoesNotExist):
+                pass
+
     @classmethod
     def get_enabled_by_backend_name(cls, backend_name):
         """Generator returning all enabled providers that use the specified
