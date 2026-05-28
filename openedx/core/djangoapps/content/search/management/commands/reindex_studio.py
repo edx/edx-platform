@@ -12,15 +12,13 @@ from ... import api
 
 class Command(BaseCommand):
     """
-    Build or re-build the Meilisearch search index for courses and libraries in Studio.
+    Build or re-build the search index for courses and libraries (in Studio, i.e. Draft mode)
 
-    This is separate from LMS search features like courseware search or forum search.
+    This is experimental and not recommended for production use.
     """
 
-    # TODO: improve this - see https://github.com/openedx/edx-platform/issues/36868
-
     def add_arguments(self, parser):
-        parser.add_argument("--experimental", action="store_true")  # kept for compatibility but ignored.
+        parser.add_argument("--experimental", action="store_true")
         parser.add_argument("--reset", action="store_true")
         parser.add_argument("--init", action="store_true")
         parser.add_argument("--incremental", action="store_true")
@@ -32,6 +30,12 @@ class Command(BaseCommand):
         """
         if not api.is_meilisearch_enabled():
             raise CommandError("Meilisearch is not enabled. Please set MEILISEARCH_ENABLED to True in your settings.")
+
+        if not options["experimental"]:
+            raise CommandError(
+                "This command is experimental and not recommended for production. "
+                "Use the --experimental argument to acknowledge and run it."
+            )
 
         if options["reset"]:
             api.reset_index(self.stdout.write)

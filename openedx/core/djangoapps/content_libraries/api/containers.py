@@ -575,11 +575,7 @@ def get_containers_contains_item(
     ]
 
 
-def publish_container_changes(
-    container_key: LibraryContainerLocator,
-    user_id: int | None,
-    call_post_publish_events_sync=False,
-) -> None:
+def publish_container_changes(container_key: LibraryContainerLocator, user_id: int | None) -> None:
     """
     [ 🛑 UNSTABLE ] Publish all unpublished changes in a container and all its child
     containers/blocks.
@@ -599,10 +595,7 @@ def publish_container_changes(
     )
     # Update the search index (and anything else) for the affected container + blocks
     # This is mostly synchronous but may complete some work asynchronously if there are a lot of changes.
-    if call_post_publish_events_sync:
-        tasks.send_events_after_publish(publish_log.pk, str(library_key))
-    else:
-        tasks.wait_for_post_publish_events(publish_log, library_key)
+    tasks.wait_for_post_publish_events(publish_log, library_key)
 
 
 def copy_container(container_key: LibraryContainerLocator, user_id: int) -> UserClipboardData:

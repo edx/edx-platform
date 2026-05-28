@@ -20,7 +20,7 @@ from enterprise.models import (
     PendingEnterpriseCustomerUser
 )
 from opaque_keys.edx.keys import CourseKey
-from zoneinfo import ZoneInfo
+from pytz import UTC
 
 from common.djangoapps.entitlements.models import CourseEntitlement, CourseEntitlementSupportDetail
 from lms.djangoapps.verify_student.models import SoftwareSecurePhotoVerification
@@ -88,7 +88,7 @@ class Command(BaseCommand):
         user.save()
 
         # UserProfile
-        profile_image_uploaded_date = datetime(2018, 5, 3, tzinfo=ZoneInfo("UTC"))
+        profile_image_uploaded_date = datetime(2018, 5, 3, tzinfo=UTC)
         user_profile, __ = UserProfile.objects.get_or_create(
             user=user
         )
