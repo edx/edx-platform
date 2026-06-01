@@ -343,7 +343,7 @@ distlib==0.4.0
     # via
     #   -r requirements/edx/testing.txt
     #   virtualenv
-django==5.2.7
+django==5.2.11
     # via
     #   -c requirements/common_constraints.txt
     #   -c requirements/constraints.txt
@@ -836,7 +836,7 @@ edx-rest-api-client==6.2.0
     #   edx-enterprise
     #   edx-proctoring
     #   enterprise-integrated-channels
-edx-search==4.3.0
+edx-search==4.4.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -1207,11 +1207,6 @@ libsass==0.10.0
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/assets.txt
-loremipsum==1.0.5
-    # via
-    #   -r requirements/edx/doc.txt
-    #   -r requirements/edx/testing.txt
-    #   ora2
 lti-consumer-xblock==9.14.3
     # via
     #   -r requirements/edx/doc.txt

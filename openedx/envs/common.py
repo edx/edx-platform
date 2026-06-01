@@ -1587,8 +1587,6 @@ SOCIAL_AUTH_SAML_SP_PUBLIC_CERT = ""
 SOCIAL_AUTH_SAML_SP_PRIVATE_KEY_DICT = {}
 SOCIAL_AUTH_SAML_SP_PUBLIC_CERT_DICT = {}
 
-<<<<<<< HEAD
-# pylint: disable=setting-boolean-default-value
 # .. setting_name: SAML_METADATA_URL_ALLOW_PRIVATE_IPS
 # .. setting_default: False
 # .. setting_description: When False (the default), fetching SAML metadata from
@@ -1601,8 +1599,6 @@ SOCIAL_AUTH_SAML_SP_PUBLIC_CERT_DICT = {}
 #   cover hostname-based URLs that are not subject to IP validation.
 SAML_METADATA_URL_ALLOW_PRIVATE_IPS = False
 
-=======
->>>>>>> parent of 84f4afb52e (fix: block SSRF in SAML metadata URL fetching)
 ########################### django-fernet-fields ###########################
 
 FERNET_KEYS = [
