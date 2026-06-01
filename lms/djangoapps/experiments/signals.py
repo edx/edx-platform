@@ -14,10 +14,9 @@ from .audit_expiry_urgency import (
     EXPERIMENT_KEY,
     get_persisted_expiry_days,
     get_persisted_variant,
-    is_target_course,
     maybe_persist_audit_expiry_urgency_attributes,
 )
-from .flags import AUDIT_EXPIRY_URGENCY_V1_ENABLED
+from .flags import audit_expiry_urgency_v1_enabled_for_course
 
 log = logging.getLogger(__name__)
 
@@ -52,10 +51,7 @@ def track_audit_expiry_urgency_conversion(sender, user, course_key, mode, **kwar
         if mode != CourseMode.VERIFIED:
             return
 
-        if not AUDIT_EXPIRY_URGENCY_V1_ENABLED.is_enabled():
-            return
-
-        if not is_target_course(course_key):
+        if not audit_expiry_urgency_v1_enabled_for_course(course_key):
             return
 
         enrollment = CourseEnrollment.get_enrollment(user, course_key)

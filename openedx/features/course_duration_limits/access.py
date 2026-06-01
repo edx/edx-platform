@@ -12,7 +12,7 @@ from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.models import CourseEnrollmentAttribute
 from common.djangoapps.util.date_utils import strftime_localized, strftime_localized_html
-from lms.djangoapps.experiments.flags import AUDIT_EXPIRY_URGENCY_V1_ENABLED
+from lms.djangoapps.experiments.flags import audit_expiry_urgency_v1_enabled_for_course
 from lms.djangoapps.courseware.access_response import AccessError
 from lms.djangoapps.courseware.access_utils import ACCESS_GRANTED
 from lms.djangoapps.courseware.utils import verified_upgrade_deadline_link
@@ -91,7 +91,7 @@ def get_user_course_expiration_date(user, course, enrollment=None):
     # it is the single source of truth for UI/API reads.
     # Kill switch behavior: when disabled, ignore any persisted experiment values
     # and fall back to the default computed CDL logic.
-    if AUDIT_EXPIRY_URGENCY_V1_ENABLED.is_enabled():
+    if audit_expiry_urgency_v1_enabled_for_course(course.id):
         persisted_expiry_attr = (
             CourseEnrollmentAttribute.objects.filter(
                 enrollment=enrollment,
@@ -162,7 +162,7 @@ def get_access_expiration_data(user, course):
     variant = None
     expiry_days = None
 
-    if AUDIT_EXPIRY_URGENCY_V1_ENABLED.is_enabled():
+    if audit_expiry_urgency_v1_enabled_for_course(course.id):
         experiment_attributes = {
             attr.name: attr.value
             for attr in enrollment.attributes.filter(namespace='audit_expiry_experiment')
