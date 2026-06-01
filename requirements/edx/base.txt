@@ -859,7 +859,7 @@ openedx-learning==0.30.2
     #   -r requirements/edx/kernel.in
 optimizely-sdk==5.2.0
     # via -r requirements/edx/bundled.in
-ora2==6.17.1
+ora2==6.17.2
     # via -r requirements/edx/bundled.in
 packaging==25.0
     # via
