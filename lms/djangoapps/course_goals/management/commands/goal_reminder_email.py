@@ -223,7 +223,7 @@ class Command(BaseCommand):
         sent_count = 0
         filtered_count = 0
         course_goals = course_goals.exclude(course_key__in=courses_to_exclude).select_related('user').order_by('user')
-        total_goals = len(course_goals)
+        total_goals = course_goals.count()
         tracker.emit(
             'edx.course.goal.email.session_started',
             {
@@ -237,7 +237,7 @@ class Command(BaseCommand):
             datetime.now(),
             session_id
         ))
-        for goal in course_goals:
+        for goal in course_goals.iterator(chunk_size=500):
             # emulate a request for waffle's benefit
             with emulate_http_request(site=Site.objects.get_current(), user=goal.user):
                 if self.handle_goal(goal, today, sunday_date, monday_date, session_id):
