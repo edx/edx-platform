@@ -50,6 +50,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
         self.addCleanup(RequestCache.clear_all_namespaces)
 
     def _enable_course_flag(self, course_key):
+        """Enable the course-level waffle override for the experiment."""
         WaffleFlagCourseOverrideModel.objects.create(
             waffle_flag=AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED.name,
             course_id=course_key,
@@ -58,6 +59,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
         RequestCache.clear_all_namespaces()
 
     def _enable_org_flag(self, org):
+        """Enable the org-level waffle override for the experiment."""
         WaffleFlagOrgOverrideModel.objects.create(
             waffle_flag=AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED.name,
             org=org,
@@ -66,6 +68,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
         RequestCache.clear_all_namespaces()
 
     def _disable_course_flag(self, course_key):
+        """Force the course-level waffle override off for the experiment."""
         WaffleFlagCourseOverrideModel.objects.create(
             waffle_flag=AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED.name,
             course_id=course_key,
