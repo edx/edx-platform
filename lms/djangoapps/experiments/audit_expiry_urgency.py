@@ -7,7 +7,7 @@ Design constraints (from ticket):
 * Experiment key: audit_expiry_urgency_v1
 * Variants: control_5_7_weeks, expiry_7_days
 * Assignment unit: user_id
-* Stickiness: across sessions/devices and across the configured target courses
+* Stickiness: across sessions/devices and targeted courses
 * Failure behavior: default to control
 """
 
@@ -21,16 +21,11 @@ from django.utils import timezone
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollmentAttribute
 from lms.djangoapps.utils import OptimizelyClient
-from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.features.course_duration_limits.access import get_user_course_duration
 
-from .flags import AUDIT_EXPIRY_URGENCY_V1_ENABLED
+from .flags import audit_expiry_urgency_v1_enabled_for_course
 
 log = logging.getLogger(__name__)
-
-# Avoid emitting a warning on every enrollment save if the allowlist is missing.
-_WARNED_NO_TARGET_COURSES = False
-
 
 EXPERIMENT_KEY = 'audit_expiry_urgency_v1'
 
@@ -46,38 +41,10 @@ ATTRIBUTE_NAME_ASSIGNED_AT = 'assigned_at'
 ATTRIBUTE_NAME_DECISION_SOURCE = 'decision_source'
 ATTRIBUTE_NAME_AUDIT_EXPIRY_AT = 'audit_expiry_at'
 
-SITE_CONFIG_KEY_TARGET_COURSES = 'AUDIT_EXPIRY_EXPERIMENT_COURSES'
-
 # TEMP: Local testing fallback.
 # When set (e.g. in devstack), this forces a specific variant and skips the
 # Optimizely lookup entirely.
 FORCE_VARIANT_SETTING = 'AUDIT_EXPIRY_FORCE_VARIANT'
-
-
-def _get_configured_target_course_id_strings():
-    """Return configured target course run IDs as a list of strings."""
-    default_from_settings = getattr(settings, SITE_CONFIG_KEY_TARGET_COURSES, [])
-    configured = configuration_helpers.get_value(SITE_CONFIG_KEY_TARGET_COURSES, default=default_from_settings)
-
-    if configured is None:
-        configured = []
-    if isinstance(configured, str):
-        configured = [configured]
-    if not isinstance(configured, list):
-        configured = []
-
-    course_ids = [str(item) for item in configured if item]
-    if not course_ids:
-        global _WARNED_NO_TARGET_COURSES  # pylint: disable=global-statement
-        if not _WARNED_NO_TARGET_COURSES:
-            log.warning('Audit expiry urgency: no target courses configured (key=%s)', SITE_CONFIG_KEY_TARGET_COURSES)
-            _WARNED_NO_TARGET_COURSES = True
-    return course_ids
-
-
-def is_target_course(course_key):
-    """Return True if course_key is one of the configured target course runs."""
-    return str(course_key) in set(_get_configured_target_course_id_strings())
 
 
 def _get_attribute(enrollment, name):
@@ -154,25 +121,20 @@ def _set_attribute(enrollment, name, value):
             )
 
 
-def _find_existing_variant_for_user(user, target_course_id_strings):
+def _find_existing_variant_for_user(user):
     """Reuse learner-level assignment by looking for an existing stored variant."""
-    if not target_course_id_strings:
-        return None
-
     # Note: do NOT filter on enrollment.is_active; we want reenrollments to retain assignment.
-    existing_variant = (
+    return (
         CourseEnrollmentAttribute.objects.filter(
             enrollment__user=user,
-            enrollment__course_id__in=target_course_id_strings,
             namespace=ATTRIBUTE_NAMESPACE,
             name=ATTRIBUTE_NAME_VARIANT,
+            value__in=VALID_VARIANTS,
         )
         .order_by('-id')
         .values_list('value', flat=True)
         .first()
     )
-
-    return existing_variant if existing_variant in VALID_VARIANTS else None
 
 
 def _forced_variant_from_settings():
@@ -208,13 +170,13 @@ def _activate_optimizely_variant(user):
         return None
 
 
-def choose_variant(user, target_course_id_strings):
+def choose_variant(user):
     """Choose (or reuse) a learner-level variant and decision source."""
     forced_variant = _forced_variant_from_settings()
     if forced_variant:
         return forced_variant, 'force_variant'
 
-    existing_variant = _find_existing_variant_for_user(user, target_course_id_strings)
+    existing_variant = _find_existing_variant_for_user(user)
     if existing_variant:
         return existing_variant, 'existing'
 
@@ -271,9 +233,6 @@ def maybe_persist_audit_expiry_urgency_attributes(enrollment):
 
     Safe + idempotent: if audit_expiry_at already exists, this is a no-op.
     """
-    if not AUDIT_EXPIRY_URGENCY_V1_ENABLED.is_enabled():
-        return
-
     if not enrollment or not getattr(enrollment, 'user_id', None):
         log.warning('Audit expiry urgency: skipped (missing enrollment or user)')
         return
@@ -285,7 +244,7 @@ def maybe_persist_audit_expiry_urgency_attributes(enrollment):
     if any((
         not enrollment.is_active,
         enrollment.mode != CourseMode.AUDIT,
-        not is_target_course(enrollment.course_id),
+        not audit_expiry_urgency_v1_enabled_for_course(enrollment.course_id),
     )):
         return
 
@@ -298,8 +257,7 @@ def maybe_persist_audit_expiry_urgency_attributes(enrollment):
         # Only apply if Course Duration Limits would normally apply.
         return
 
-    target_course_ids = _get_configured_target_course_id_strings()
-    variant, decision_source = choose_variant(enrollment.user, target_course_ids)
+    variant, decision_source = choose_variant(enrollment.user)
 
     audit_expiry_at, expiry_days = compute_audit_expiry_at(enrollment, variant, access_duration)
     if timezone.is_naive(audit_expiry_at):
