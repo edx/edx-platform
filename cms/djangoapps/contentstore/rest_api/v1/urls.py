@@ -2,7 +2,6 @@
 
 from django.conf import settings
 from django.urls import path, re_path
-from rest_framework.routers import DefaultRouter
 
 from openedx.core.constants import COURSE_ID_PATTERN
 
@@ -23,7 +22,6 @@ from .views import (
     HelpUrlsView,
     HomePageLibrariesView,
     HomePageView,
-    HomeViewSet,
     ProctoredExamSettingsView,
     ProctoringErrorsView,
     VideoDownloadView,
@@ -35,13 +33,7 @@ app_name = 'v1'
 
 VIDEO_ID_PATTERN = r'(?P<edx_video_id>[-\w]+)'
 
-# ADR 0028: ViewSets registered via DefaultRouter.
-router = DefaultRouter()
-router.register(r'home', HomeViewSet, basename='home')
-
-urlpatterns = router.urls + [
-    # DEPRECATED (ADR 0028): Use HomeViewSet instead (GET home/, home/courses/, home/libraries/).
-    # Kept as backward-compatible aliases. Remove after one named release.
+urlpatterns = [
     path(
         'home',
         HomePageView.as_view(),
