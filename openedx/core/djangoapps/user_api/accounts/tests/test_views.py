@@ -815,12 +815,12 @@ class TestAccountsAPI(FilteredQueryCountMixin, CacheIsolationTestCase, UserAPITe
             assert data['time_zone'] is None
 
         self.client.login(username=self.user.username, password=TEST_PASSWORD)
-        verify_get_own_information(self._get_num_queries(23))
+        verify_get_own_information(self._get_num_queries(24))
 
         # Now make sure that the user can get the same information, even if not active
         self.user.is_active = False
         self.user.save()
-        verify_get_own_information(self._get_num_queries(15))
+        verify_get_own_information(self._get_num_queries(16))
 
     def test_get_account_empty_string(self):
         """

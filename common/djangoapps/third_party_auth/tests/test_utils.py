@@ -252,6 +252,7 @@ class TestCreateOrUpdateBulkSAMLProviderData(TestCase):
         ).count()
         assert count == 2
 
+
 @ddt.ddt
 class TestValidateSAMLMetadataURL(TestCase):
     """

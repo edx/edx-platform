@@ -5,8 +5,8 @@ Utility functions for third_party_auth
 import datetime
 
 import ipaddress
+import logging
 from urllib.parse import urlparse
-from uuid import UUID
 
 import dateutil.parser
 import requests
@@ -29,6 +29,8 @@ from openedx.core.djangolib.markup import Text
 from . import provider
 
 SAML_XML_NS = 'urn:oasis:names:tc:SAML:2.0:metadata'  # The SAML Metadata XML namespace
+
+log = logging.getLogger(__name__)
 
 
 class MetadataParseError(Exception):
@@ -99,7 +101,7 @@ def fetch_metadata_xml(url):
             raise
         # TODO: Can use OneLogin_Saml2_Utils to validate signed XML if anyone is using that
         return xml
-    except (exceptions.SSLError, exceptions.HTTPError, exceptions.RequestException,
+    except (requests.exceptions.SSLError, requests.exceptions.HTTPError, requests.exceptions.RequestException,
             MetadataParseError, SAMLMetadataURLError) as error:
         # Catch and process exception in case of errors during fetching and processing saml metadata.
         # Here is a description of each exception.
