@@ -227,8 +227,11 @@ class Command(BaseCommand):
         courses_to_exclude = CourseOverview.objects.filter(
             id__in=all_goal_course_keys, end__date__lte=sunday_date
         ).values_list('id', flat=True)
-        log.info(f"Processing course goals across {all_goal_course_keys.count()} courses "
-                 + f"excluding {courses_to_exclude.count()} ended courses")
+        log.info(
+            'Processing course goals across %s courses excluding %s ended courses',
+            all_goal_course_keys.count(),
+            courses_to_exclude.count(),
+        )
 
         sent_count = 0
         filtered_count = 0
