@@ -20,6 +20,8 @@ def get_course_commentable_counts(course_key: CourseKey) -> Dict[str, Dict[str, 
     Returns:
         A mapping of topic ids to the number of question and discussion type posts in them.
 
+        Note: Deleted threads are automatically excluded by the forum API.
+
         e.g.
             {
                 "general": { "discussion": 22, "question": 15 },
