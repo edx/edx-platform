@@ -232,11 +232,12 @@ class Command(BaseCommand):
                 'goal_count': total_goals,
             }
         )
-        log.info('Processing course goals, total goal count {}, timestamp: {}, uuid: {}'.format(
+        log.info(
+            'Processing course goals, total goal count %s, timestamp: %s, uuid: %s',
             total_goals,
             datetime.now(),
-            session_id
-        ))
+            session_id,
+        )
         for goal in course_goals.iterator(chunk_size=500):
             # emulate a request for waffle's benefit
             with emulate_http_request(site=Site.objects.get_current(), user=goal.user):
