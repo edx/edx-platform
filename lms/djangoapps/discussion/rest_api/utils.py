@@ -365,13 +365,15 @@ def get_archived_topics(filtered_topic_ids: List[str], topics: List[Dict[str, st
     - Each dictionary should have a 'id' and a 'usage_key' field.
 
     Returns:
-    - A list of archived topic dictionaries, with the same format as the input topics.
+    - A list of archived topic dictionaries, sorted alphabetically by name, with the same format as the input topics.
     """
     archived_topics = []
     for topic_id in filtered_topic_ids:
         for topic in topics:
             if topic['id'] == topic_id and topic['usage_key'] is not None:
                 archived_topics.append(topic)
+    # Sort archived topics alphabetically by name (case-insensitive)
+    archived_topics.sort(key=lambda topic: topic.get('name', '').lower())
     return archived_topics
 
 

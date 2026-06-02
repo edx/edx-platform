@@ -59,6 +59,7 @@ from openedx.core.djangoapps.credit.models import (
 )
 from openedx.core.djangoapps.external_user_ids.models import ExternalIdType
 from openedx.core.djangoapps.oauth_dispatch.jwt import create_jwt_for_user
+from openedx.core.djangoapps.oauth_dispatch.tests.factories import ApplicationFactory, AccessTokenFactory
 from openedx.core.djangoapps.user_api.accounts.views import AccountRetirementPartnerReportView
 from openedx.core.djangoapps.user_api.models import (
     RetirementState,
@@ -66,8 +67,7 @@ from openedx.core.djangoapps.user_api.models import (
     UserRetirementPartnerReportingStatus,
     UserRetirementStatus
 )
-from openedx.core.djangolib.testing.utils import skip_unless_lms
-from openedx.core.djangoapps.oauth_dispatch.tests.factories import ApplicationFactory, AccessTokenFactory
+from openedx.core.djangolib.testing.utils import assert_redact_before_delete, skip_unless_lms
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
 
@@ -1468,7 +1468,14 @@ class TestAccountRetirementPost(RetirementTestCase):
     @mock.patch('openedx.core.djangoapps.user_api.accounts.views.remove_profile_images')
     def test_retire_user(self, mock_remove_profile_images, mock_get_profile_image_names):
         data = {'username': self.original_username}
-        self.post_and_assert_status(data)
+        with CaptureQueriesContext(connection) as ctx:
+            self.post_and_assert_status(data)
+
+        assert_redact_before_delete(
+            [q['sql'] for q in ctx],
+            table=PendingEmailChange._meta.db_table,
+            expected_redacted_value_list=['redacted-before-delete@safe.com'],
+        )
 
         self.test_user.refresh_from_db()
         self.test_user.profile.refresh_from_db()  # pylint: disable=no-member
