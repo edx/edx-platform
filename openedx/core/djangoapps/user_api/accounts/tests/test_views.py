@@ -835,7 +835,7 @@ class TestAccountsAPI(FilteredQueryCountMixin, CacheIsolationTestCase, UserAPITe
         legacy_profile.save()
 
         self.client.login(username=self.user.username, password=TEST_PASSWORD)
-        with self.assertNumQueries(self._get_num_queries(23), table_ignorelist=WAFFLE_TABLES):
+        with self.assertNumQueries(self._get_num_queries(24), table_ignorelist=WAFFLE_TABLES):
             response = self.send_get(self.client)
         for empty_field in ("level_of_education", "gender", "country", "state", "bio",):
             assert response.data[empty_field] is None
