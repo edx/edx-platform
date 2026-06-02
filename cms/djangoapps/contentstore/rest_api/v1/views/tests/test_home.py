@@ -3,17 +3,21 @@ Unit tests for home page view.
 """
 import ddt
 from django.conf import settings
-from django.test import override_settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from opaque_keys.edx.locator import LibraryLocatorV2
 from openedx_content import api as content_api
 from organizations.tests.factories import OrganizationFactory
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from cms.djangoapps.contentstore.tests.test_libraries import LibraryTestCase
 from cms.djangoapps.contentstore.tests.utils import CourseTestCase
 from cms.djangoapps.modulestore_migrator import api as migrator_api
 from cms.djangoapps.modulestore_migrator.data import CompositionLevel, RepeatHandlingStrategy
+
+from common.djangoapps.student.tests.factories import UserFactory
+from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 from openedx.core.djangoapps.content_libraries import api as lib_api
 
 
@@ -251,5 +255,54 @@ class HomePageLibrariesViewTest(LibraryTestCase):
             ],
         }
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)  # noqa: PT009
-        self.assertDictEqual(expected_response, response.json())  # noqa: PT009
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == expected_response
+
+
+class HomePageCoursesViewPermissionsTest(TestCase):
+    """
+    ADR 0026 – permission regression tests for HomePageCoursesView.
+
+    Verifies that the explicit permission_classes = (IsAuthenticated,) enforces
+    the same access rules previously set by the @view_auth_classes(is_authenticated=True)
+    decorator.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.url = reverse("cms.djangoapps.contentstore:v1:courses")
+        self.user = UserFactory.create()
+        self.staff_user = UserFactory.create(is_staff=True)
+
+    def test_unauthenticated_request_returns_401(self):
+        """
+        Unauthenticated request (no credentials) must be rejected with 401.
+
+        Before ADR 0026: enforced by @view_auth_classes(is_authenticated=True).
+        After ADR 0026: enforced by permission_classes = (IsAuthenticated,).
+        """
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_authenticated_user_gets_200(self):
+        """
+        Any authenticated user (not necessarily staff) must receive 200.
+
+        HomePageCoursesView only requires authentication — no staff role needed.
+        The view returns an empty course list for users with no assigned courses.
+        """
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_staff_user_gets_200(self):
+        """Staff user must also receive 200 (staff is a superset of authenticated)."""
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_post_by_unauthenticated_returns_401(self):
+        """Non-GET methods also enforce authentication — POST without credentials is 401."""
+        response = self.client.post(self.url, data={})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
