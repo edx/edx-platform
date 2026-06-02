@@ -31,6 +31,33 @@ AUDIT_EXPIRY_URGENCY_V1_ENABLED = WaffleFlag(
     __name__,
 )
 
+# .. toggle_name: experiments.audit_expiry_urgency_v1.course_enabled
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Course/org targeting flag for the Audit Expiry Urgency (v1) backend experiment.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-06-01
+# .. toggle_target_removal_date: None
+# .. toggle_tickets: Audit Expiry Urgency Experiment
+# .. toggle_warning: This temporary feature toggle does not have a target removal date.
+AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED = CourseWaffleFlag(
+    'experiments.audit_expiry_urgency_v1.course_enabled',
+    __name__,
+)
+
+
+def audit_expiry_urgency_v1_enabled_for_course(course_key):
+    """
+    Return whether the audit expiry urgency experiment is enabled for a course.
+
+    The global waffle flag remains the kill switch. The course waffle flag only
+    controls course/org targeting once that kill switch is enabled.
+    """
+    return (
+        AUDIT_EXPIRY_URGENCY_V1_ENABLED.is_enabled()
+        and AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED.is_enabled(course_key)
+    )
+
 
 class ExperimentWaffleFlag(CourseWaffleFlag):
     """

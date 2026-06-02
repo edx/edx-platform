@@ -9,6 +9,7 @@ from crum import set_current_request
 from django.test import RequestFactory
 from django.utils import timezone
 from zoneinfo import ZoneInfo
+from edx_django_utils.cache import RequestCache
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 
 from common.djangoapps.course_modes.models import CourseMode
@@ -28,7 +29,10 @@ from openedx.features.course_duration_limits.access import (
 from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
 from common.djangoapps.student.models import CourseEnrollmentAttribute
 from edx_toggles.toggles.testutils import override_waffle_flag
-from lms.djangoapps.experiments.flags import AUDIT_EXPIRY_URGENCY_V1_ENABLED
+from lms.djangoapps.experiments.flags import (
+    AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED,
+    AUDIT_EXPIRY_URGENCY_V1_ENABLED,
+)
 
 
 @ddt.ddt
@@ -36,6 +40,7 @@ class TestAccess(ModuleStoreTestCase):
     """Tests of openedx.features.course_duration_limits.access"""
     def setUp(self):
         super().setUp()  # lint-amnesty, pylint: disable=super-with-arguments
+        RequestCache.clear_all_namespaces()
 
         CourseDurationLimitConfig.objects.create(
             enabled=True,
@@ -43,6 +48,7 @@ class TestAccess(ModuleStoreTestCase):
         )
         DynamicUpgradeDeadlineConfiguration.objects.create(enabled=True)
         self.course = CourseOverviewFactory.create(start=datetime(2018, 1, 1, tzinfo=ZoneInfo("UTC")), self_paced=True)
+        self.addCleanup(RequestCache.clear_all_namespaces)
 
     def assertDateInMessage(self, date, message):  # lint-amnesty, pylint: disable=missing-function-docstring
         # First, check that the formatted version is in there
@@ -117,7 +123,8 @@ class TestAccess(ModuleStoreTestCase):
         )
 
         with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
-            data = get_access_expiration_data(user, overview)
+            with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED, active=True):
+                data = get_access_expiration_data(user, overview)
 
         assert data['experiment_key'] == 'audit_expiry_urgency_v1'
         assert data['variant'] == 'expiry_7_days'
@@ -230,7 +237,36 @@ class TestAccess(ModuleStoreTestCase):
         )
 
         with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
-            assert get_user_course_expiration_date(user, overview) == persisted
+            with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED, active=True):
+                assert get_user_course_expiration_date(user, overview) == persisted
+
+    def test_get_user_course_expiration_date_ignores_persisted_audit_expiry_at_when_course_flag_off(self):
+        enrollment = CourseEnrollmentFactory.create(course=self.course)
+        overview = enrollment.course
+        user = enrollment.user
+
+        CourseModeFactory(
+            course_id=enrollment.course.id,
+            mode_slug=CourseMode.VERIFIED,
+        )
+        CourseModeFactory(
+            course_id=enrollment.course.id,
+            mode_slug=CourseMode.AUDIT,
+        )
+
+        persisted = (timezone.now() + timedelta(days=42)).replace(microsecond=0)
+        CourseEnrollmentAttribute.objects.create(
+            enrollment=enrollment,
+            namespace='audit_expiry_experiment',
+            name='audit_expiry_at',
+            value=persisted.isoformat(),
+        )
+
+        with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
+            computed = get_user_course_expiration_date(user, overview)
+
+        assert computed is not None
+        assert computed != persisted
 
     def test_get_user_course_expiration_date_ignores_persisted_audit_expiry_at_when_flag_off(self):
         enrollment = CourseEnrollmentFactory.create(course=self.course)
@@ -257,7 +293,8 @@ class TestAccess(ModuleStoreTestCase):
         # With the waffle flag off, the persisted value should be ignored
         # and the normal computed CDL logic should be used.
         with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=False):
-            computed = get_user_course_expiration_date(user, overview)
+            with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_COURSE_ENABLED, active=True):
+                computed = get_user_course_expiration_date(user, overview)
 
         assert computed is not None
         assert computed != persisted
