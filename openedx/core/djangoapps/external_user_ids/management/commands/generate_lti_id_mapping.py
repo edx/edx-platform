@@ -20,13 +20,13 @@ Output columns:
 """
 
 import csv
-import sys
 import textwrap
 
 from django.core.management import BaseCommand
 from opaque_keys.edx.keys import CourseKey
 
 from common.djangoapps.student.models import AnonymousUserId
+from openedx.core.djangoapps.external_user_ids.models import ExternalIdType
 
 
 class Command(BaseCommand):
@@ -35,7 +35,10 @@ class Command(BaseCommand):
 
     Only users who have both identifiers already generated will appear in the output.
     LTI 1.3 UUIDs are created on first LTI 1.3 launch; LTI 1.1 hashes are created
-    on first LTI 1.1 launch for each course.
+    on first LTI 1.1 launch for each course. In rare cases multiple hashes may exist
+    per (user, course) due to historical SECRET_KEY rotation — this command always
+    uses the most recently created hash (highest record ID), consistent with the
+    behaviour of anonymous_id_for_user().
 
     Examples:
 
@@ -64,10 +67,9 @@ class Command(BaseCommand):
         course_keys = options['course_keys']
         output_path = options['output']
 
+        output_file = self.stdout
         if output_path:
             output_file = open(output_path, 'w', newline='', encoding='utf-8')  # pylint: disable=consider-using-with
-        else:
-            output_file = sys.stdout
 
         try:
             writer = csv.writer(output_file)
@@ -80,13 +82,26 @@ class Command(BaseCommand):
             # only anonymous identifiers (UUID and hash) and the course key.
             # No username, email, name, or internal user ID is selected or
             # written to the output.
+            # Use ExternalIdType.LTI constant instead of a hardcoded string
+            # to avoid drift if the underlying type name ever changes.
+            # Order by -id so that in the rare case of multiple hashes per
+            # (user, course) — caused by historical SECRET_KEY rotation —
+            # we consistently pick the most recently created one, matching
+            # the behaviour of anonymous_id_for_user().
             rows = AnonymousUserId.objects.filter(
                 course_id__in=course_keys,
-                user__externalid__external_id_type__name='lti',
+                user__externalid__external_id_type__name=ExternalIdType.LTI,
             ).values(
                 'user__externalid__external_user_id',
                 'course_id',
                 'anonymous_user_id',
+            ).order_by(
+                'user__externalid__external_user_id',
+                'course_id',
+                '-id',
+            ).distinct(
+                'user__externalid__external_user_id',
+                'course_id',
             ).iterator(chunk_size=1000)
 
             row_count = 0
