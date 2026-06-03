@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from cms.djangoapps.contentstore.rest_api.mixins import StandardizedErrorMixin
 from cms.djangoapps.contentstore.rest_api.v4.serializers.home import (
     CourseHomeTabSerializerV4,
 )
@@ -98,7 +99,7 @@ def _maybe_set_legacy_order_deprecation_header(
     return response
 
 
-class HomeCoursesViewSet(viewsets.ViewSet):
+class HomeCoursesViewSet(StandardizedErrorMixin, viewsets.ViewSet):
     """
     ViewSet for course listing (v4). Registered via DefaultRouter (basename ``home-courses``).
 
@@ -113,6 +114,7 @@ class HomeCoursesViewSet(viewsets.ViewSet):
         - 0026: explicit ``authentication_classes`` and ``permission_classes``
         - 0027: ``drf_spectacular`` for OpenAPI documentation
         - 0028: ViewSet with DefaultRouter registration
+        - 0029: standardized error envelope via ``StandardizedErrorMixin``
         - 0032: 7-field pagination envelope via ``DefaultPagination``
         - 0033: ``ordering`` parameter; ``order`` kept as deprecated alias
     """
@@ -120,11 +122,6 @@ class HomeCoursesViewSet(viewsets.ViewSet):
     authentication_classes = (JwtAuthentication, SessionAuthenticationAllowInactiveUser)
     permission_classes = (IsAuthenticated,)
     serializer_class = CourseHomeTabSerializerV4
-
-    def get_exception_handler(self):
-        """Return the ADR 0029 standardized error handler for this viewset."""
-        from openedx.core.lib.api.exceptions import standardized_error_exception_handler
-        return standardized_error_exception_handler
 
     def get_serializer(self, *args, **kwargs):
         """Instantiate and return the configured serializer class."""
