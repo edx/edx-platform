@@ -23,6 +23,7 @@ import csv
 import textwrap
 
 from django.core.management import BaseCommand
+from django.db.models import Max
 from opaque_keys.edx.keys import CourseKey
 
 from common.djangoapps.student.models import AnonymousUserId
@@ -82,26 +83,27 @@ class Command(BaseCommand):
             # only anonymous identifiers (UUID and hash) and the course key.
             # No username, email, name, or internal user ID is selected or
             # written to the output.
-            # Use ExternalIdType.LTI constant instead of a hardcoded string
-            # to avoid drift if the underlying type name ever changes.
-            # Order by -id so that in the rare case of multiple hashes per
-            # (user, course) — caused by historical SECRET_KEY rotation —
-            # we consistently pick the most recently created one, matching
-            # the behaviour of anonymous_id_for_user().
+            # De-duplicate: in rare cases a user may have multiple
+            # AnonymousUserId rows per (user, course) due to historical
+            # SECRET_KEY rotation. We pick the most recently created one
+            # (highest id) per (user_id, course_id) group — consistent with
+            # anonymous_id_for_user(). Using Max('id') + subquery instead of
+            # DISTINCT ON because DISTINCT ON is PostgreSQL-only and edX runs
+            # MySQL in production.
+            latest_ids = (
+                AnonymousUserId.objects.filter(course_id__in=course_keys)
+                .values('user_id', 'course_id')
+                .annotate(latest_id=Max('id'))
+                .values_list('latest_id', flat=True)
+            )
+
             rows = AnonymousUserId.objects.filter(
-                course_id__in=course_keys,
+                id__in=latest_ids,
                 user__externalid__external_id_type__name=ExternalIdType.LTI,
             ).values(
                 'user__externalid__external_user_id',
                 'course_id',
                 'anonymous_user_id',
-            ).order_by(
-                'user__externalid__external_user_id',
-                'course_id',
-                '-id',
-            ).distinct(
-                'user__externalid__external_user_id',
-                'course_id',
             ).iterator(chunk_size=1000)
 
             row_count = 0
