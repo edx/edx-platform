@@ -14,6 +14,7 @@ import uuid
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.management.base import BaseCommand
+from django.db.models import Exists, OuterRef
 from edx_ace import ace, presentation
 from edx_ace.message import Message
 from edx_ace.recipient import Recipient
@@ -206,8 +207,17 @@ class Command(BaseCommand):
             log.info('Cleared all reminder statuses')
             return
 
+        active_enrollment_exists = CourseEnrollment.objects.filter(
+            user=OuterRef('user'),
+            course_id=OuterRef('course_key'),
+            is_active=True,
+            created__date__lt=monday_date,
+        )
         course_goals = CourseGoal.objects.filter(
-            days_per_week__gt=0, subscribed_to_reminders=True,
+            days_per_week__gt=0,
+            subscribed_to_reminders=True,
+        ).filter(
+            Exists(active_enrollment_exists)
         ).exclude(
             reminder_status__email_reminder_sent=True,
         )
@@ -217,8 +227,11 @@ class Command(BaseCommand):
         courses_to_exclude = CourseOverview.objects.filter(
             id__in=all_goal_course_keys, end__date__lte=sunday_date
         ).values_list('id', flat=True)
-        log.info(f"Processing course goals across {len(all_goal_course_keys)} courses "
-                 + f"excluding {len(courses_to_exclude)} ended courses")
+        log.info(
+            'Processing course goals across %s courses excluding %s ended courses',
+            all_goal_course_keys.count(),
+            courses_to_exclude.count(),
+        )
 
         sent_count = 0
         filtered_count = 0
@@ -232,14 +245,16 @@ class Command(BaseCommand):
                 'goal_count': total_goals,
             }
         )
-        log.info('Processing course goals, total goal count {}, timestamp: {}, uuid: {}'.format(
+        log.info(
+            'Processing course goals, total goal count %s, timestamp: %s, uuid: %s',
             total_goals,
             datetime.now(),
-            session_id
-        ))
+            session_id,
+        )
+        site = Site.objects.get_current()
         for goal in course_goals.iterator(chunk_size=500):
             # emulate a request for waffle's benefit
-            with emulate_http_request(site=Site.objects.get_current(), user=goal.user):
+            with emulate_http_request(site=site, user=goal.user):
                 if self.handle_goal(goal, today, sunday_date, monday_date, session_id):
                     sent_count += 1
                 else:
@@ -271,6 +286,22 @@ class Command(BaseCommand):
     @staticmethod
     def handle_goal(goal, today, sunday_date, monday_date, session_id):
         """Sends an email reminder for a single CourseGoal, if it passes all our checks"""
+        # Check timezone first — cheapest check, filters the most goals at any given run hour
+        user_timezone = get_user_timezone_or_last_seen_timezone_or_utc(goal.user)
+        now_in_users_timezone = datetime.now(user_timezone)
+        if not 8 <= now_in_users_timezone.hour < 18:
+            tracker.emit(
+                'edx.course.goal.email.filtered',
+                {
+                    'uuid': session_id,
+                    'timestamp': datetime.now(),
+                    'reason': 'User time zone',
+                    'user_timezone': str(user_timezone),
+                    'now_in_users_timezone': now_in_users_timezone,
+                }
+            )
+            return False
+
         if not ENABLE_COURSE_GOALS.is_enabled(goal.course_key):
             return False
 
@@ -299,22 +330,6 @@ class Command(BaseCommand):
         # The weekdays are 0 indexed, but we want this to be 1 to match required_days_left.
         # Essentially, if today is Sunday, days_left_in_week should be 1 since they have Sunday to hit their goal.
         days_left_in_week = SUNDAY_WEEKDAY - today.weekday() + 1
-
-        # We want to email users during the day of their timezone
-        user_timezone = get_user_timezone_or_last_seen_timezone_or_utc(goal.user)
-        now_in_users_timezone = datetime.now(user_timezone)
-        if not 8 <= now_in_users_timezone.hour < 18:
-            tracker.emit(
-                'edx.course.goal.email.filtered',
-                {
-                    'uuid': session_id,
-                    'timestamp': datetime.now(),
-                    'reason': 'User time zone',
-                    'user_timezone': str(user_timezone),
-                    'now_in_users_timezone': now_in_users_timezone,
-                }
-            )
-            return False
 
         if required_days_left == days_left_in_week:
             sent = send_ace_message(goal, session_id)
