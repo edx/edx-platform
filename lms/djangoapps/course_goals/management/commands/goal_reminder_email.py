@@ -14,7 +14,8 @@ import uuid
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.management.base import BaseCommand
-from django.db.models import Exists, OuterRef
+from django.db.models import Count, Exists, F, IntegerField, OuterRef, Subquery, Value
+from django.db.models.functions import Coalesce
 from edx_ace import ace, presentation
 from edx_ace.message import Message
 from edx_ace.recipient import Recipient
@@ -22,6 +23,7 @@ from edx_ace.utils.signals import send_ace_message_sent_signal
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.certificates.api import get_certificate_for_user_id
 from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.certificates.models import GeneratedCertificate
 from lms.djangoapps.courseware.context_processor import get_user_timezone_or_last_seen_timezone_or_utc
 from lms.djangoapps.course_goals.models import CourseGoal, CourseGoalReminderStatus, UserActivity
 from openedx.core.djangoapps.ace_common.template_context import get_base_template_context
@@ -207,12 +209,32 @@ class Command(BaseCommand):
             log.info('Cleared all reminder statuses')
             return
 
+        # The weekdays are 0 indexed, but we want this to be 1 to match required_days_left.
+        # Essentially, if today is Sunday, days_left_in_week should be 1 since they have Sunday to hit their goal.
+        days_left_in_week = SUNDAY_WEEKDAY - today.weekday() + 1
+
         active_enrollment_exists = CourseEnrollment.objects.filter(
             user=OuterRef('user'),
             course_id=OuterRef('course_key'),
             is_active=True,
             created__date__lt=monday_date,
         )
+
+        # Subquery: count how many activity days this user has logged this week for this course
+        week_activity_subquery = Coalesce(
+            Subquery(
+                UserActivity.objects.filter(
+                    user=OuterRef('user'),
+                    course_key=OuterRef('course_key'),
+                    date__gte=monday_date,
+                ).values('user', 'course_key').annotate(cnt=Count('pk')).values('cnt'),
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        )
+
+        # Only include goals where the user needs exactly days_left_in_week more days to hit their goal,
+        # i.e. required_days_left == days_left_in_week, i.e. days_per_week - week_activity_count == days_left_in_week
         course_goals = CourseGoal.objects.filter(
             days_per_week__gt=0,
             subscribed_to_reminders=True,
@@ -220,6 +242,19 @@ class Command(BaseCommand):
             Exists(active_enrollment_exists)
         ).exclude(
             reminder_status__email_reminder_sent=True,
+        ).annotate(
+            week_activity_count=week_activity_subquery,
+        ).filter(
+            week_activity_count=F('days_per_week') - days_left_in_week,
+        ).exclude(
+            # Exclude users who already have a downloadable certificate — they've completed the course
+            Exists(
+                GeneratedCertificate.objects.filter(
+                    user=OuterRef('user'),
+                    course_id=OuterRef('course_key'),
+                    status=CertificateStatuses.downloadable,
+                )
+            )
         )
         all_goal_course_keys = course_goals.values_list('course_key', flat=True).distinct()
         # Exclude all courses whose end dates are earlier than Sunday so we don't send an email about hitting
@@ -285,8 +320,13 @@ class Command(BaseCommand):
 
     @staticmethod
     def handle_goal(goal, today, sunday_date, monday_date, session_id):
-        """Sends an email reminder for a single CourseGoal, if it passes all our checks"""
-        # Check timezone first — cheapest check, filters the most goals at any given run hour
+        """Sends an email reminder for a single CourseGoal, if it passes all our checks.
+
+        Note: enrollment validity, certificate status, and weekly activity count are pre-filtered
+        at the queryset level in _handle_all_goals. This method handles the remaining checks that
+        cannot be efficiently expressed as DB filters.
+        """
+        # Check timezone first — cheapest check, no DB query
         user_timezone = get_user_timezone_or_last_seen_timezone_or_utc(goal.user)
         now_in_users_timezone = datetime.now(user_timezone)
         if not 8 <= now_in_users_timezone.hour < 18:
@@ -305,9 +345,9 @@ class Command(BaseCommand):
         if not ENABLE_COURSE_GOALS.is_enabled(goal.course_key):
             return False
 
+        # Fetch enrollment only to check audit access expiration date
         enrollment = CourseEnrollment.get_enrollment(goal.user, goal.course_key, select_related=['course'])
-        # If you're not actively enrolled in the course or your enrollment was this week
-        if not enrollment or not enrollment.is_active or enrollment.created.date() >= monday_date:
+        if not enrollment:
             return False
 
         audit_access_expiration_date = get_user_course_expiration_date(goal.user, enrollment.course_overview)
@@ -316,26 +356,10 @@ class Command(BaseCommand):
         if audit_access_expiration_date and audit_access_expiration_date.date() <= sunday_date:
             return False
 
-        cert = get_certificate_for_user_id(goal.user, goal.course_key)
-        # If a user has a downloadable certificate, we will consider them as having completed
-        # the course and opt them out of receiving emails
-        if cert and cert.status == CertificateStatuses.downloadable:
-            return False
-
-        # Check the number of days left to successfully hit their goal
-        week_activity_count = UserActivity.objects.filter(
-            user=goal.user, course_key=goal.course_key, date__gte=monday_date,
-        ).count()
-        required_days_left = goal.days_per_week - week_activity_count
-        # The weekdays are 0 indexed, but we want this to be 1 to match required_days_left.
-        # Essentially, if today is Sunday, days_left_in_week should be 1 since they have Sunday to hit their goal.
-        days_left_in_week = SUNDAY_WEEKDAY - today.weekday() + 1
-
-        if required_days_left == days_left_in_week:
-            sent = send_ace_message(goal, session_id)
-            if sent:
-                CourseGoalReminderStatus.objects.update_or_create(goal=goal, defaults={'email_reminder_sent': True})
-                return True
+        sent = send_ace_message(goal, session_id)
+        if sent:
+            CourseGoalReminderStatus.objects.update_or_create(goal=goal, defaults={'email_reminder_sent': True})
+            return True
 
         return False
 
