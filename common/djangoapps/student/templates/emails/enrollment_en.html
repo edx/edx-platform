@@ -132,7 +132,7 @@
     }
 
     .main-section {
-      background-color: #ffffff;
+      background-color: #0e3639;
     }
 
     .text {
@@ -330,7 +330,7 @@
       font-style: normal;
       font-weight: 400;
       font-size: 14px;
-      line-height: 0px;
+      line-height: 20px;
       color: #454545;
     }
 
@@ -855,7 +855,7 @@
                                             {% if course_price == 0 %}
                                             Free
                                             {% else %}
-                                            ${{ course_price }}
+                                            $ {{ course_price }}
                                             {% endif %}<br />
                                             <span style="font-weight:500;">
                                               {% if course_price == 0 %}
@@ -1598,7 +1598,7 @@
                                         <tr>
                                           <td
                                             style="color: #737373; font-size: 8px; font-family: Arial, sans-serif; font-weight: 500; line-height: 10px; word-wrap: break-word;">
-                                            {% if course_date_blocks|length > 2 and course_date_blocks.2.title %}
+                                            {% if course_date_blocks|length > 2 and course_date_blocks.2.due_date %}
                                             {{ course_date_blocks.2.due_date }}
                                             {% endif %}
                                           </td>

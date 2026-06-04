@@ -1,15 +1,19 @@
 """
 Celery task tests
 """
+from datetime import datetime
 from unittest.mock import patch, Mock, PropertyMock
 
 import pytest
 from django.conf import settings
 from django.test.utils import override_settings
+from edx_toggles.toggles.testutils import override_waffle_flag
 
 from common.djangoapps.student.tasks import (
     MAX_RETRIES,
-    send_course_enrollment_email
+    ENABLE_SES_FOR_COURSE_ENROLLMENT,
+    _build_enrollment_email_image_urls,
+    send_course_enrollment_email,
 )
 from common.djangoapps.student.tests.factories import UserFactory
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
@@ -132,13 +136,18 @@ class TestCourseEnrollmentEmailTask(ModuleStoreTestCase):
             "learning_base_url": "https://learningmfe.openedx.org",
             "lms_base_url": settings.LMS_ROOT_URL,
             "course_price": 0,
+            "current_year": datetime.now().year,
             "goals_enabled": False,
             "course_date_blocks": [],
             "course_title": self.send_course_enrollment_email_kwargs["course_title"],
             "short_description": self.send_course_enrollment_email_kwargs["short_description"],
             "pacing_type": self.send_course_enrollment_email_kwargs["pacing_type"],
             "track_mode": self.send_course_enrollment_email_kwargs["track_mode"],
+            "user_name": self.user.get_full_name() or self.user.first_name or self.user.username,
         }
+
+        # Payload now always includes image URLs used by SES and ignored by Braze.
+        canvas_properties.update(_build_enrollment_email_image_urls(language='en'))
 
         if add_course_dates:
             canvas_properties.update({"course_date_blocks": self._get_course_dates()})
@@ -388,3 +397,337 @@ class TestCourseEnrollmentEmailTask(ModuleStoreTestCase):
             )
         pytest.raises(Exception, task.get)
         self.assertEqual(mock_get_email_client.call_count, (MAX_RETRIES + 1))
+
+
+@override_settings(
+    BRAZE_COURSE_ENROLLMENT_CANVAS_ID=BRAZE_COURSE_ENROLLMENT_CANVAS_ID,
+    LEARNING_MICROFRONTEND_URL="https://learningmfe.openedx.org",
+    DEFAULT_FROM_EMAIL="no-reply@edx.org",
+    LMS_ROOT_URL="https://courses.edx.org",
+)
+class TestCourseEnrollmentEmailSESRouting(ModuleStoreTestCase):
+    """
+    Tests for waffle-flag-based SES/Braze routing in send_course_enrollment_email.
+
+    Mirrors the pattern used for account-activation SES routing in
+    openedx/core/djangoapps/user_authn/tasks.py.
+    """
+
+    COURSE_ID = "course-v1:edX+DemoX+2024"
+
+    def setUp(self):
+        super().setUp()
+        self.user = UserFactory.create(username="ses_user", email="ses@example.com")
+        # Use a string course ID — no CourseFactory needed since all external
+        # calls are mocked.
+        self.task_kwargs = {
+            "user_id": self.user.id,
+            "course_id": self.COURSE_ID,
+            "course_title": "SES Test Course",
+            "short_description": "SES description",
+            "course_ended": False,
+            "pacing_type": "self_paced",
+            "track_mode": "audit",
+        }
+
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=False)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch("common.djangoapps.student.tasks.get_email_client")
+    @patch("common.djangoapps.student.tasks._send_ses_enrollment_email")
+    def test_braze_path_used_when_waffle_disabled(
+        self,
+        mock_ses_send,
+        mock_get_email_client,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """When the waffle flag is off, Braze canvas message is sent and SES is NOT called."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+
+        mock_get_email_client.return_value.send_canvas_message.assert_called_once()
+        mock_ses_send.assert_not_called()
+
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=True)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch("common.djangoapps.student.tasks.get_email_client")
+    @patch("common.djangoapps.student.tasks._send_ses_enrollment_email")
+    def test_ses_path_used_when_waffle_enabled(
+        self,
+        mock_ses_send,
+        mock_get_email_client,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """When the waffle flag is on, SES send is called and Braze is NOT called."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+
+        mock_ses_send.assert_called_once()
+        mock_get_email_client.return_value.send_canvas_message.assert_not_called()
+
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=True)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch("common.djangoapps.student.tasks.get_email_client")
+    @patch(
+        "common.djangoapps.student.tasks._send_ses_enrollment_email",
+        side_effect=Exception("SES failure"),
+    )
+    def test_ses_failure_falls_back_to_braze(
+        self,
+        mock_ses_send,
+        mock_get_email_client,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """If SES send fails, task should fall back to Braze without retrying."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+
+        mock_ses_send.assert_called_once()
+        mock_get_email_client.return_value.send_canvas_message.assert_called_once()
+
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=True)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch(
+        "common.djangoapps.student.tasks._send_ses_enrollment_email",
+        side_effect=Exception("SES failure"),
+    )
+    @patch(
+        "common.djangoapps.student.tasks.get_email_client",
+        new_callable=PropertyMock,
+        side_effect=Exception("Braze fallback failure"),
+    )
+    def test_ses_and_braze_fallback_failure_triggers_retry(
+        self,
+        mock_get_email_client,
+        mock_ses_send,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """If both SES and Braze fallback fail, task should retry up to MAX_RETRIES."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        task = send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+        pytest.raises(Exception, task.get)
+        self.assertEqual(mock_ses_send.call_count, MAX_RETRIES + 1)
+        self.assertEqual(mock_get_email_client.call_count, MAX_RETRIES + 1)
+
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=True)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch("common.djangoapps.student.tasks.render_to_string", return_value="<html></html>")
+    @patch("common.djangoapps.student.tasks.EmailMultiAlternatives")
+    def test_ses_send_uses_correct_template_and_recipient(
+        self,
+        mock_email_cls,
+        mock_render,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """_send_ses_enrollment_email renders the namespaced template and addresses to user.email."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+
+        # Template should use the new namespaced path
+        render_call_args = mock_render.call_args
+        assert render_call_args[0][0] == "emails/enrollment_en.html"
+
+        # Email should go to the correct user — EmailMultiAlternatives(subject, body, from, to=[...])
+        _, email_kwargs = mock_email_cls.call_args
+        assert self.user.email in email_kwargs.get('to', [])
+        assert email_kwargs.get('subject') == f"You're enrolled in {self.task_kwargs['course_title']}"
+        assert email_kwargs.get('body')
+        assert email_kwargs.get('reply_to')
+
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=True)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch("common.djangoapps.student.tasks.UserPreference.get_value", return_value="es")
+    @patch("common.djangoapps.student.tasks.render_to_string", return_value="<html></html>")
+    @patch("common.djangoapps.student.tasks.EmailMultiAlternatives")
+    def test_ses_send_uses_spanish_template_when_user_pref_is_spanish(
+        self,
+        mock_email_cls,
+        mock_render,
+        _mock_user_pref,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """SES should render Spanish enrollment template when user language preference is Spanish."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+
+        render_call_args = mock_render.call_args
+        assert render_call_args[0][0] == "emails/enrollment_es.html"
+
+        _, email_kwargs = mock_email_cls.call_args
+        assert self.user.email in email_kwargs.get('to', [])
+        assert email_kwargs.get('subject') == f"Te has inscrito en {self.task_kwargs['course_title']}"
+        assert email_kwargs.get('body')
+
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=False)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch("common.djangoapps.student.tasks.UserPreference.get_value", return_value="es")
+    @patch("common.djangoapps.student.tasks.get_email_client")
+    def test_braze_canvas_context_includes_spanish_image_keys_when_user_pref_is_spanish(
+        self,
+        mock_get_email_client,
+        _mock_user_pref,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """Braze payload should include Spanish image URL keys when user language preference is Spanish."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+
+        _, send_kwargs = mock_get_email_client.return_value.send_canvas_message.call_args
+        canvas_props = send_kwargs["canvas_entry_properties"]
+        assert "timer_icon_es" in canvas_props
+        assert "arrow_icon_es" in canvas_props
+
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=True)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch("common.djangoapps.student.tasks.get_email_client")
+    @patch("common.djangoapps.student.tasks._send_ses_enrollment_email")
+    def test_braze_not_called_when_ses_succeeds(
+        self,
+        mock_ses_send,
+        mock_get_email_client,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """Verify Braze is NOT called when SES succeeds (no duplicate sends)."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+
+        mock_ses_send.assert_called_once()
+        mock_get_email_client.return_value.send_canvas_message.assert_not_called()
+
+    @override_settings(BRAZE_COURSE_ENROLLMENT_CANVAS_ID=None)
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=False)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch(
+        "common.djangoapps.student.tasks._send_braze_enrollment_email",
+        side_effect=Exception("Braze fallback failure"),
+    )
+    def test_braze_path_retries_when_canvas_id_missing(
+        self,
+        _mock_braze_send,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """Braze path should retry when BRAZE_COURSE_ENROLLMENT_CANVAS_ID is missing."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        task = send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+        pytest.raises(Exception, task.get)
+
+    @override_settings(BRAZE_COURSE_ENROLLMENT_CANVAS_ID=None)
+    @override_waffle_flag(ENABLE_SES_FOR_COURSE_ENROLLMENT, active=True)
+    @patch("common.djangoapps.student.tasks.get_course_uuid_for_course")
+    @patch("common.djangoapps.student.tasks.get_owners_for_course")
+    @patch("common.djangoapps.student.tasks.get_course_run_details")
+    @patch("common.djangoapps.student.tasks.get_course_dates_for_email")
+    @patch(
+        "common.djangoapps.student.tasks._send_braze_enrollment_email",
+        side_effect=Exception("Braze fallback failure"),
+    )
+    @patch(
+        "common.djangoapps.student.tasks._send_ses_enrollment_email",
+        side_effect=Exception("SES failure"),
+    )
+    def test_ses_fallback_retries_when_canvas_id_missing(
+        self,
+        _mock_ses_send,
+        _mock_braze_send,
+        mock_get_course_dates,
+        mock_get_course_run,
+        mock_get_owners,
+        mock_get_uuid,
+    ):
+        """SES path should retry when SES fails and Braze fallback is misconfigured."""
+        mock_get_uuid.return_value = "some-uuid"
+        mock_get_owners.return_value = []
+        mock_get_course_run.return_value = {}
+        mock_get_course_dates.return_value = []
+
+        task = send_course_enrollment_email.apply_async(kwargs=self.task_kwargs)
+        pytest.raises(Exception, task.get)
