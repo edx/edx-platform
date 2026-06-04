@@ -19,7 +19,8 @@ from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthenticat
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 
 from lms.djangoapps.discussion.rest_api.permissions import (
-    CanMuteUsers
+    CanMuteUsers,
+    IsDiscussionReadOnlyModeDisabled,
 )
 from lms.djangoapps.discussion.rest_api.serializers import (
     MuteRequestSerializer,
@@ -97,7 +98,7 @@ class ForumMuteUserView(DeveloperErrorViewMixin, APIView):
         JwtAuthentication,
         SessionAuthenticationAllowInactiveUser,
     ]
-    permission_classes = [CanMuteUsers]
+    permission_classes = [CanMuteUsers, IsDiscussionReadOnlyModeDisabled]
 
     def post(self, request, course_id):
         """Mute a user in discussions using forum service"""
@@ -154,7 +155,7 @@ class ForumUnmuteUserView(DeveloperErrorViewMixin, APIView):
         JwtAuthentication,
         SessionAuthenticationAllowInactiveUser,
     ]
-    permission_classes = [CanMuteUsers]
+    permission_classes = [CanMuteUsers, IsDiscussionReadOnlyModeDisabled]
 
     def post(self, request, course_id):
         """Unmute a user in discussions using forum service"""
@@ -212,7 +213,7 @@ class ForumMuteAndReportView(DeveloperErrorViewMixin, APIView):
         JwtAuthentication,
         SessionAuthenticationAllowInactiveUser,
     ]
-    permission_classes = [CanMuteUsers]
+    permission_classes = [CanMuteUsers, IsDiscussionReadOnlyModeDisabled]
 
     def post(self, request, course_id):
         """Mute a user and report their content using forum service"""
@@ -318,7 +319,7 @@ class ForumMutedUsersListView(DeveloperErrorViewMixin, APIView):
         JwtAuthentication,
         SessionAuthenticationAllowInactiveUser,
     ]
-    permission_classes = [CanMuteUsers]
+    permission_classes = [CanMuteUsers, IsDiscussionReadOnlyModeDisabled]
 
     def get(self, request, course_id):
         """Get list of muted users using forum service"""
@@ -358,12 +359,24 @@ class ForumMutedUsersListView(DeveloperErrorViewMixin, APIView):
 
         # Call forum API
         try:
-            result = forum_api.get_all_muted_users_for_course(
-                course_id=str(course_key),
-                requester_id=requester_id,
-                scope=scope,
-                requester_is_privileged=is_staff
-            )
+            if is_staff:
+                result = forum_api.get_all_muted_users_for_course(
+                    course_id=str(course_key),
+                    requester_id=requester_id,
+                    scope=scope,
+                    requester_is_privileged=is_staff,
+                )
+            else:
+                # Keep learner flow simple and avoid backend privilege re-check lookups.
+                # Learners should only see their own personal mutes.
+                muted_users = forum_api.get_muted_users(
+                    muter_id=str(request.user.id),
+                    course_id=str(course_key),
+                    scope='personal',
+                )
+                result = {
+                    'muted_users': muted_users,
+                }
 
             # Process results if usernames needed
             muted_users = result.get('muted_users', [])
@@ -422,7 +435,7 @@ class ForumMuteStatusView(DeveloperErrorViewMixin, APIView):
         JwtAuthentication,
         SessionAuthenticationAllowInactiveUser,
     ]
-    permission_classes = [CanMuteUsers]
+    permission_classes = [CanMuteUsers, IsDiscussionReadOnlyModeDisabled]
 
     def get(self, request, course_id, user_id):
         """Get mute status for a user using forum service"""
