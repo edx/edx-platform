@@ -21,7 +21,6 @@ from edx_ace.message import Message
 from edx_ace.recipient import Recipient
 from edx_ace.utils.signals import send_ace_message_sent_signal
 from common.djangoapps.student.models import CourseEnrollment
-from lms.djangoapps.certificates.api import get_certificate_for_user_id
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.models import GeneratedCertificate
 from lms.djangoapps.courseware.context_processor import get_user_timezone_or_last_seen_timezone_or_utc
@@ -319,7 +318,7 @@ class Command(BaseCommand):
                  )
 
     @staticmethod
-    def handle_goal(goal, today, sunday_date, monday_date, session_id):
+    def handle_goal(goal, today, sunday_date, _monday_date, session_id):
         """Sends an email reminder for a single CourseGoal, if it passes all our checks.
 
         Note: enrollment validity, certificate status, and weekly activity count are pre-filtered
