@@ -105,13 +105,10 @@ enterprise.HistoricalEnterpriseCustomerCatalog:
 enterprise.HistoricalEnterpriseCustomerEntitlement:
   ".. no_pii:": "No PII"
 
-# Via edx-ora2, these can be removed once the models are annotated for real
 # Via edx-celeryutils
 celery_utils.ChordData:
   ".. no_pii:": "No PII"
 
-# Via completion XBlock
-# Via django_notify (required / installed by wiki)
 # Via django-openid-auth https://github.com/edx/django-openid-auth
 django_openid_auth.Association:
   ".. no_pii:": "No PII"
@@ -158,14 +155,12 @@ edx_name_affirmation.HistoricalVerifiedName:
   ".. pii_types:": "name"
   ".. pii_retirement:": "local_api"
 
-# Via VAL
 # Via PyLTI1p3
 lti1p3_tool_config.LtiTool:
   ".. no_pii:": "No PII"
 lti1p3_tool_config.LtiToolKey:
   ".. no_pii:": "No PII"
 
-# Via Milestones
 # Via Django OAuth2 Provider https://github.com/edx/django-oauth2-provider
 oauth2.Client:
   ".. no_pii:": "No PII"
@@ -216,7 +211,6 @@ oauth_provider.Token:
   ".. pii_types:": external_service, password
   ".. pii_retirement:": retained
 
-# Via edx-organizations
 # Via Problem Builder XBlock
 problem_builder.Answer:
   ".. no_pii:": "No PII"
@@ -243,12 +237,10 @@ social_django.UserSocialAuth:
 splash.SplashConfig:
   ".. no_pii:": "No PII"
 
-# Via edx-submissions
 # Via sorl-thumbnail https://github.com/jazzband/sorl-thumbnail
 thumbnail.KVStore:
   ".. no_pii:": "No PII"
 
-# Via django-user-tasks
 # Via waffle
 waffle.Flag:
   ".. no_pii:": "No PII"
@@ -256,8 +248,6 @@ waffle.Sample:
   ".. no_pii:": "No PII"
 waffle.Switch:
   ".. no_pii:": "No PII"
-
-# Via django-wiki https://github.com/openedx/django-wiki
 
 # Additional non-local or generated models requiring safelist coverage
 agreements.HistoricalUserAgreement:
