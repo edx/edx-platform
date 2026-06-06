@@ -52,7 +52,7 @@ ignore_dirs:
 # Makefile `extract_translations` target to ensure it makes to Transifex.
 third_party:
     - wiki
-    - edx-proctoring-proctortrack
+    - edx_proctoring_proctortrack
 
 # How should .po files be segmented?  See i18n/segment.py for details. Strings
 # that are only found in a particular segment are segregated into that .po file
