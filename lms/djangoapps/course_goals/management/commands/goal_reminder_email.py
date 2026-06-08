@@ -16,7 +16,7 @@ import uuid
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.management.base import BaseCommand
-from django.db.models import CharField, Count, Exists, F, IntegerField, OuterRef, Subquery, Value
+from django.db.models import CharField, Count, Exists, F, IntegerField, OuterRef, Q, Subquery, Value
 from django.db.models.functions import Coalesce
 from edx_ace import ace, presentation
 from edx_ace.message import Message
@@ -321,7 +321,16 @@ class Command(BaseCommand):
             # call to get_user_timezone_or_last_seen_timezone_or_utc() (2 DB queries each).
             user_timezone_str=Coalesce(user_tz_pref_subquery, last_seen_tz_subquery, Value('UTC')),
         ).filter(
-            user_timezone_str__in=active_timezones,
+            # Include goals whose resolved timezone is currently in the active window OR
+            # whose stored timezone string is not a recognised pytz name (e.g. contains
+            # non-printable characters such as "America/New_York\x00"). Those dirty
+            # strings are excluded by the strict __in filter and would never reach the
+            # sanitization / UnknownTimeZoneError fallback in handle_goal, silently
+            # dropping reminders. Passing them through preserves the pre-optimisation
+            # behaviour: handle_goal strips non-printable chars and falls back to UTC,
+            # then re-checks the hour window.
+            Q(user_timezone_str__in=active_timezones)
+            | ~Q(user_timezone_str__in=pytz.common_timezones)
         ).select_related('user').order_by('user')
 
         tracker.emit(
@@ -329,10 +338,9 @@ class Command(BaseCommand):
             {
                 'uuid': session_id,
                 'timestamp': datetime.now(),
-                # goal_count is omitted here; a COUNT(*) on the fully-annotated
-                # queryset previously took 3-4 minutes. The final count is emitted
-                # accurately in session_completed below.
-                'goal_count': None,
+                # goal_count is intentionally absent here: a COUNT(*) on the
+                # fully-annotated queryset previously took 3-4 minutes.  The
+                # accurate total is emitted in session_completed below.
             }
         )
         log.info(
@@ -425,6 +433,7 @@ class Command(BaseCommand):
         enrollments = CourseEnrollment.objects.filter(
             user_id__in=user_ids,
             course_id__in=course_keys,
+            is_active=True,
         ).select_related('course')
 
         enrollment_map = {(e.user_id, e.course_id): e for e in enrollments}
@@ -442,10 +451,10 @@ class Command(BaseCommand):
     def handle_goal(goal, today, sunday_date, _monday_date, session_id):
         """Sends an email reminder for a single CourseGoal, if it passes all our checks.
 
-        Note: enrollment validity, certificate status, weekly activity count, course
-        expiry, and timezone window are pre-filtered at the queryset level in
-        _handle_all_goals. This method handles the remaining checks that cannot be
-        efficiently expressed as DB filters (waffle flags, audit access expiration).
+        Note: enrollment validity, certificate status, weekly activity count, and
+        timezone window are pre-filtered at the queryset level in _handle_all_goals.
+        This method handles the remaining checks that cannot be efficiently expressed
+        as DB filters (waffle flags, audit access expiration, course expiry).
 
         The user's timezone string is available as goal.user_timezone_str (annotated
         by the queryset) so we avoid calling get_user_timezone_or_last_seen_timezone_or_utc()

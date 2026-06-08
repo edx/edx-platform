@@ -25,6 +25,7 @@ from lms.djangoapps.course_goals.tests.factories import (
 )
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
+from lms.djangoapps.courseware.models import LastSeenCoursewareTimezone
 from openedx.core.djangoapps.ace_common.template_context import get_base_template_context
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from openedx.core.lib.celery.task_utils import emulate_http_request
@@ -234,6 +235,29 @@ class TestGoalReminderEmailCommand(TestCase):
         goal.user.save()
         send_ace_message(goal, str(uuid.uuid4()))
         assert mock_ace.called is value
+
+
+    def test_dirty_timezone_string_still_receives_email(self):
+        """
+        Regression test: a LastSeenCoursewareTimezone value containing non-printable
+        characters (e.g. "America/New_York\x00") must NOT be silently excluded by the
+        DB-level timezone pre-filter.  The goal should still be fetched, reach
+        handle_goal, have its timezone string sanitized there, fall back to UTC, and
+        then be filtered by the in-process hour check.
+
+        We freeze time so that UTC is within the 08:00-18:00 window, which means after
+        sanitization the goal passes the hour check and an email is sent.
+        """
+        goal = self.make_valid_goal()
+        # Write a dirty timezone string directly to the DB (non-printable char appended).
+        LastSeenCoursewareTimezone.objects.update_or_create(
+            user=goal.user,
+            defaults={'last_seen_courseware_timezone': 'America/New_York\x00'},
+        )
+        # 2021-03-02 10:00 UTC — UTC hour is 10, inside the 08-18 window, so after
+        # sanitization (dirty string → pytz.UnknownTimeZoneError → pytz.utc) the goal
+        # still passes the hour check and an email should be sent.
+        self.call_command(expect_sent=True, time='2021-03-02 10:00:00')
 
 
 class TestGoalReminderEmailSES(TestCase):
