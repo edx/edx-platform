@@ -397,6 +397,7 @@ class CommentViewSetPartialUpdateTest(
             "author": self.user.username,
             "author_id": str(self.user.id),
             "author_label": None,
+            "author_labels": None,
             "is_author_banned": False,
             "author_ban_scope": None,
             "created_at": "1970-01-01T00:00:00Z",
@@ -1586,6 +1587,7 @@ class LearnerThreadViewAPITest(DiscussionAPIViewTestMixin, ModuleStoreTestCase):
             {"key": "author_id", "value": str(self.author.id)},
             {"key": "abuse_flagged", "value": False},
             {"key": "author_label", "value": None},
+            {"key": "author_labels", "value": None},
             {"key": "can_delete", "value": True},
             {"key": "close_reason", "value": None},
             {
