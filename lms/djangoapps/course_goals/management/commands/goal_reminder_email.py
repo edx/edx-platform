@@ -197,12 +197,7 @@ class Command(BaseCommand):
             raise
 
     def _handle_all_goals(self):
-        """
-        Handle goal emails across all courses
-
-        Helpful notes for the function:
-            weekday() returns an int 0-6 with Monday being 0 and Sunday being 6
-        """
+        """Handle goal emails across all courses."""
         today = date.today()
         sunday_date = today + timedelta(days=SUNDAY_WEEKDAY - today.weekday())
         monday_date = today - timedelta(days=today.weekday())
@@ -215,8 +210,30 @@ class Command(BaseCommand):
             log.info('Cleared all reminder statuses')
             return
 
-        # The weekdays are 0 indexed, but we want this to be 1 to match required_days_left.
-        # Essentially, if today is Sunday, days_left_in_week should be 1 since they have Sunday to hit their goal.
+        course_goals = self._get_course_goals(today, sunday_date, monday_date)
+        sent_count, filtered_count = self._process_course_goals(course_goals, sunday_date, session_id)
+
+        tracker.emit(
+            'edx.course.goal.email.session_completed',
+            {
+                'uuid': session_id,
+                'timestamp': datetime.now(),
+                'goal_count': sent_count + filtered_count,
+                'emails_sent': sent_count,
+                'emails_filtered': filtered_count,
+            }
+        )
+        log.info(
+            'Processing course goals complete: sent %d emails, filtered out %d emails, timestamp: %s, uuid: %s',
+            sent_count,
+            filtered_count,
+            datetime.now(),
+            session_id,
+        )
+
+    @staticmethod
+    def _get_course_goals(today, sunday_date, monday_date):
+        """Build the queryset of goals eligible for reminders during this run."""
         days_left_in_week = SUNDAY_WEEKDAY - today.weekday() + 1
 
         active_enrollment_exists = CourseEnrollment.objects.filter(
@@ -303,12 +320,15 @@ class Command(BaseCommand):
             | ~Q(user_timezone_str__in=pytz.common_timezones)
         ).select_related('user')
 
+        return course_goals
+
+    def _process_course_goals(self, course_goals, sunday_date, session_id):
+        """Send reminders for an eligible queryset and return sent and filtered counts."""
         tracker.emit(
             'edx.course.goal.email.session_started',
             {
                 'uuid': session_id,
                 'timestamp': datetime.now(),
-                'goal_count': None,
             }
         )
         log.info(
@@ -348,23 +368,7 @@ class Command(BaseCommand):
                     session_id,
                 )
 
-        tracker.emit(
-            'edx.course.goal.email.session_completed',
-            {
-                'uuid': session_id,
-                'timestamp': datetime.now(),
-                'goal_count': sent_count + filtered_count,
-                'emails_sent': sent_count,
-                'emails_filtered': filtered_count,
-            }
-        )
-        log.info(
-            'Processing course goals complete: sent %d emails, filtered out %d emails, timestamp: %s, uuid: %s',
-            sent_count,
-            filtered_count,
-            datetime.now(),
-            session_id,
-        )
+        return sent_count, filtered_count
 
     @staticmethod
     def _iter_chunks(queryset, chunk_size):

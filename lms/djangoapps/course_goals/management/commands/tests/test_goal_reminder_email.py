@@ -286,6 +286,16 @@ class TestGoalReminderEmailCommand(TestCase):
 
         self.call_command(expect_sent=True, expect_send_count=2)
 
+    @mock.patch('lms.djangoapps.course_goals.management.commands.goal_reminder_email.tracker.emit')
+    def test_session_events_report_count_only_after_processing(self, mock_emit):
+        self.make_valid_goal()
+
+        self.call_command(expect_sent=True)
+
+        event_payloads = {call.args[0]: call.args[1] for call in mock_emit.call_args_list}
+        assert 'goal_count' not in event_payloads['edx.course.goal.email.session_started']
+        assert event_payloads['edx.course.goal.email.session_completed']['goal_count'] == 1
+
     def test_enrollment_prefetch_excludes_unrelated_user_course_pairs(self):
         first_goal = self.make_valid_goal()
         second_goal = self.make_valid_goal()
@@ -294,7 +304,9 @@ class TestGoalReminderEmailCommand(TestCase):
             course_id=second_goal.course_key,
         )
 
-        enrollment_map = Command._prefetch_enrollments_into_cache([first_goal, second_goal])
+        enrollment_map = Command._prefetch_enrollments_into_cache(  # pylint: disable=protected-access
+            [first_goal, second_goal]
+        )
 
         assert len(enrollment_map) == 2
         assert (unrelated_enrollment.user_id, unrelated_enrollment.course_id) not in enrollment_map
