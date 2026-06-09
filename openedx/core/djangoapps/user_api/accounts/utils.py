@@ -254,9 +254,6 @@ def create_retirement_request_and_deactivate_account(user):
     # Add user to retirement queue.
     UserRetirementStatus.create_retirement(user)
 
-    # Redact and unlink LMS social auth accounts.
-    redact_and_delete_social_auth(user.id)
-
     # Change LMS password & email
     user.email = get_retired_email_by_email(user.email)
     user.set_unusable_password()
