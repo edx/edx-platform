@@ -205,6 +205,7 @@ class TestDeactivateLogout(RetirementTestCase):
         updated_user = User.objects.get(id=self.test_user.id)
         assert get_retired_email_by_email(self.test_user.email) == updated_user.email
         assert not updated_user.has_usable_password()
+        assert list(UserSocialAuth.objects.filter(user=self.test_user))
         assert not list(Registration.objects.filter(user=self.test_user))
         assert len(UserRetirementStatus.objects.filter(user_id=self.test_user.id)) == 1
         # these retirement utils are tested elsewhere; just make sure we called them

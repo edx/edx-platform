@@ -248,8 +248,8 @@ def redact_and_delete_historical_social_auth(user_id):
 
 def create_retirement_request_and_deactivate_account(user):
     """
-    Adds user to retirement queue, unlinks social auth accounts, changes user passwords
-    and delete tokens and activation keys
+    Adds user to retirement queue, changes user passwords
+    and delete tokens and activation keys.
     """
     # Add user to retirement queue.
     UserRetirementStatus.create_retirement(user)
