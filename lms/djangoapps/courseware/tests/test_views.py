@@ -26,6 +26,7 @@ from edx_django_utils.cache.utils import RequestCache
 from edx_toggles.toggles.testutils import override_waffle_flag, override_waffle_switch
 from freezegun import freeze_time
 from opaque_keys.edx.keys import CourseKey, UsageKey
+from openedx_filters.learning.filters import CoursewareViewStarted
 from pytz import UTC
 from openedx.core.djangoapps.waffle_utils.models import WaffleFlagCourseOverrideModel
 from rest_framework import status
@@ -111,7 +112,6 @@ from openedx.features.enterprise_support.tests.factories import (
     EnterpriseCustomerUserFactory,
     EnterpriseCustomerFactory
 )
-from openedx.features.enterprise_support.tests.mixins.enterprise import EnterpriseTestConsentRequired
 from openedx.features.enterprise_support.api import add_enterprise_customer_to_session
 from enterprise.api.v1.serializers import EnterpriseCustomerSerializer
 
@@ -1607,6 +1607,19 @@ class ProgressPageTests(ProgressPageBaseTests):
             'earned_but_not_available': earned_but_not_available,
         }
 
+    @patch('openedx_filters.learning.filters.CoursewareViewStarted.run_filter')
+    def test_redirects_when_courseware_view_filter_raises(self, mock_run_filter):
+        """
+        Redirects to the URL raised by the CoursewareViewStarted filter on progress page URLs.
+        """
+        redirect_url = 'http://example.com/redirect'
+        mock_run_filter.side_effect = CoursewareViewStarted.RedirectToUrl(message="redirect", redirect_to=redirect_url)
+
+        resp = self._get_progress_page(expected_status_code=302)
+        assert resp['Location'] == redirect_url
+        resp = self._get_student_progress_page(expected_status_code=302)
+        assert resp['Location'] == redirect_url
+
 
 @ddt.ddt
 class ProgressPageShowCorrectnessTests(ProgressPageBaseTests):
@@ -2622,34 +2635,6 @@ class TestRenderXBlockSelfPaced(TestRenderXBlock):  # lint-amnesty, pylint: disa
         options = super().course_options()
         options['self_paced'] = True
         return options
-
-
-class EnterpriseConsentTestCase(EnterpriseTestConsentRequired, ModuleStoreTestCase):
-    """
-    Ensure that the Enterprise Data Consent redirects are in place only when consent is required.
-    """
-    def setUp(self):
-        super().setUp()
-        self.user = UserFactory.create()
-        assert self.client.login(username=self.user.username, password=TEST_PASSWORD)
-        self.course = CourseFactory.create()
-        CourseOverview.load_from_module_store(self.course.id)
-        CourseEnrollmentFactory(user=self.user, course_id=self.course.id)
-
-    @patch('openedx.features.enterprise_support.api.enterprise_customer_for_request')
-    def test_consent_required(self, mock_enterprise_customer_for_request):
-        """
-        Test that enterprise data sharing consent is required when enabled for the various courseware views.
-        """
-        # ENT-924: Temporary solution to replace sensitive SSO usernames.
-        mock_enterprise_customer_for_request.return_value = None
-
-        course_id = str(self.course.id)
-        for url in (
-                reverse("progress", kwargs=dict(course_id=course_id)),
-                reverse("student_progress", kwargs=dict(course_id=course_id, student_id=str(self.user.id))),
-        ):
-            self.verify_consent_required(self.client, url)  # lint-amnesty, pylint: disable=no-value-for-parameter
 
 
 @ddt.ddt

@@ -11,7 +11,6 @@ from consent.models import DataSharingConsent
 from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.core.cache import cache
-from django.http import HttpResponseRedirect
 from django.test.utils import override_settings
 from django.urls import reverse
 from edx_django_utils.cache import TieredCache, get_cache_key
@@ -32,7 +31,6 @@ from openedx.features.enterprise_support.api import (
     activate_learner_enterprise,
     add_enterprise_customer_to_session,
     consent_needed_for_course,
-    data_sharing_consent_required,
     enterprise_customer_for_request,
     enterprise_customer_from_api,
     enterprise_customer_from_session,
@@ -818,84 +816,6 @@ class TestEnterpriseApi(EnterpriseServiceMockMixin, CacheIsolationTestCase):
             assert enterprise_customer == enterprise_data
             assert mock_enterprise_customer_from_api.called is False
             assert mock_enterprise_customer_from_session.called is True
-
-    def check_data_sharing_consent(self, consent_required=False, consent_url=None):
-        """
-        Used to test the data_sharing_consent_required view decorator.
-        """
-
-        # Test by wrapping a function that has the expected signature
-        @data_sharing_consent_required
-        def view_func(request, course_id, *args, **kwargs):
-            """
-            Return the function arguments, so they can be tested.
-            """
-            return ((request, course_id,) + args, kwargs)
-
-        # Call the wrapped function
-        args = (mock.MagicMock(), 'course-id', 'another arg', 'and another')
-        kwargs = dict(a=1, b=2, c=3)
-        response = view_func(*args, **kwargs)
-
-        # If consent required, then the response should be a redirect to the consent URL, and the view function would
-        # not be called.
-        if consent_required:
-            assert isinstance(response, HttpResponseRedirect)
-            assert response.url == consent_url  # pylint: disable=no-member
-
-        # Otherwise, the view function should have been called with the expected arguments.
-        else:
-            assert response == (args, kwargs)
-
-    @mock.patch('openedx.features.enterprise_support.api.enterprise_enabled')
-    @mock.patch('openedx.features.enterprise_support.api.consent_needed_for_course')
-    def test_data_consent_required_enterprise_disabled(self,
-                                                       mock_consent_necessary,
-                                                       mock_enterprise_enabled):
-        """
-        Verify that the wrapped view is called directly when enterprise integration is disabled,
-        without checking for course consent necessary.
-        """
-        mock_enterprise_enabled.return_value = False
-
-        self.check_data_sharing_consent(consent_required=False)
-
-        mock_enterprise_enabled.assert_called_once()
-        mock_consent_necessary.assert_not_called()
-
-    @mock.patch('openedx.features.enterprise_support.api.enterprise_enabled')
-    @mock.patch('openedx.features.enterprise_support.api.consent_needed_for_course')
-    def test_no_course_data_consent_required(self,
-                                             mock_consent_necessary,
-                                             mock_enterprise_enabled):
-        """
-        Verify that the wrapped view is called directly when enterprise integration is enabled,
-        and no course consent is required.
-        """
-        mock_enterprise_enabled.return_value = True
-        mock_consent_necessary.return_value = False
-
-        self.check_data_sharing_consent(consent_required=False)
-
-        mock_enterprise_enabled.assert_called_once()
-        mock_consent_necessary.assert_called_once()
-
-    @mock.patch('openedx.features.enterprise_support.api.enterprise_enabled')
-    @mock.patch('openedx.features.enterprise_support.api.consent_needed_for_course')
-    @mock.patch('openedx.features.enterprise_support.api.get_enterprise_consent_url')
-    def test_data_consent_required(self, mock_get_consent_url, mock_consent_necessary, mock_enterprise_enabled):
-        """
-        Verify that the wrapped function returns a redirect to the consent URL when enterprise integration is enabled,
-        and course consent is required.
-        """
-        mock_enterprise_enabled.return_value = True
-        mock_consent_necessary.return_value = True
-        consent_url = '/abc/def'
-        mock_get_consent_url.return_value = consent_url
-
-        self.check_data_sharing_consent(consent_required=True, consent_url=consent_url)
-
-        mock_get_consent_url.assert_called_once()
 
     @ddt.data(True, False)
     @httpretty.activate
