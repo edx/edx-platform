@@ -1,8 +1,11 @@
 """
 Command to trigger sending reminder emails for learners to achieve their Course Goals
 """
+import logging
 import string
 import time
+import uuid
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 import boto3
@@ -10,19 +13,18 @@ import pytz
 from edx_ace.channel.django_email import DjangoEmailChannel
 from edx_ace.channel.mixins import EmailChannelMixin
 from eventtracking import tracker
-import logging
-import uuid
 
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.management.base import BaseCommand
 from django.db.models import CharField, Count, Exists, F, IntegerField, OuterRef, Q, Subquery, Value
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, NullIf
 from edx_ace import ace, presentation
 from edx_ace.message import Message
 from edx_ace.recipient import Recipient
 from edx_ace.utils.signals import send_ace_message_sent_signal
 from edx_django_utils.cache import RequestCache
+
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.models import GeneratedCertificate
@@ -43,8 +45,6 @@ log = logging.getLogger(__name__)
 
 MONDAY_WEEKDAY = 0
 SUNDAY_WEEKDAY = 6
-# Number of goals to process per chunk. Keeps memory stable and allows
-# bulk-fetching enrollments once per chunk instead of once per goal.
 CHUNK_SIZE = 2000
 
 
@@ -202,22 +202,6 @@ class Command(BaseCommand):
 
         Helpful notes for the function:
             weekday() returns an int 0-6 with Monday being 0 and Sunday being 6
-
-        Performance notes:
-            - Timezones are pre-filtered at the database level to only fetch goals
-              where the user's local time is between 8 AM and 6 PM.  This is done
-              by annotating each goal with the user's resolved timezone string
-              (UserPreference → LastSeenCoursewareTimezone → 'UTC') and filtering
-              against the set of timezone names that are currently in the 8-18 hour
-              window.  This typically reduces the result set by 60-90%.
-            - Ended-course exclusion is expressed as an inline Exists subquery on
-              CourseOverview, avoiding a separate distinct + count round-trip.
-            - Goals are processed in chunks of CHUNK_SIZE.  For each chunk, active
-              enrollments are bulk-fetched in one query and seeded into
-              RequestCache('get_enrollment') so that all downstream calls to
-              CourseEnrollment.get_enrollment() hit the cache instead of the DB.
-            - Expensive COUNT queries that previously took 3-4 minutes each on the
-              annotated queryset have been removed.  Totals are accumulated in Python.
         """
         today = date.today()
         sunday_date = today + timedelta(days=SUNDAY_WEEKDAY - today.weekday())
@@ -255,7 +239,6 @@ class Command(BaseCommand):
             Value(0),
         )
 
-        # Subquery: resolve the user's explicit timezone preference (UserPreference key='time_zone')
         user_tz_pref_subquery = Subquery(
             UserPreference.objects.filter(
                 user=OuterRef('user'),
@@ -263,8 +246,6 @@ class Command(BaseCommand):
             ).values('value')[:1],
             output_field=CharField(),
         )
-
-        # Subquery: fallback to the user's last-seen courseware timezone
         last_seen_tz_subquery = Subquery(
             LastSeenCoursewareTimezone.objects.filter(
                 user=OuterRef('user'),
@@ -272,19 +253,16 @@ class Command(BaseCommand):
             output_field=CharField(),
         )
 
-        # Compute the set of pytz common timezone names where the local hour is
-        # currently in the active window (8:00 AM inclusive – 6:00 PM exclusive).
-        # This list is computed once and reused for the entire run; it has at most
-        # ~440 entries (len(pytz.common_timezones)) and the computation is O(n) in
-        # Python so it is essentially free.
         now_utc = datetime.now(pytz.utc)
         active_timezones = [
-            tz_name for tz_name in pytz.common_timezones
+            tz_name
+            for tz_name in pytz.common_timezones
             if 8 <= now_utc.astimezone(pytz.timezone(tz_name)).hour < 18
         ]
 
-        # Only include goals where the user needs exactly days_left_in_week more days to hit their goal,
-        # i.e. required_days_left == days_left_in_week, i.e. days_per_week - week_activity_count == days_left_in_week
+        # Only include goals where the user needs exactly days_left_in_week more days to hit their goal.
+        # Keep the unsigned days_per_week field on the non-subtracted side because MySQL raises an
+        # out-of-range error when days_per_week is less than days_left_in_week.
         course_goals = CourseGoal.objects.filter(
             days_per_week__gt=0,
             subscribed_to_reminders=True,
@@ -295,7 +273,7 @@ class Command(BaseCommand):
         ).annotate(
             week_activity_count=week_activity_subquery,
         ).filter(
-            week_activity_count=F('days_per_week') - days_left_in_week,
+            days_per_week=F('week_activity_count') + days_left_in_week,
         ).exclude(
             # Exclude users who already have a downloadable certificate — they've completed the course
             Exists(
@@ -306,9 +284,6 @@ class Command(BaseCommand):
                 )
             )
         ).exclude(
-            # Exclude all courses whose end dates are earlier than Sunday so we don't send an email about hitting
-            # a course goal when it may not even be possible. Expressed as an inline Exists to avoid a separate
-            # distinct-count round-trip that previously cost ~2 minutes of wall-time.
             Exists(
                 CourseOverview.objects.filter(
                     id=OuterRef('course_key'),
@@ -316,31 +291,24 @@ class Command(BaseCommand):
                 )
             )
         ).annotate(
-            # Resolve each user's timezone at the DB level so we can filter to only
-            # goals where the local hour is in the active window, avoiding a per-goal
-            # call to get_user_timezone_or_last_seen_timezone_or_utc() (2 DB queries each).
-            user_timezone_str=Coalesce(user_tz_pref_subquery, last_seen_tz_subquery, Value('UTC')),
+            # NullIf preserves the existing Python fallback behavior for empty preferences.
+            user_timezone_str=Coalesce(
+                NullIf(user_tz_pref_subquery, Value('')),
+                NullIf(last_seen_tz_subquery, Value('')),
+                Value('UTC'),
+            ),
         ).filter(
-            # Include goals whose resolved timezone is currently in the active window OR
-            # whose stored timezone string is not a recognised pytz name (e.g. contains
-            # non-printable characters such as "America/New_York\x00"). Those dirty
-            # strings are excluded by the strict __in filter and would never reach the
-            # sanitization / UnknownTimeZoneError fallback in handle_goal, silently
-            # dropping reminders. Passing them through preserves the pre-optimisation
-            # behaviour: handle_goal strips non-printable chars and falls back to UTC,
-            # then re-checks the hour window.
+            # Unrecognized values must reach handle_goal so it can sanitize them or fall back to UTC.
             Q(user_timezone_str__in=active_timezones)
             | ~Q(user_timezone_str__in=pytz.common_timezones)
-        ).select_related('user').order_by('user')
+        ).select_related('user')
 
         tracker.emit(
             'edx.course.goal.email.session_started',
             {
                 'uuid': session_id,
                 'timestamp': datetime.now(),
-                # goal_count is intentionally absent here: a COUNT(*) on the
-                # fully-annotated queryset previously took 3-4 minutes.  The
-                # accurate total is emitted in session_completed below.
+                'goal_count': None,
             }
         )
         log.info(
@@ -348,32 +316,36 @@ class Command(BaseCommand):
             datetime.now(),
             session_id,
         )
-
         site = Site.objects.get_current()
         sent_count = 0
         filtered_count = 0
 
         for chunk in self._iter_chunks(course_goals, CHUNK_SIZE):
-            # Pre-fetch all enrollments for this chunk in one query and seed
-            # RequestCache so downstream get_enrollment() calls are cache hits.
-            self._prefetch_enrollments_into_cache(chunk)
+            enrollment_map = self._prefetch_enrollments_into_cache(chunk)
 
             for goal in chunk:
-                # emulate a request for waffle's benefit
                 with emulate_http_request(site=site, user=goal.user):
-                    if self.handle_goal(goal, today, sunday_date, monday_date, session_id):
+                    if self.handle_goal(
+                        goal,
+                        enrollment_map.get((goal.user_id, goal.course_key)),
+                        sunday_date,
+                        session_id,
+                    ):
                         sent_count += 1
                     else:
                         filtered_count += 1
 
-            # Clear the enrollment cache after each chunk to prevent memory growth.
             RequestCache('get_enrollment').clear()
 
             total_processed = sent_count + filtered_count
             if total_processed % 10000 == 0:
                 log.info(
                     'Processing course goals: sent %d filtered %d total %d, timestamp: %s, uuid: %s',
-                    sent_count, filtered_count, total_processed, datetime.now(), session_id,
+                    sent_count,
+                    filtered_count,
+                    total_processed,
+                    datetime.now(),
+                    session_id,
                 )
 
         tracker.emit(
@@ -388,94 +360,67 @@ class Command(BaseCommand):
         )
         log.info(
             'Processing course goals complete: sent %d emails, filtered out %d emails, timestamp: %s, uuid: %s',
-            sent_count, filtered_count, datetime.now(), session_id,
+            sent_count,
+            filtered_count,
+            datetime.now(),
+            session_id,
         )
 
     @staticmethod
     def _iter_chunks(queryset, chunk_size):
-        """
-        Yield successive list chunks from a queryset by buffering a server-side iterator.
-
-        We avoid offset-based slicing because the queryset excludes goals that have
-        already been marked email_reminder_sent=True.  As goals are processed and
-        marked within the same run, the live result set shrinks, which would cause
-        fixed offsets to skip rows.  Using queryset.iterator() opens a single
-        server-side cursor that streams rows sequentially, making it immune to
-        those mid-run writes.  The Python-side buffer gives us a concrete list per
-        chunk so we can bulk-fetch enrollments before processing any goal in it.
-        """
-        chunk = []
-        for item in queryset.iterator(chunk_size=chunk_size):
-            chunk.append(item)
-            if len(chunk) >= chunk_size:
-                yield chunk
-                chunk = []
-        if chunk:
+        """Yield stable primary-key chunks without offset pagination."""
+        last_pk = 0
+        while True:
+            chunk = list(queryset.filter(pk__gt=last_pk).order_by('pk')[:chunk_size])
+            if not chunk:
+                return
             yield chunk
+            last_pk = chunk[-1].pk
 
     @staticmethod
     def _prefetch_enrollments_into_cache(goals):
-        """
-        Bulk-fetch active enrollments for a list of goals and populate
-        RequestCache('get_enrollment') so that subsequent calls to
-        CourseEnrollment.get_enrollment(user, course_key, select_related=['course'])
-        are satisfied from cache without hitting the database.
-
-        This eliminates one DB query per goal (previously the dominant cost inside
-        handle_goal) by replacing N individual lookups with a single IN-query.
-        """
+        """Fetch and cache only the enrollment pairs represented by this goal chunk."""
         if not goals:
-            return
+            return {}
 
-        user_ids = list({goal.user.id for goal in goals})
-        course_keys = list({goal.course_key for goal in goals})
+        users_by_course = defaultdict(set)
+        for goal in goals:
+            users_by_course[goal.course_key].add(goal.user_id)
+
+        enrollment_filter = Q()
+        for course_key, user_ids in users_by_course.items():
+            enrollment_filter |= Q(course_id=course_key, user_id__in=user_ids)
 
         enrollments = CourseEnrollment.objects.filter(
-            user_id__in=user_ids,
-            course_id__in=course_keys,
+            enrollment_filter,
             is_active=True,
         ).select_related('course')
+        enrollment_map = {(enrollment.user_id, enrollment.course_id): enrollment for enrollment in enrollments}
 
-        enrollment_map = {(e.user_id, e.course_id): e for e in enrollments}
         request_cache = RequestCache('get_enrollment')
-
         for goal in goals:
-            enrollment = enrollment_map.get((goal.user.id, goal.course_key))
-            # Seed both cache-key variants used by get_enrollment():
-            #   (user_id, course_key)              — called without select_related
-            #   (user_id, course_key, 'course')    — called with select_related=['course']
-            request_cache.set((goal.user.id, goal.course_key), enrollment)
-            request_cache.set((goal.user.id, goal.course_key, 'course'), enrollment)
+            enrollment = enrollment_map.get((goal.user_id, goal.course_key))
+            request_cache.set((goal.user_id, goal.course_key), enrollment)
+            request_cache.set((goal.user_id, goal.course_key, 'course'), enrollment)
+
+        return enrollment_map
 
     @staticmethod
-    def handle_goal(goal, today, sunday_date, _monday_date, session_id):
+    def handle_goal(goal, enrollment, sunday_date, session_id):
         """Sends an email reminder for a single CourseGoal, if it passes all our checks.
 
-        Note: enrollment validity, certificate status, weekly activity count, and
-        timezone window are pre-filtered at the queryset level in _handle_all_goals.
-        This method handles the remaining checks that cannot be efficiently expressed
-        as DB filters (waffle flags, audit access expiration, course expiry).
-
-        The user's timezone string is available as goal.user_timezone_str (annotated
-        by the queryset) so we avoid calling get_user_timezone_or_last_seen_timezone_or_utc()
-        here (which would run 2 additional DB queries per goal).
-
-        The enrollment object is already seeded into RequestCache by
-        _prefetch_enrollments_into_cache(), so the get_enrollment() call below is a
-        cache hit with no DB round-trip.
+        Note: enrollment validity, certificate status, and weekly activity count are pre-filtered
+        at the queryset level in _handle_all_goals. This method handles the remaining checks that
+        cannot be efficiently expressed as DB filters.
         """
-        # Resolve timezone from the annotated field — no DB query needed.
-        # Sanitize to remove any non-printable characters (rare but observed in production).
+        # Check timezone first — cheapest check, no DB query
         user_timezone_str = ''.join(
-            c for c in getattr(goal, 'user_timezone_str', 'UTC') if c in string.printable
+            character for character in getattr(goal, 'user_timezone_str', 'UTC') if character in string.printable
         )
         try:
             user_timezone = pytz.timezone(user_timezone_str)
         except pytz.UnknownTimeZoneError:
             user_timezone = pytz.utc
-
-        # Safety-net timezone check: the queryset already filters on active_timezones,
-        # but the window may have shifted slightly between query build and processing.
         now_in_users_timezone = datetime.now(user_timezone)
         if not 8 <= now_in_users_timezone.hour < 18:
             tracker.emit(
@@ -493,13 +438,15 @@ class Command(BaseCommand):
         if not ENABLE_COURSE_GOALS.is_enabled(goal.course_key):
             return False
 
-        # Fetch enrollment — hits RequestCache seeded by _prefetch_enrollments_into_cache(),
-        # so this is a cache lookup, not a DB query.
-        enrollment = CourseEnrollment.get_enrollment(goal.user, goal.course_key, select_related=['course'])
+        # Fetch enrollment only to check audit access expiration date
         if not enrollment:
             return False
 
-        audit_access_expiration_date = get_user_course_expiration_date(goal.user, enrollment.course_overview)
+        audit_access_expiration_date = get_user_course_expiration_date(
+            goal.user,
+            enrollment.course_overview,
+            enrollment=enrollment,
+        )
         # If an audit user's access expires this week, exclude them from the email since they may not
         # be able to hit their goal anyway
         if audit_access_expiration_date and audit_access_expiration_date.date() <= sunday_date:
