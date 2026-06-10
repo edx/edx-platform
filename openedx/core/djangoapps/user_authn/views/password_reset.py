@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.forms import PasswordResetForm, SetPasswordForm
-from django.contrib.auth.hashers import UNUSABLE_PASSWORD_PREFIX
+from django.contrib.auth.hashers import UNUSABLE_PASSWORD_PREFIX, check_password
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import INTERNAL_RESET_SESSION_TOKEN, PasswordResetConfirmView
@@ -768,7 +768,7 @@ class LogistrationPasswordResetView(APIView):  # lint-amnesty, pylint: disable=m
 
             validate_password(password, user=user)
 
-            if user.check_password(password):
+            if check_password(password, user.password):
                 return Response({
                     'reset_status': reset_status,
                     'err_msg': _('Your new password must be different from your current password.')
