@@ -39,14 +39,48 @@ from opaque_keys.edx.keys import CourseKey
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
+from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.edxmako.shortcuts import (  # pylint: disable=unused-import
+    marketing_link,
+    render_to_response,
+    render_to_string,  # noqa: F401
+)
+from common.djangoapps.entitlements.models import CourseEntitlement
+from common.djangoapps.student.email_helpers import generate_activation_email_context
+from common.djangoapps.student.helpers import (
+    DISABLE_UNENROLL_CERT_STATES,
+    cert_info,
+    get_next_url_for_login_page,
+    get_redirect_url_with_host,
+)
+from common.djangoapps.student.message_types import (  # pylint: disable=line-too-long
+    AccountActivation,
+    EmailChange,
+    EmailChangeConfirmation,
+    RecoveryEmailCreate,
+)
+from common.djangoapps.student.models import (  # pylint: disable=unused-import
+    PENDING_SECONDARY_EMAIL_REDACTED_VALUE,
+    AccountRecovery,
+    CourseEnrollment,
+    EnrollmentNotAllowed,
+    PendingEmailChange,  # unimport:skip
+    PendingSecondaryEmailChange,
+    Registration,
+    RegistrationCookieConfiguration,  # noqa: F401
+    UnenrollmentNotAllowed,
+    UserAttribute,  # noqa: F401
+    UserProfile,
+    UserSignupSource,
+    UserStanding,
+    create_comments_service_user,  # noqa: F401
+    email_exists_or_retired,  # noqa: F401
+)
+from common.djangoapps.student.signals import REFUND_ORDER, USER_EMAIL_CHANGED
 from common.djangoapps.student.toggles import should_redirect_to_courseware_after_enrollment
 from common.djangoapps.track import views as track_views
 from lms.djangoapps.bulk_email.models import Optout
-from common.djangoapps.course_modes.models import CourseMode
 from lms.djangoapps.courseware.courses import get_courses, sort_by_announcement, sort_by_start_date
-from common.djangoapps.edxmako.shortcuts import marketing_link, render_to_response, render_to_string  # lint-amnesty, pylint: disable=unused-import
-from common.djangoapps.entitlements.models import CourseEntitlement
-from common.djangoapps.student.helpers import get_next_url_for_login_page, get_redirect_url_with_host
 from openedx.core.djangoapps.ace_common.template_context import get_base_template_context
 from openedx.core.djangoapps.catalog.utils import get_programs_with_type
 from openedx.core.djangoapps.embargo import api as embargo_api
@@ -65,29 +99,8 @@ from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiv
 from openedx.features.course_experience.url_helpers import make_learning_mfe_courseware_url
 from openedx.features.discounts.applicability import FIRST_PURCHASE_DISCOUNT_OVERRIDE_FLAG
 from openedx.features.enterprise_support.utils import is_enterprise_learner
-from common.djangoapps.student.email_helpers import generate_activation_email_context
-from common.djangoapps.student.helpers import DISABLE_UNENROLL_CERT_STATES, cert_info
-from common.djangoapps.student.message_types import AccountActivation, EmailChange, EmailChangeConfirmation, RecoveryEmailCreate  # lint-amnesty, pylint: disable=line-too-long
-from common.djangoapps.student.models import (  # lint-amnesty, pylint: disable=unused-import
-    AccountRecovery,
-    CourseEnrollment,
-    EnrollmentNotAllowed,
-    PendingEmailChange,  # unimport:skip
-    PendingSecondaryEmailChange,
-    Registration,
-    RegistrationCookieConfiguration,
-    UnenrollmentNotAllowed,
-    UserAttribute,
-    UserProfile,
-    UserSignupSource,
-    UserStanding,
-    create_comments_service_user,
-    email_exists_or_retired
-)
-from common.djangoapps.student.signals import REFUND_ORDER
 from common.djangoapps.util.db import outer_atomic
 from common.djangoapps.util.json_request import JsonResponse
-from common.djangoapps.student.signals import USER_EMAIL_CHANGED
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 
 log = logging.getLogger("edx.student")
@@ -862,6 +875,9 @@ def activate_secondary_email(request, key):
             'secondary_email': pending_secondary_email_change.new_secondary_email
         })
 
+    # Redact the pending email before deletion so downstream soft-delete mirrors do not retain the original address.
+    pending_secondary_email_change.new_secondary_email = PENDING_SECONDARY_EMAIL_REDACTED_VALUE
+    pending_secondary_email_change.save(update_fields=['new_secondary_email'])
     pending_secondary_email_change.delete()
 
     return render_to_response("secondary_email_change_successful.html")
