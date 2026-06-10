@@ -3824,6 +3824,6 @@ SSL_AUTH_DN_FORMAT_STRING = (
 OPEN_EDX_FILTERS_CONFIG = {
     "org.openedx.learning.discount.eligibility.check.requested.v1": {
         "fail_silently": True,
-        "pipeline": ["enterprise.filters.discounts.DiscountEligibilityStep"],
+        "pipeline": ["enterprise.filters.discounts.DiscountEligibilityEnterpriseStep"],
     },
 }
