@@ -19,7 +19,6 @@ from opaque_keys.edx.keys import UsageKey
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
-from cms.djangoapps.contentstore.rest_api.mixins import StandardizedErrorMixin
 from cms.djangoapps.contentstore.rest_api.v0.serializers import XblockSerializer
 from cms.djangoapps.contentstore.rest_api.v0.views.utils import validate_request_with_serializer
 from cms.djangoapps.contentstore.rest_api.v1.views.permissions import HasCourseAuthorAccess
@@ -30,6 +29,7 @@ from cms.djangoapps.contentstore.xblock_storage_handlers.view_handlers import (
     update_xblock_response,
 )
 from common.djangoapps.util.json_request import expect_json_in_class_view
+from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 log = logging.getLogger(__name__)
 

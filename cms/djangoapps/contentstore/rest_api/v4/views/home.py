@@ -11,11 +11,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from cms.djangoapps.contentstore.rest_api.mixins import StandardizedErrorMixin
 from cms.djangoapps.contentstore.rest_api.v4.serializers.home import (
     CourseHomeTabSerializerV4,
 )
 from cms.djangoapps.contentstore.utils import get_course_context_v2
+from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 
 class HomePageCoursesPaginator(DefaultPagination):

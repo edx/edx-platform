@@ -2,7 +2,7 @@
 ADR 0029 – Standardized error-response regression tests for HomeViewSet (v3).
 
 The ADR 0029 envelope is wired into the v3 viewset via
-:class:`cms.djangoapps.contentstore.rest_api.mixins.StandardizedErrorMixin`,
+:class:`openedx.core.lib.api.mixins.StandardizedErrorMixin`,
 which overrides DRF's per-view ``get_exception_handler`` to point at
 ``openedx.core.lib.api.exceptions.standardized_error_exception_handler``.
 

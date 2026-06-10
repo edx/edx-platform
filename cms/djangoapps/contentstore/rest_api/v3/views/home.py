@@ -25,13 +25,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from cms.djangoapps.contentstore.rest_api.mixins import StandardizedErrorMixin
 from cms.djangoapps.contentstore.rest_api.v1.serializers import (
     CourseHomeTabSerializer,
     LibraryTabSerializer,
     StudioHomeSerializer,
 )
 from cms.djangoapps.contentstore.utils import get_course_context, get_home_context, get_library_context
+from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 
 class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
