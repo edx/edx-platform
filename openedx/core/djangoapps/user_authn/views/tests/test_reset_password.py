@@ -1050,3 +1050,7 @@ class ResetPasswordAPITests(EventTestMixin, CacheIsolationTestCase):
 
         assert json_response.get('reset_status') is False
         assert 'Your new password must be different from your current password' in json_response.get('err_msg', '')
+
+        updated_user = User.objects.get(id=self.user.id)
+        assert updated_user.password == original_password_hash
+        assert len(mail.outbox) == 0
