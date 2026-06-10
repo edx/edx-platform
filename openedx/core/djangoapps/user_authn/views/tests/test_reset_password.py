@@ -1029,6 +1029,7 @@ class ResetPasswordAPITests(EventTestMixin, CacheIsolationTestCase):
         current_password = 'CurrentPass@123'
         self.user.set_password(current_password)
         self.user.save()
+        original_password_hash = self.user.password
 
         # Generate fresh token after password change
         token = default_token_generator.make_token(self.user)
