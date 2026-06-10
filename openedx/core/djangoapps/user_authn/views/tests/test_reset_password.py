@@ -1021,3 +1021,31 @@ class ResetPasswordAPITests(EventTestMixin, CacheIsolationTestCase):
         # Verify that the user's login failures lockout count is not reset.
         assert not LoginFailures.is_feature_enabled()
         assert LoginFailures.is_user_locked_out(self.user)
+
+    def test_password_reset_with_same_current_password(self):
+        """
+        Test that user cannot reset password to their current password.
+        """
+        current_password = 'CurrentPass@123'
+        self.user.set_password(current_password)
+        self.user.save()
+
+        # Generate fresh token after password change
+        token = default_token_generator.make_token(self.user)
+        uidb36 = int_to_base36(self.user.id)
+
+        request_param = {'new_password1': current_password, 'new_password2': current_password}
+        post_request = self.request_factory.post(
+            reverse(
+                "logistration_password_reset",
+                kwargs={"uidb36": uidb36, "token": token}
+            ) + "?track=pwreset",
+            request_param, format='json'
+        )
+        post_request.user = AnonymousUser()
+        reset_view = LogistrationPasswordResetView.as_view()
+        json_response = reset_view(post_request, uidb36=uidb36, token=token).render()
+        json_response = json.loads(json_response.content.decode('utf-8'))
+
+        assert json_response.get('reset_status') is False
+        assert 'Your new password must be different from your current password' in json_response.get('err_msg', '')

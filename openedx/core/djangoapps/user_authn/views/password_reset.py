@@ -768,6 +768,12 @@ class LogistrationPasswordResetView(APIView):  # lint-amnesty, pylint: disable=m
 
             validate_password(password, user=user)
 
+            if user.check_password(password):
+                return Response({
+                    'reset_status': False,
+                    'err_msg': _('Your new password must be different from your current password.')
+                })
+
             if settings.ENABLE_AUTHN_RESET_PASSWORD_HIBP_POLICY:
                 # Checks the Pwned Databases for password vulnerability.
                 pwned_response = check_pwned_password(password)
