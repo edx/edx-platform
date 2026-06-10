@@ -770,7 +770,7 @@ class LogistrationPasswordResetView(APIView):  # lint-amnesty, pylint: disable=m
 
             if user.check_password(password):
                 return Response({
-                    'reset_status': False,
+                    'reset_status': reset_status,
                     'err_msg': _('Your new password must be different from your current password.')
                 })
 
