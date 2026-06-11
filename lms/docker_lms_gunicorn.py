@@ -1,7 +1,6 @@
 """
 gunicorn configuration file: https://gunicorn.org/reference/settings/
 """
-import os
 
 preload_app = False
 timeout = 300
@@ -12,7 +11,6 @@ workers = 17
 
 def pre_request(worker, req):
     worker.log.info(f"{req.method} {req.path}")
-
 
 def close_all_caches():
     """
