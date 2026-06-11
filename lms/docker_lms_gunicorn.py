@@ -9,8 +9,10 @@ pythonpath = "/edx/app/edxapp/edx-platform"
 max_requests = 50
 workers = 17
 
+
 def pre_request(worker, req):
     worker.log.info(f"{req.method} {req.path}")
+
 
 def close_all_caches():
     """
