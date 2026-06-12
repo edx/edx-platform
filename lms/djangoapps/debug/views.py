@@ -19,7 +19,7 @@ from openedx.core.djangolib.markup import HTML
 def run_python(request):
     """
     A page to allow testing the Python sandbox on a production server.
-
+    """"
     Runs in the override context "debug_run_python", so resource limits with come first from:
         CODE_JAIL['limit_overrides']['debug_run_python']
     and then from:
