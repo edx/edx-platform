@@ -37,8 +37,11 @@ MOCK_HAS_PERMISSION = (
     "cms.djangoapps.contentstore.rest_api.v3.views.course_details.user_has_course_permission"
 )
 MOCK_CLASSIFY = "cms.djangoapps.contentstore.rest_api.v3.views.course_details._classify_update"
+# CourseOverview.course_exists is called inside ``resolve_course_key()`` (now in
+# v3/utils.py), not directly in the view module — so the patch must target the
+# utils module's binding, not the view module's.
 MOCK_COURSE_EXISTS = (
-    "cms.djangoapps.contentstore.rest_api.v3.views.course_details.CourseOverview.course_exists"
+    "cms.djangoapps.contentstore.rest_api.v3.utils.CourseOverview.course_exists"
 )
 
 # Syntactically valid course key reused across action / permission / envelope tests.
