@@ -48,6 +48,7 @@ from common.djangoapps.student.forms import send_account_recovery_email_for_user
 from common.djangoapps.student.models import AccountRecovery, LoginFailures
 from common.djangoapps.util.json_request import JsonResponse
 from common.djangoapps.util.password_policy_validators import normalize_password, validate_password
+from openedx.core.djangoapps.user_authn.toggles import PREVENT_PASSWORD_REUSE_ON_RESET
 
 POST_EMAIL_KEY = 'openedx.core.djangoapps.util.ratelimit.request_post_email'
 REAL_IP_KEY = 'openedx.core.djangoapps.util.ratelimit.real_ip'
@@ -768,7 +769,7 @@ class LogistrationPasswordResetView(APIView):  # lint-amnesty, pylint: disable=m
 
             validate_password(password, user=user)
 
-            if check_password(password, user.password):
+            if PREVENT_PASSWORD_REUSE_ON_RESET.is_enabled() and check_password(password, user.password):
                 return Response({
                     'reset_status': reset_status,
                     'err_msg': _('Your new password must be different from your current password.')
