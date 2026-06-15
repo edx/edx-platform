@@ -342,10 +342,6 @@ oel_components.Component:
   ".. no_pii:": "No PII"
 oel_publishing.Container:
   ".. no_pii:": "No PII"
-oel_publishing.DraftChangeLog:
-  ".. no_pii:": "No PII"
-oel_publishing.DraftChangeLogRecord:
-  ".. no_pii:": "No PII"
 oel_publishing.LearningPackage:
   ".. no_pii:": "No PII"
 oel_publishing.PublishableEntity:
@@ -357,6 +353,47 @@ oel_tagging.Tag:
 oel_tagging.TagImportTask:
   ".. no_pii:": "No PII"
 oel_tagging.Taxonomy:
+  ".. no_pii:": "No PII"
+# Via openedx_content library - additional models without edx-platform source annotations
+oel_collections.CollectionPublishableEntity:
+  ".. no_pii:": "No PII"
+oel_components.ComponentType:
+  ".. no_pii:": "No PII"
+oel_components.ComponentVersion:
+  ".. no_pii:": "No PII"
+oel_components.ComponentVersionContent:
+  ".. no_pii:": "No PII"
+oel_contents.Content:
+  ".. no_pii:": "No PII"
+oel_contents.MediaType:
+  ".. no_pii:": "No PII"
+oel_publishing.ContainerVersion:
+  ".. no_pii:": "No PII"
+oel_publishing.Draft:
+  ".. no_pii:": "No PII"
+oel_publishing.EntityList:
+  ".. no_pii:": "No PII"
+oel_publishing.EntityListRow:
+  ".. no_pii:": "No PII"
+oel_publishing.PublishLog:
+  ".. no_pii:": "No PII"
+oel_publishing.PublishLogRecord:
+  ".. no_pii:": "No PII"
+oel_publishing.PublishableEntityVersion:
+  ".. no_pii:": "No PII"
+oel_publishing.Published:
+  ".. no_pii:": "No PII"
+oel_sections.Section:
+  ".. no_pii:": "No PII"
+oel_sections.SectionVersion:
+  ".. no_pii:": "No PII"
+oel_subsections.Subsection:
+  ".. no_pii:": "No PII"
+oel_subsections.SubsectionVersion:
+  ".. no_pii:": "No PII"
+oel_units.Unit:
+  ".. no_pii:": "No PII"
+oel_units.UnitVersion:
   ".. no_pii:": "No PII"
 openedx_catalog.CatalogCourse:
   ".. no_pii:": "No PII"
