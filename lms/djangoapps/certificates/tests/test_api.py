@@ -1301,4 +1301,3 @@ class CertificatesLearnerRetirementFunctionality(ModuleStoreTestCase):
         assert all(n == "" for n in history_names_after), (
             "Expected all history rows to have name blanked after retirement."
         )
-
