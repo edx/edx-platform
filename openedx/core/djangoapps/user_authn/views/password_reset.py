@@ -767,13 +767,13 @@ class LogistrationPasswordResetView(APIView):  # lint-amnesty, pylint: disable=m
                 AUDIT_LOG.exception(f"Token validation failed for user {user_id}")
                 return Response({'reset_status': reset_status, 'token_invalid': True})
 
-            validate_password(password, user=user)
-
             if PREVENT_PASSWORD_REUSE_ON_RESET.is_enabled() and check_password(password, user.password):
                 return Response({
                     'reset_status': reset_status,
                     'err_msg': _('Your new password must be different from your current password.')
                 })
+
+            validate_password(password, user=user)
 
             if settings.ENABLE_AUTHN_RESET_PASSWORD_HIBP_POLICY:
                 # Checks the Pwned Databases for password vulnerability.
