@@ -9,6 +9,8 @@ not other discounts like coupons or enterprise/program offers configured in ecom
 """
 
 
+import logging
+
 from datetime import datetime, timedelta
 
 import pytz
@@ -28,6 +30,8 @@ from lms.djangoapps.courseware.utils import is_mode_upsellable
 from lms.djangoapps.experiments.models import ExperimentData
 from lms.djangoapps.experiments.stable_bucketing import stable_bucketing_hash_group
 from openedx.features.discounts.models import DiscountPercentageConfig, DiscountRestrictionConfig
+
+log = logging.getLogger(__name__)
 
 # .. toggle_name: discounts.enable_first_purchase_discount_override
 # .. toggle_implementation: WaffleFlag
@@ -126,10 +130,12 @@ def can_show_streak_discount_coupon(user, course):
         return False
 
     # Allow plugins to mark this user as ineligible for the discount.
-    _user, _course_key, is_eligible = DiscountEligibilityCheckRequested.run_filter(
-        user=user, course_key=course.id, is_eligible=True
-    )
-    if not is_eligible:
+    try:
+        DiscountEligibilityCheckRequested.run_filter(
+            user=user, course_key=course.id, is_eligible=True
+        )
+    except DiscountEligibilityCheckRequested.DiscountIneligible as exc:
+        log.info("User is ineligible for streak discount: %s", exc.message)
         return False
 
     return True
@@ -181,10 +187,12 @@ def can_receive_discount(user, course, discount_expiration_date=None):
         return False
 
     # Allow plugins to mark this user as ineligible for the discount.
-    _user, _course_key, is_eligible = DiscountEligibilityCheckRequested.run_filter(
-        user=user, course_key=course.id, is_eligible=True
-    )
-    if not is_eligible:
+    try:
+        DiscountEligibilityCheckRequested.run_filter(
+            user=user, course_key=course.id, is_eligible=True
+        )
+    except DiscountEligibilityCheckRequested.DiscountIneligible as exc:
+        log.info("User is ineligible for discount: %s", exc.message)
         return False
 
     # Turn holdback on
