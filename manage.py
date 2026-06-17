@@ -23,13 +23,13 @@ import os
 import sys
 from argparse import ArgumentParser
 
-from openedx_filters import OpenEdxPublicFilter
+from openedx_filters.tooling import OpenEdxPublicFilter
 
 
 class ManagementCommandExecutionRequested(OpenEdxPublicFilter):
     """Filter triggered before a management command is executed."""
 
-    FILTER_TYPE = 'org.openedx.platform.management.command.execute.requested.v1'
+    filter_type = 'org.openedx.platform.management.command.execute.requested.v1'
 
 
 def parse_args():
