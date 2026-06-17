@@ -31,6 +31,15 @@ class ManagementCommandExecutionRequested(OpenEdxPublicFilter):
 
     filter_type = 'org.openedx.platform.management.command.execute.requested.v1'
 
+    @classmethod
+    def run_filter(cls, command_name, service_variant, command_runner):
+        """Run the management command execution pipeline."""
+        return cls.run_pipeline(
+            command_name=command_name,
+            service_variant=service_variant,
+            command_runner=command_runner,
+        )
+
 
 def parse_args():
     """Parse edx specific arguments to manage.py"""
