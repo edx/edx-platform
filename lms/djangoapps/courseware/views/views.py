@@ -93,6 +93,7 @@ from lms.djangoapps.courseware.courses import (
     sort_by_start_date
 )
 from lms.djangoapps.courseware.date_summary import verified_upgrade_deadline_link
+from lms.djangoapps.courseware.decorators import courseware_view_hooks
 from lms.djangoapps.courseware.exceptions import CourseAccessRedirect, Redirect
 from lms.djangoapps.courseware.masquerade import is_masquerading_as_specific_student, setup_masquerade
 from lms.djangoapps.courseware.model_data import FieldDataCache
@@ -152,7 +153,6 @@ from openedx.features.course_experience.url_helpers import (
 )
 from openedx.features.course_experience.utils import dates_banner_should_display
 from openedx.features.course_experience.waffle import ENABLE_COURSE_ABOUT_SIDEBAR_HTML
-from openedx.features.enterprise_support.api import data_sharing_consent_required
 
 from ..block_render import get_block, get_block_by_usage_id, get_block_for_descriptor
 from ..tabs import _get_dynamic_tabs
@@ -530,7 +530,7 @@ class CourseTabView(EdxFragmentView):
     """
     @method_decorator(ensure_csrf_cookie)
     @method_decorator(ensure_valid_course_key)
-    @method_decorator(data_sharing_consent_required)
+    @method_decorator(courseware_view_hooks)
     def get(self, request, course_id, tab_type, **kwargs):  # lint-amnesty, pylint: disable=arguments-differ
         """
         Displays a course tab page that contains a web fragment.
@@ -979,7 +979,7 @@ def dates(request, course_id):
 @login_required
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @ensure_valid_course_key
-@data_sharing_consent_required
+@courseware_view_hooks
 def progress(request, course_id, student_id=None):
     """ Display the progress page. """
     course_key = CourseKey.from_string(course_id)

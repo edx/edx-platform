@@ -4,7 +4,6 @@ APIs providing support for enterprise functionality.
 
 import logging
 import traceback
-from functools import wraps
 from urllib.parse import urljoin
 
 import requests
@@ -14,7 +13,6 @@ from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.contrib.sites.models import Site
 from django.core.cache import cache
-from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.http import urlencode
@@ -338,44 +336,6 @@ def activate_learner_enterprise(request, user, enterprise_customer):
         return True
 
     return False
-
-
-def data_sharing_consent_required(view_func):
-    """
-    Decorator which makes a view method redirect to the Data Sharing Consent form if:
-
-    * The wrapped method is passed request, course_id as the first two arguments.
-    * Enterprise integration is enabled
-    * Data sharing consent is required before accessing this course view.
-    * The request.user has not yet given data sharing consent for this course.
-
-    After granting consent, the user will be redirected back to the original request.path.
-
-    """
-
-    @wraps(view_func)
-    def inner(request, course_id, *args, **kwargs):
-        """
-        Redirect to the consent page if the request.user must consent to data sharing before viewing course_id.
-
-        Otherwise, just call the wrapped view function.
-        """
-        # Redirect to the consent URL, if consent is required.
-        source = getattr(view_func, '__name__', '')
-        consent_url = get_enterprise_consent_url(request, course_id, enrollment_exists=True, source=source)
-        if consent_url:
-            real_user = getattr(request.user, 'real_user', request.user)
-            LOGGER.info(
-                'User %s cannot access the course %s because they have not granted consent',
-                real_user,
-                course_id,
-            )
-            return redirect(consent_url)
-
-        # Otherwise, drop through to wrapped view
-        return view_func(request, course_id, *args, **kwargs)
-
-    return inner
 
 
 def enterprise_enabled():
