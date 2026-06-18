@@ -3,11 +3,15 @@ Utility functions for third_party_auth
 """
 
 import datetime
+
 import ipaddress
+import logging
 from urllib.parse import urlparse
-from zoneinfo import ZoneInfo
 
 import dateutil.parser
+import requests
+from zoneinfo import ZoneInfo
+
 from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.utils.timezone import now
@@ -26,6 +30,8 @@ from . import provider
 
 SAML_XML_NS = 'urn:oasis:names:tc:SAML:2.0:metadata'  # The SAML Metadata XML namespace
 
+log = logging.getLogger(__name__)
+
 
 class MetadataParseError(Exception):
     """ An error occurred while parsing the SAML metadata from an IdP """
@@ -33,7 +39,7 @@ class MetadataParseError(Exception):
 
 
 class SAMLMetadataURLError(Exception):
-    """ A SAML metadata URL failed security validation """
+    """ The SAML metadata URL failed security validation """
     pass  # lint-amnesty, pylint: disable=unnecessary-pass
 
 
@@ -41,56 +47,74 @@ def validate_saml_metadata_url(url):
     """
     Validate that a SAML metadata URL is safe to fetch.
 
-    Enforces HTTPS and blocks requests to loopback, link-local, and reserved IP
-    addresses. Link-local specifically covers cloud instance metadata endpoints
-    (169.254.0.0/16, e.g. the AWS metadata service at 169.254.169.254).
-    Reserved addresses (e.g. 240.0.0.0/4) are IETF-assigned ranges that are
-    never routable on real networks.
+    Enforces HTTPS and blocks requests to loopback, link-local, and reserved
+    IP addresses. RFC 1918 private ranges are blocked by default but can be
+    allowed via SAML_METADATA_URL_ALLOW_PRIVATE_IPS for deployments where the
+    IdP lives on the same private network as the Open edX server.
 
-    Private IP ranges (RFC 1918: 10.x, 172.16.x, 192.168.x) are also blocked by
-    default, since most Open edX deployments fetch SAML metadata from public IdPs.
-    Operators running in a private network where the SAML IdP has a private IP can
-    opt out by setting SAML_METADATA_URL_ALLOW_PRIVATE_IPS = True in Django settings.
+    Note: validation is IP-based and only applies when the URL contains a
+    literal IP address. Hostname-based URLs are not resolved here — operators
+    should enforce network-level egress filtering (e.g. firewall rules or a
+    dedicated egress proxy) as a complementary control to guard against
+    DNS-based bypasses.
 
-    Limitation: IP address checks only apply to literal IPs in the URL. Hostname-
-    based URLs are not validated against the IP blocklists. Operators are encouraged
-    to complement this with network-level egress filtering that blocks outbound
-    connections from the Open edX server to link-local (169.254.0.0/16) and RFC
-    1918 private address ranges.
-
-    Raises SAMLMetadataURLError if the URL fails validation.
+    Raises SAMLMetadataURLError if the URL fails any check.
     """
     parsed = urlparse(url)
-
     if parsed.scheme != 'https':
-        raise SAMLMetadataURLError(
-            f"SAML metadata URL must use HTTPS, got scheme: {parsed.scheme!r}"
-        )
-
-    hostname = parsed.hostname
-    if not hostname:
+        raise SAMLMetadataURLError(f"SAML metadata URL must use HTTPS, got: {parsed.scheme!r}")
+    if not parsed.hostname:
         raise SAMLMetadataURLError("SAML metadata URL has no hostname")
 
     try:
-        addr = ipaddress.ip_address(hostname)
+        addr = ipaddress.ip_address(parsed.hostname)
     except ValueError:
-        # hostname is a domain name, not a numeric IP literal — pass through.
+        # Not a literal IP — hostname-based, allow it through
         return
 
-    # Loopback, link-local, and reserved ranges are never legitimate SAML IdP
-    # addresses regardless of deployment topology.
     if addr.is_loopback or addr.is_link_local or addr.is_reserved:
+        raise SAMLMetadataURLError(f"SAML metadata URL resolves to a blocked address: {addr}")
+
+    allow_private = getattr(settings, 'SAML_METADATA_URL_ALLOW_PRIVATE_IPS', False)
+    if not allow_private and addr.is_private:
         raise SAMLMetadataURLError(
-            f"SAML metadata URL hostname is a forbidden IP address: {addr}"
+            f"SAML metadata URL resolves to a private address: {addr}. "
+            "Set SAML_METADATA_URL_ALLOW_PRIVATE_IPS=True to allow this."
         )
 
-    # Private ranges are blocked by default but can be allowed via Django settings
-    # for deployments where the SAML IdP lives on the same private network.
-    if addr.is_private and not settings.SAML_METADATA_URL_ALLOW_PRIVATE_IPS:
-        raise SAMLMetadataURLError(
-            f"SAML metadata URL hostname is a private IP address: {addr}. "
-            "Set SAML_METADATA_URL_ALLOW_PRIVATE_IPS = True in Django settings to allow this."
-        )
+
+def fetch_metadata_xml(url):
+    """
+    Fetches IDP metadata from provider url
+    Returns: xml document
+    """
+    validate_saml_metadata_url(url)
+    try:
+        log.info("Fetching %s", url)
+        response = requests.get(url, verify=True, timeout=30)  # May raise HTTPError or SSLError or ConnectionError
+        response.raise_for_status()  # May raise an HTTPError
+
+        try:
+            parser = etree.XMLParser(remove_comments=True)
+            xml = etree.fromstring(response.content, parser)
+        except etree.XMLSyntaxError:  # lint-amnesty, pylint: disable=try-except-raise
+            raise
+        # TODO: Can use OneLogin_Saml2_Utils to validate signed XML if anyone is using that
+        return xml
+    except (requests.exceptions.SSLError, requests.exceptions.HTTPError, requests.exceptions.RequestException,
+            MetadataParseError, SAMLMetadataURLError) as error:
+        # Catch and process exception in case of errors during fetching and processing saml metadata.
+        # Here is a description of each exception.
+        # SSLError is raised in case of errors caused by SSL (e.g. SSL cer verification failure etc.)
+        # HTTPError is raised in case of unexpected status code (e.g. 500 error etc.)
+        # RequestException is the base exception for any request related error that "requests" lib raises.
+        # MetadataParseError is raised if there is error in the fetched meta data (e.g. missing @entityID etc.)
+        # SAMLMetadataURLError is raised if the URL fails security validation.
+        log.exception(str(error), exc_info=error)
+        raise error
+    except etree.XMLSyntaxError as error:
+        log.exception(str(error), exc_info=error)
+        raise error
 
 
 def parse_metadata_xml(xml, entity_id):

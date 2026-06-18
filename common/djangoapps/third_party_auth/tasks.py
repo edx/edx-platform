@@ -97,19 +97,15 @@ def fetch_saml_metadata():
                     num_updated += 1
                 else:
                     log.info(f"→ Updated existing SAMLProviderData. Nothing has changed for entityID {entity_id}")
-        except (
-            exceptions.SSLError,
-            exceptions.HTTPError,
-            exceptions.RequestException,
-            MetadataParseError,
-            SAMLMetadataURLError,
-        ) as error:
+        except (exceptions.SSLError, exceptions.HTTPError, exceptions.RequestException,
+                MetadataParseError, SAMLMetadataURLError) as error:
             # Catch and process exception in case of errors during fetching and processing saml metadata.
             # Here is a description of each exception.
             # SSLError is raised in case of errors caused by SSL (e.g. SSL cer verification failure etc.)
             # HTTPError is raised in case of unexpected status code (e.g. 500 error etc.)
             # RequestException is the base exception for any request related error that "requests" lib raises.
             # MetadataParseError is raised if there is error in the fetched meta data (e.g. missing @entityID etc.)
+            # SAMLMetadataURLError is raised if the URL fails security validation.
 
             log.exception(str(error))
             failure_messages.append(
