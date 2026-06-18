@@ -1,13 +1,14 @@
 """
-Generate a CSV mapping LTI 1.3 UUIDs to LTI 1.1 identifiers.
+Management command to generate a CSV mapping LTI 1.3 UUIDs to LTI 1.1 user hashes
+for a given set of courses.
 
-This command helps a partner migrate per-user data from LTI 1.1 to LTI 1.3.
-By default it exports the anonymous value sent in the LTI 1.1 ``user_id``
-parameter. Use ``--include-username`` to also export the Open edX username
-that was eligible to be sent as the optional LTI 1.1
-``lis_person_sourcedid`` parameter.
+This is useful when a partner is migrating from LTI 1.1 to LTI 1.3 and needs to
+match their existing per-user data (keyed by the LTI 1.1 hash) to the new LTI 1.3
+UUID that edX will send after the switch.
 
-Username output contains PII and must be written to a file.
+Use ``--include-username`` to also export the Open edX username that was eligible
+to be sent as the optional LTI 1.1 ``lis_person_sourcedid`` parameter. Username
+output contains PII and must be written to a file.
 
 Usage:
     ./manage.py lms generate_lti_id_mapping \\
@@ -24,18 +25,17 @@ Usage:
         --output berkeley_lti_username_mapping.csv
 
 Output columns:
-    lti_13_uuid      - UUID sent to LTI 1.3 tools
-    course           - Course key
-    lti_11_hash      - Anonymous value sent as the LTI 1.1 user_id
-    lti_11_username  - Optional PII column containing auth_user.username
+    lti_13_uuid  - The UUID sent to LTI 1.3 tools (from the ExternalId table)
+    course       - The course key
+    lti_11_hash  - The anonymous user ID sent to LTI 1.1 tools (from AnonymousUserId)
+    lti_11_username - Optional PII column containing auth_user.username
 """
 
 import csv
-import os
 import textwrap
-from contextlib import nullcontext
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management import BaseCommand
+from django.core.management.base import CommandError
 from django.db.models import Max
 from opaque_keys.edx.keys import CourseKey
 
@@ -45,18 +45,23 @@ from openedx.core.djangoapps.external_user_ids.models import ExternalIdType
 
 class Command(BaseCommand):
     """
-    Export existing LTI 1.3 and LTI 1.1 identifiers for the given courses.
+    Export a CSV mapping LTI 1.3 UUIDs to LTI 1.1 user hashes for the given courses.
 
-    Only users who already have both an LTI ExternalId and a course-specific
-    AnonymousUserId appear in the output. In rare cases multiple anonymous IDs
-    may exist for a user/course pair. The command uses the highest record ID,
-    matching ``anonymous_id_for_user()``.
+    Only users who have both identifiers already generated will appear in the output.
+    LTI 1.3 UUIDs are created on first LTI 1.3 launch; LTI 1.1 hashes are created
+    on first LTI 1.1 launch for each course. In rare cases multiple hashes may exist
+    per (user, course) due to historical SECRET_KEY rotation — this command always
+    uses the most recently created hash (highest record ID), consistent with the
+    behaviour of anonymous_id_for_user().
+
+    Examples:
+
+        ./manage.py lms generate_lti_id_mapping course-v1:BerkeleyX+Data88.1EX+3T2025
+        ./manage.py lms generate_lti_id_mapping course-v1:BerkeleyX+Data88.1EX+3T2025 --output mapping.csv
+
     """
 
     help = textwrap.dedent(__doc__)
-    USERNAME_OUTPUT_REQUIRES_FILE = (
-        '--output is required when --include-username is used because the CSV contains PII.'
-    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -80,118 +85,77 @@ class Command(BaseCommand):
             ),
         )
 
-    @staticmethod
-    def _open_pii_output(output_path):
-        """
-        Exclusively create a PII output file with owner-only permissions.
-        """
-        try:
-            file_descriptor = os.open(
-                output_path,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                0o600,
-            )
-        except OSError as exc:
-            raise CommandError(f'Unable to create output file {output_path}: {exc}') from exc
-
-        try:
-            return os.fdopen(file_descriptor, 'w', newline='', encoding='utf-8')
-        except BaseException:
-            os.close(file_descriptor)
-            try:
-                os.remove(output_path)
-            except FileNotFoundError:
-                pass
-            raise
-
-    @staticmethod
-    def _get_rows(course_keys, include_username):
-        """
-        Return a streaming queryset for the requested mapping rows.
-        """
-        latest_ids = (
-            AnonymousUserId.objects.filter(course_id__in=course_keys)
-            .values('user_id', 'course_id')
-            .annotate(latest_id=Max('id'))
-            .values_list('latest_id', flat=True)
-        )
-
-        selected_fields = [
-            'user__externalid__external_user_id',
-            'course_id',
-            'anonymous_user_id',
-        ]
-        if include_username:
-            selected_fields.append('user__username')
-
-        return (
-            AnonymousUserId.objects.filter(
-                id__in=latest_ids,
-                user__externalid__external_id_type__name=ExternalIdType.LTI,
-            )
-            .values(*selected_fields)
-            .order_by(
-                'user__externalid__external_user_id',
-                'course_id',
-            )
-            .iterator(chunk_size=1000)
-        )
-
     def handle(self, *args, **options):
         course_keys = options['course_keys']
         output_path = options['output']
         include_username = options['include_username']
 
         if include_username and not output_path:
-            raise CommandError(self.USERNAME_OUTPUT_REQUIRES_FILE)
-
-        pii_output_created = False
-        if output_path and include_username:
-            output_context = self._open_pii_output(output_path)
-            pii_output_created = True
-        elif output_path:
-            output_context = open(  # pylint: disable=consider-using-with
-                output_path,
-                'w',
-                newline='',
-                encoding='utf-8',
+            raise CommandError(
+                '--output is required when --include-username is used because the CSV contains PII.'
             )
-        else:
-            output_context = nullcontext(self.stdout)
+
+        output_file = self.stdout
+        if output_path:
+            output_file = open(output_path, 'w', newline='', encoding='utf-8')  # pylint: disable=consider-using-with
 
         try:
-            with output_context as output_file:
-                writer = csv.writer(output_file)
-                header = ['lti_13_uuid', 'course', 'lti_11_hash']
+            writer = csv.writer(output_file)
+            header = ['lti_13_uuid', 'course', 'lti_11_hash']
+            if include_username:
+                header.append('lti_11_username')
+            writer.writerow(header)
+
+            # Single JOIN query at the DB level — no loops, no N+1.
+            # Streams results in chunks of 1000 to keep memory flat.
+            #
+            # Username is selected only when explicitly requested. No email,
+            # name, or internal user ID is selected or written to the output.
+            #
+            # De-duplicate: in rare cases a user may have multiple
+            # AnonymousUserId rows per (user, course) due to historical
+            # SECRET_KEY rotation. We pick the most recently created one
+            # (highest id) per (user_id, course_id) group — consistent with
+            # anonymous_id_for_user(). Using Max('id') + subquery instead of
+            # DISTINCT ON because DISTINCT ON is PostgreSQL-only and edX runs
+            # MySQL in production.
+            latest_ids = (
+                AnonymousUserId.objects.filter(course_id__in=course_keys)
+                .values('user_id', 'course_id')
+                .annotate(latest_id=Max('id'))
+                .values_list('latest_id', flat=True)
+            )
+
+            selected_fields = [
+                'user__externalid__external_user_id',
+                'course_id',
+                'anonymous_user_id',
+            ]
+            if include_username:
+                selected_fields.append('user__username')
+
+            rows = (
+                AnonymousUserId.objects.filter(
+                    id__in=latest_ids,
+                    user__externalid__external_id_type__name=ExternalIdType.LTI,
+                )
+                .values(*selected_fields)
+                .iterator(chunk_size=1000)
+            )
+
+            row_count = 0
+            for row in rows:
+                output_row = [
+                    str(row['user__externalid__external_user_id']),
+                    str(row['course_id']),
+                    row['anonymous_user_id'],
+                ]
                 if include_username:
-                    header.append('lti_11_username')
-                writer.writerow(header)
+                    output_row.append(row['user__username'])
+                writer.writerow(output_row)
+                row_count += 1
 
-                row_count = 0
-                for row in self._get_rows(course_keys, include_username):
-                    output_row = [
-                        str(row['user__externalid__external_user_id']),
-                        str(row['course_id']),
-                        row['anonymous_user_id'],
-                    ]
-                    if include_username:
-                        output_row.append(row['user__username'])
-                    writer.writerow(output_row)
-                    row_count += 1
-
-                if include_username:
-                    output_file.flush()
-                    os.fsync(output_file.fileno())
-        except BaseException:
-            if pii_output_created:
-                try:
-                    os.remove(output_path)
-                except FileNotFoundError:
-                    pass
-            raise
-
-        if include_username:
-            message = f'Done. {row_count} rows written to {output_path}.'
-        else:
-            message = f'Done. {row_count} rows written.'
-        self.stderr.write(self.style.SUCCESS(message))
+            self.stderr.write(self.style.SUCCESS(f'Done. {row_count} rows written.'))
+        finally:
+            if output_path:
+                output_file.close()
