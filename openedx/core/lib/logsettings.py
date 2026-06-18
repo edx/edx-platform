@@ -45,6 +45,15 @@ def get_logger_config(log_dir,  # lint-amnesty, pylint: disable=unused-argument
             },
             'syslog_format': {'format': syslog_format},
             'raw': {'format': '%(message)s'},
+            # Emits Datadog-ready JSON for the channel_integrations logger when
+            # INTEGRATED_CHANNELS_JSON_LOGGING is enabled. When the flag is off,
+            # JsonChannelFormatter falls back to logging.Formatter, so the
+            # 'format' below keeps legacy output byte-identical to 'standard'.
+            'integrated_channels_json': {
+                '()': 'channel_integrations.integrated_channel.structured_logging.JsonChannelFormatter',
+                'format': '%(asctime)s %(levelname)s %(process)d '
+                          '[%(name)s] [user %(userid)s] [ip %(remoteip)s] %(filename)s:%(lineno)d - %(message)s',
+            },
         },
         'filters': {
             'require_debug_false': {
@@ -62,6 +71,16 @@ def get_logger_config(log_dir,  # lint-amnesty, pylint: disable=unused-argument
                 'level': 'INFO',
                 'class': 'logging.StreamHandler',
                 'formatter': 'standard',
+                'filters': ['userid_context', 'remoteip_context'],
+                'stream': sys.stderr,
+            },
+            # Stderr handler dedicated to the channel_integrations logger. Mirrors
+            # 'console' but uses the JsonChannelFormatter so that enabling
+            # INTEGRATED_CHANNELS_JSON_LOGGING emits structured JSON for Datadog.
+            'integrated_channels_console': {
+                'level': 'INFO',
+                'class': 'logging.StreamHandler',
+                'formatter': 'integrated_channels_json',
                 'filters': ['userid_context', 'remoteip_context'],
                 'stream': sys.stderr,
             },
@@ -96,6 +115,16 @@ def get_logger_config(log_dir,  # lint-amnesty, pylint: disable=unused-argument
                 'handlers': ['console', 'local'],
                 'level': 'INFO',
                 'propagate': False
+            },
+            # Route integrated-channels logs through the JSON-capable stderr
+            # handler (in addition to syslog), without propagating to the root
+            # logger so records are not also emitted by the plain 'console'
+            # handler. Output matches the legacy format until
+            # INTEGRATED_CHANNELS_JSON_LOGGING is enabled.
+            'channel_integrations': {
+                'handlers': ['integrated_channels_console', 'local'],
+                'level': 'INFO',
+                'propagate': False,
             },
             'django.request': {
                 'handlers': ['mail_admins'],
