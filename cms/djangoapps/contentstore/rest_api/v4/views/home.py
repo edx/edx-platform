@@ -128,6 +128,11 @@ class HomeCoursesViewSet(StandardizedErrorMixin, viewsets.ViewSet):
           a dynamic-fields serializer mixin and per-field schema documentation)
           but is intentionally NOT added here to keep the v4 contract stable
           for the existing Studio frontend.
+        - 0034: already compliant. ``authentication_classes`` is
+          ``(JwtAuthentication, SessionAuthenticationAllowInactiveUser)`` — no
+          ``BearerAuthentication`` / ``OAuth2Authentication`` to remove.
+          Explicit declaration kept so ``SessionAuthenticationAllowInactiveUser``
+          is used instead of the default ``SessionAuthentication``.
     """
 
     authentication_classes = (JwtAuthentication, SessionAuthenticationAllowInactiveUser)

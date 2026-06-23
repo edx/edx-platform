@@ -18,6 +18,12 @@ to apply the FC-0118 ADRs:
     explicitly. The flat-list ``courses`` and ``libraries`` actions are
     out of scope (single-key dict around a list) and do not honour
     ``?fields=``.
+  * ADR 0034 – already compliant. ``authentication_classes`` is
+    ``(JwtAuthentication, SessionAuthenticationAllowInactiveUser)`` —
+    no ``BearerAuthentication`` / ``OAuth2Authentication`` to remove.
+    The explicit declaration is kept (rather than relying on platform
+    defaults) so that ``SessionAuthenticationAllowInactiveUser`` is used
+    instead of the default ``SessionAuthentication``.
 """
 
 import edx_api_doc_tools as apidocs

@@ -30,6 +30,13 @@ restructured to apply the FC-0118 ADRs from the start:
     real-world payload is always small. A hard cap is enforced upstream of
     this endpoint by :func:`CourseGradingModel.update_from_json`; we surface
     that as a documentation note rather than re-implement the bound here.
+  * ADR 0034 – auth standardization (OEP-0042).
+    ``authentication_classes`` is ``(JwtAuthentication, SessionAuthenticationAllowInactiveUser)``;
+    ``BearerAuthenticationAllowInactiveUser`` has been removed per the
+    deprecation policy. ``SessionAuthenticationAllowInactiveUser`` is
+    retained (rather than relying on the platform-default
+    ``SessionAuthentication``) so Studio authors whose accounts are
+    temporarily inactive can still update grading.
 
 Permission model note:
     PR #38363 proposed a class-level ``HasStudioReadAccess`` permission. The
@@ -63,7 +70,6 @@ from cms.djangoapps.models.settings.course_grading import CourseGradingModel
 from openedx.core.djangoapps.authz.constants import LegacyAuthoringPermission
 from openedx.core.djangoapps.authz.decorators import user_has_course_permission
 from openedx.core.djangoapps.credit.tasks import update_credit_course_requirements
-from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 _COURSE_KEY_PARAMETER = OpenApiParameter(
@@ -87,9 +93,12 @@ class AuthoringGradingViewSet(StandardizedErrorMixin, viewsets.ViewSet):
     Supersedes ``AuthoringGradingView`` at ``POST /api/contentstore/v0/grading/{course_id}``.
     """
 
+    # ADR 0034 — JWT + session-with-inactive-user (BearerAuthenticationAllowInactiveUser
+    # removed per OEP-0042). SessionAuthenticationAllowInactiveUser is retained
+    # (instead of relying on the platform-default SessionAuthentication) so Studio
+    # authors whose accounts are temporarily inactive can still update grading.
     authentication_classes = (
         JwtAuthentication,
-        BearerAuthenticationAllowInactiveUser,
         SessionAuthenticationAllowInactiveUser,
     )
     permission_classes = (IsAuthenticated,)

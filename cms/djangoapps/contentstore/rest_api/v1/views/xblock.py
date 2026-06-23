@@ -8,6 +8,13 @@ XblockViewSet applying the FC-0118 ADRs:
   * ADR 0026 - explicit authentication_classes + permission_classes
   * ADR 0028 - consolidated into XblockViewSet via DefaultRouter
   * ADR 0029 - standardized error envelope via StandardizedErrorMixin
+  * ADR 0034 - already compliant. ``authentication_classes`` is
+    ``(JwtAuthentication, SessionAuthenticationAllowInactiveUser)`` — no
+    ``BearerAuthentication`` / ``OAuth2Authentication`` to remove. This view
+    is set explicitly (rather than relying on platform defaults) because it
+    needs ``SessionAuthenticationAllowInactiveUser`` instead of the default
+    ``SessionAuthentication`` so inactive Studio authors can still hit the
+    endpoint while their session is being verified.
   * ADR 0036 - minimal/flattened views. ``retrieve`` accepts a ``?view=minimal``
     query parameter that strips the (tree-shaped) xblock response to a small
     set of structural fields. The full xblock response is kept as the default

@@ -6,6 +6,13 @@ to apply the FC-0118 ADRs from the start:
 
   * ADR 0025 – ``serializer_class`` on every viewset/view
   * ADR 0026 – explicit ``authentication_classes`` + ``permission_classes``
+  * ADR 0034 – auth standardization (OEP-0042). All four v2 viewsets/views use
+    ``(JwtAuthentication, EnrollmentCrossDomainSessionAuth)``;
+    ``BearerAuthenticationAllowInactiveUser`` has been removed per the
+    deprecation policy. ``EnrollmentCrossDomainSessionAuth`` is retained
+    (rather than relying on the platform-default ``SessionAuthentication``)
+    because these endpoints must accept cross-domain Studio/LMS CSRF-validated
+    session cookies.
   * ADR 0027 – ``drf_spectacular`` for OpenAPI schema generation
   * ADR 0028 – consolidated into ``ViewSet`` classes registered via
     ``DefaultRouter`` where the URL shape allows it
@@ -70,7 +77,6 @@ from openedx.core.djangoapps.enrollments.views import (
     EnrollmentUserThrottle,
 )
 from openedx.core.djangoapps.user_api.accounts.permissions import CanRetireUser
-from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.core.lib.api.mixins import StandardizedErrorMixin
 from openedx.core.lib.api.permissions import ApiKeyHeaderPermissionIsAuthenticated
 
@@ -209,9 +215,12 @@ class EnrollmentViewSet(StandardizedErrorMixin, viewsets.ViewSet, ApiKeyPermissi
         DELETE /api/enrollment/v2/enrollment/enrollment_allowed/  → allowed (DELETE)
     """
 
+    # ADR 0034 — JWT + cross-domain session (BearerAuthenticationAllowInactiveUser
+    # removed per OEP-0042). EnrollmentCrossDomainSessionAuth retained because the
+    # endpoint must accept cross-domain Studio/LMS CSRF-validated session cookies;
+    # the platform-default SessionAuthentication would reject those.
     authentication_classes = (
         JwtAuthentication,
-        BearerAuthenticationAllowInactiveUser,
         EnrollmentCrossDomainSessionAuth,
     )
     permission_classes = (ApiKeyHeaderPermissionIsAuthenticated,)
@@ -417,9 +426,12 @@ class EnrollmentViewSet(StandardizedErrorMixin, viewsets.ViewSet, ApiKeyPermissi
 class EnrollmentRetrieveView(StandardizedErrorMixin, ApiKeyPermissionMixIn, APIView):
     """GET enrollment for a course (and optionally a named user)."""
 
+    # ADR 0034 — JWT + cross-domain session (BearerAuthenticationAllowInactiveUser
+    # removed per OEP-0042). EnrollmentCrossDomainSessionAuth retained because the
+    # endpoint must accept cross-domain Studio/LMS CSRF-validated session cookies;
+    # the platform-default SessionAuthentication would reject those.
     authentication_classes = (
         JwtAuthentication,
-        BearerAuthenticationAllowInactiveUser,
         EnrollmentCrossDomainSessionAuth,
     )
     permission_classes = (ApiKeyHeaderPermissionIsAuthenticated,)
@@ -492,9 +504,12 @@ class EnrollmentRetrieveView(StandardizedErrorMixin, ApiKeyPermissionMixIn, APIV
 class UserRolesView(StandardizedErrorMixin, APIView):
     """List the current user's course-level roles."""
 
+    # ADR 0034 — JWT + cross-domain session (BearerAuthenticationAllowInactiveUser
+    # removed per OEP-0042). EnrollmentCrossDomainSessionAuth retained because the
+    # endpoint must accept cross-domain Studio/LMS CSRF-validated session cookies;
+    # the platform-default SessionAuthentication would reject those.
     authentication_classes = (
         JwtAuthentication,
-        BearerAuthenticationAllowInactiveUser,
         EnrollmentCrossDomainSessionAuth,
     )
     permission_classes = (ApiKeyHeaderPermissionIsAuthenticated,)
@@ -644,9 +659,12 @@ class CourseEnrollmentDetailView(StandardizedErrorMixin, APIView):
 class EnrollmentsAdminListView(StandardizedErrorMixin, ListAPIView):
     """Admin-only paginated enrollment list with OEP-68 filter aliases."""
 
+    # ADR 0034 — JWT + cross-domain session (BearerAuthenticationAllowInactiveUser
+    # removed per OEP-0042). EnrollmentCrossDomainSessionAuth retained because the
+    # endpoint must accept cross-domain Studio/LMS CSRF-validated session cookies;
+    # the platform-default SessionAuthentication would reject those.
     authentication_classes = (
         JwtAuthentication,
-        BearerAuthenticationAllowInactiveUser,
         EnrollmentCrossDomainSessionAuth,
     )
     permission_classes = (permissions.IsAdminUser,)

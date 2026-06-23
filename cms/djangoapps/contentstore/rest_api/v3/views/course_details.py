@@ -12,6 +12,12 @@ restructured to apply the FC-0118 ADRs:
   * ADR 0029 – standardized error envelope via :class:`StandardizedErrorMixin`
     (v3-scoped — does not change the project-wide DRF ``EXCEPTION_HANDLER``
     setting)
+  * ADR 0034 – already compliant. ``authentication_classes`` is
+    ``(JwtAuthentication, SessionAuthenticationAllowInactiveUser)`` — no
+    ``BearerAuthentication`` / ``OAuth2Authentication`` to remove.
+    Explicit declaration kept (rather than relying on platform defaults)
+    so that ``SessionAuthenticationAllowInactiveUser`` is used instead of
+    the default ``SessionAuthentication``.
 
 Permission model note:
     PR #38365 proposed a class-level ``HasStudioReadAccess`` permission. The
