@@ -142,3 +142,77 @@ class XblockViewSetErrorShapeTest(ModuleStoreTestCase, APITestCase):
     def test_instance_field_is_request_path(self):
         response = self.client.get(_detail_url())
         assert response.json()["instance"] == _detail_url()
+
+
+# ---------------------------------------------------------------------------
+# ADR 0036 — minimal-view regression tests
+# ---------------------------------------------------------------------------
+class TestXblockViewSetMinimalView(ModuleStoreTestCase, APITestCase):
+    """
+    ADR 0036 — verify ``?view=minimal`` strips the xblock response down to
+    the structural fields enumerated in ``_MINIMAL_VIEW_FIELDS`` and leaves
+    the default (full) response untouched.
+    """
+
+    _FULL_PAYLOAD = {
+        "id": TEST_LOCATOR,
+        "display_name": "Problem 1",
+        "category": "problem",
+        "children": [],
+        "has_children": False,
+        "studio_url": "/studio/...",
+        # Heavy / contextual fields that ``?view=minimal`` MUST drop:
+        "data": "<problem>...</problem>",
+        "metadata": {"weight": 1.0},
+        "fields": {"showanswer": "always"},
+        "student_view_data": {"...": "..."},
+        "edited_on": "2026-06-17T00:00:00Z",
+        "published": True,
+    }
+
+    def setUp(self):
+        super().setUp()
+        self.author = GlobalStaffFactory.create()
+        self.client.force_authenticate(user=self.author)
+
+    @patch(f"{_VIEW_MODULE}.retrieve_xblock_response")
+    def test_default_response_is_unchanged(self, mock_retrieve):
+        """Without ``?view=minimal`` the response is the full handler payload."""
+        mock_retrieve.return_value = JsonResponse(self._FULL_PAYLOAD)
+        response = self.client.get(_detail_url())
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        # Heavy fields must still be present in the default response.
+        assert "data" in body
+        assert "metadata" in body
+        assert "student_view_data" in body
+
+    @patch(f"{_VIEW_MODULE}.retrieve_xblock_response")
+    def test_minimal_view_strips_heavy_fields(self, mock_retrieve):
+        """``?view=minimal`` drops data, metadata, fields, student_view_data, edited_on, published."""
+        mock_retrieve.return_value = JsonResponse(self._FULL_PAYLOAD)
+        response = self.client.get(_detail_url(), {"view": "minimal"})
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        # Heavy fields MUST be dropped.
+        for dropped in ("data", "metadata", "fields", "student_view_data", "edited_on", "published"):
+            assert dropped not in body, f"ADR 0036: ?view=minimal must drop '{dropped}'"
+
+    @patch(f"{_VIEW_MODULE}.retrieve_xblock_response")
+    def test_minimal_view_keeps_structural_fields(self, mock_retrieve):
+        """``?view=minimal`` keeps id, display_name, category, children, has_children, studio_url."""
+        mock_retrieve.return_value = JsonResponse(self._FULL_PAYLOAD)
+        response = self.client.get(_detail_url(), {"view": "minimal"})
+        body = response.json()
+        for kept in ("id", "display_name", "category", "children", "has_children", "studio_url"):
+            assert kept in body, f"ADR 0036: ?view=minimal must keep '{kept}'"
+        assert body["id"] == TEST_LOCATOR
+        assert body["category"] == "problem"
+
+    @patch(f"{_VIEW_MODULE}.retrieve_xblock_response")
+    def test_minimal_view_is_noop_for_non_json_payload(self, mock_retrieve):
+        """Legacy ``?fields=graderType`` returns a non-dict body — minimal must be a no-op."""
+        mock_retrieve.return_value = JsonResponse("notgraded", safe=False)
+        response = self.client.get(_detail_url(), {"view": "minimal", "fields": "graderType"})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == "notgraded"

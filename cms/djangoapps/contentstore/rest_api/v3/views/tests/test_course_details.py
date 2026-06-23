@@ -270,3 +270,111 @@ class TestCourseDetailsViewSetErrorShape(APITestCase):
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "type" not in response.data
         assert "instance" not in response.data
+
+
+# ===========================================================================
+# ADR 0036 — ?view=minimal and ?fields= tests
+# ===========================================================================
+class TestCourseDetailsViewSetNestedJsonNormalization(APITestCase):
+    """
+    ADR 0036 — verify ``?view=minimal`` drops the heavy fields and ``?fields=``
+    restricts to an explicit subset. The full default response is unchanged.
+    """
+
+    _FAKE_DATA = {
+        # kept by ?view=minimal:
+        "course_id": "course-v1:org+course+run",
+        "org": "org",
+        "run": "run",
+        "title": "Sample Title",
+        "subtitle": "",
+        "language": "en",
+        "self_paced": False,
+        "start_date": "2026-06-01T00:00:00Z",
+        "end_date": "2026-12-01T00:00:00Z",
+        "enrollment_start": None,
+        "enrollment_end": None,
+        "certificate_available_date": None,
+        "certificates_display_behavior": "end",
+        "has_changes": False,
+        # dropped by ?view=minimal:
+        "overview": "<long html>",
+        "syllabus": "<long html>",
+        "description": "<long html>",
+        "short_description": "<long html>",
+        "instructor_info": {"instructors": [{"name": "x", "bio": "..."}]},
+        "learning_info": ["a", "b"],
+        "banner_image_name": "img.jpg",
+        "banner_image_asset_path": "/asset/...",
+        "video_thumbnail_image_name": "vid.jpg",
+        "video_thumbnail_image_asset_path": "/asset/...",
+        "license": "...",
+    }
+
+    def setUp(self):
+        super().setUp()
+        self.user = UserFactory.create()
+        self.client.force_authenticate(user=self.user)
+        self.url = reverse(
+            "cms.djangoapps.contentstore:v3:course_details-detail",
+            kwargs={"course_id": TEST_COURSE_ID},
+        )
+
+    @patch.object(CourseDetailsViewSet, "serializer_class")
+    @patch.object(CourseOverview, "course_exists", return_value=True)
+    @patch(MOCK_HAS_PERMISSION, return_value=True)
+    @patch(MOCK_FETCH)
+    def test_default_response_keeps_all_fields(
+        self, mock_fetch, mock_perm, mock_exists, mock_ser_cls,  # noqa: ARG002
+    ):
+        """Without ``?view=`` or ``?fields=`` the full payload is returned."""
+        mock_fetch.return_value = MagicMock()
+        mock_ser_cls.return_value.data = self._FAKE_DATA
+
+        response = self.client.get(self.url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "instructor_info" in response.data
+        assert "overview" in response.data
+        assert "learning_info" in response.data
+
+    @patch.object(CourseDetailsViewSet, "serializer_class")
+    @patch.object(CourseOverview, "course_exists", return_value=True)
+    @patch(MOCK_HAS_PERMISSION, return_value=True)
+    @patch(MOCK_FETCH)
+    def test_view_minimal_drops_heavy_fields(
+        self, mock_fetch, mock_perm, mock_exists, mock_ser_cls,  # noqa: ARG002
+    ):
+        """``?view=minimal`` drops the heavy text + embedded instructor_info sub-object."""
+        mock_fetch.return_value = MagicMock()
+        mock_ser_cls.return_value.data = self._FAKE_DATA
+
+        response = self.client.get(self.url, {"view": "minimal"})
+
+        assert response.status_code == status.HTTP_200_OK
+        for dropped in (
+            "overview", "syllabus", "description", "short_description",
+            "instructor_info", "learning_info",
+            "banner_image_name", "banner_image_asset_path",
+            "video_thumbnail_image_name", "video_thumbnail_image_asset_path",
+            "license",
+        ):
+            assert dropped not in response.data, f"ADR 0036: ?view=minimal must drop '{dropped}'"
+        for kept in ("course_id", "org", "run", "title", "self_paced", "start_date", "end_date"):
+            assert kept in response.data, f"ADR 0036: ?view=minimal must keep '{kept}'"
+
+    @patch.object(CourseDetailsViewSet, "serializer_class")
+    @patch.object(CourseOverview, "course_exists", return_value=True)
+    @patch(MOCK_HAS_PERMISSION, return_value=True)
+    @patch(MOCK_FETCH)
+    def test_fields_csv_restricts_top_level_keys(
+        self, mock_fetch, mock_perm, mock_exists, mock_ser_cls,  # noqa: ARG002
+    ):
+        """``?fields=course_id,title`` returns exactly those two keys."""
+        mock_fetch.return_value = MagicMock()
+        mock_ser_cls.return_value.data = self._FAKE_DATA
+
+        response = self.client.get(self.url, {"fields": "course_id,title"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(response.data.keys()) == {"course_id", "title"}

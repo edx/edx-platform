@@ -12,6 +12,12 @@ to apply the FC-0118 ADRs:
   * ADR 0029 – standardized error envelope, opted in via
     :class:`StandardizedErrorMixin` (v3-scoped — does not change the
     project-wide DRF ``EXCEPTION_HANDLER`` setting)
+  * ADR 0036 – field selection via ``?fields=`` (e.g. ``?fields=courses``).
+    The ``list`` action returns a wide ``StudioHomeSerializer`` payload with
+    ~25 top-level keys; clients that only need a subset can request it
+    explicitly. The flat-list ``courses`` and ``libraries`` actions are
+    out of scope (single-key dict around a list) and do not honour
+    ``?fields=``.
 """
 
 import edx_api_doc_tools as apidocs
@@ -30,6 +36,7 @@ from cms.djangoapps.contentstore.rest_api.v1.serializers import (
     LibraryTabSerializer,
     StudioHomeSerializer,
 )
+from cms.djangoapps.contentstore.rest_api.v3.utils import apply_field_selection
 from cms.djangoapps.contentstore.utils import get_course_context, get_home_context, get_library_context
 from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
@@ -66,7 +73,21 @@ class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
                 "org",
                 apidocs.ParameterLocation.QUERY,
                 description="Query param to filter by course org",
-            )],
+            ),
+            # ADR 0036 decision #3 — document the ``?fields=`` variant so it's
+            # discoverable by OpenAPI consumers. The 200 response below is the
+            # full default shape; ``?fields=`` returns a subset of top-level keys.
+            apidocs.string_parameter(
+                "fields",
+                apidocs.ParameterLocation.QUERY,
+                description=(
+                    "ADR 0036 explicit field selection. Comma-separated list "
+                    "of top-level keys to include in the response (e.g. "
+                    "``courses,libraries,studio_name``). Omit for the full "
+                    "response. Unknown keys are silently skipped."
+                ),
+            ),
+        ],
         responses={
             200: StudioHomeSerializer,
             401: "The requester is not authenticated.",
@@ -79,6 +100,7 @@ class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
         **Example Request**
 
             GET /api/contentstore/v3/home/
+            GET /api/contentstore/v3/home/?fields=courses,libraries  (ADR 0036)
         """
         home_context = get_home_context(request, True)
         home_context.update({
@@ -96,7 +118,8 @@ class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
             'user_is_active': request.user.is_active,
         })
         serializer = self.get_serializer(home_context)
-        return Response(serializer.data)
+        # ADR 0036 — drop top-level keys not requested via ?fields=.
+        return Response(apply_field_selection(serializer.data, request.query_params.get("fields")))
 
     @apidocs.schema(
         parameters=[

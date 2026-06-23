@@ -117,6 +117,17 @@ class HomeCoursesViewSet(StandardizedErrorMixin, viewsets.ViewSet):
         - 0029: standardized error envelope via ``StandardizedErrorMixin``
         - 0032: 7-field pagination envelope via ``DefaultPagination``
         - 0033: ``ordering`` parameter; ``order`` kept as deprecated alias
+        - 0036: **out of scope.** This endpoint returns a flat paginated list
+          governed by ADR 0032; ADR 0036 explicitly excludes flat lists from
+          its ``?view=`` / ``?depth=`` / minimal-by-default requirements. Each
+          course item carries 9 thin top-level fields (``course_key``,
+          ``display_name``, ``lms_link``, ``cms_link``, ``number``, ``org``,
+          ``rerun_link``, ``run``, ``url``, ``is_active``) — no nested
+          children, no embedded full sub-objects, no tree shape. Per-item
+          ``?fields=`` subset filtering is a possible follow-up (would require
+          a dynamic-fields serializer mixin and per-field schema documentation)
+          but is intentionally NOT added here to keep the v4 contract stable
+          for the existing Studio frontend.
     """
 
     authentication_classes = (JwtAuthentication, SessionAuthenticationAllowInactiveUser)

@@ -8,10 +8,24 @@ XblockViewSet applying the FC-0118 ADRs:
   * ADR 0026 - explicit authentication_classes + permission_classes
   * ADR 0028 - consolidated into XblockViewSet via DefaultRouter
   * ADR 0029 - standardized error envelope via StandardizedErrorMixin
+  * ADR 0036 - minimal/flattened views. ``retrieve`` accepts a ``?view=minimal``
+    query parameter that strips the (tree-shaped) xblock response to a small
+    set of structural fields. The full xblock response is kept as the default
+    for backwards compatibility with the existing Studio frontend; new clients
+    SHOULD opt into ``?view=minimal`` whenever the full nested payload is not
+    required.
+
+    Note on ``?fields=`` — the underlying ``retrieve_xblock_response`` already
+    interprets ``?fields=`` with **legacy semantics** as a "type of response"
+    selector (``?fields=graderType``, ``?fields=ancestorInfo``,
+    ``?fields=customReadToken``). To avoid breaking existing callers, v1 does
+    NOT repurpose ``?fields=`` as the ADR 0036 CSV-subset selector — use
+    ``?view=minimal`` instead. A future v2 may reconcile these names.
 """
 import json
 import logging
 
+from django.http import JsonResponse
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from opaque_keys import InvalidKeyError
@@ -33,6 +47,39 @@ from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 log = logging.getLogger(__name__)
 
+# ADR 0036 — top-level keys kept when ``?view=minimal`` is requested. Chosen so
+# the response is structurally complete (callers can navigate the tree by id
+# and fetch full nodes on demand) without any heavy/contextual fields
+# (student_view_data, completion, OLX metadata, etc.).
+_MINIMAL_VIEW_FIELDS = frozenset({
+    "id",
+    "display_name",
+    "category",
+    "children",
+    "has_children",
+    "studio_url",
+})
+
+
+def _apply_minimal_view(response):
+    """
+    ADR 0036 — when ``?view=minimal`` was requested, drop every top-level key
+    not in :data:`_MINIMAL_VIEW_FIELDS` from ``response``. No-op for non-JSON
+    or non-2xx responses.
+    """
+    if not isinstance(response, JsonResponse) or response.status_code >= 300:
+        return response
+    try:
+        body = json.loads(response.content.decode("utf-8") or "{}")
+    except (ValueError, AttributeError):
+        return response
+    if not isinstance(body, dict):
+        # If the handler returned a non-object payload (e.g. `?fields=graderType`
+        # which returns the grader-type value directly), there's nothing to
+        # filter — return the response untouched.
+        return response
+    return JsonResponse({k: v for k, v in body.items() if k in _MINIMAL_VIEW_FIELDS})
+
 
 class XblockViewSet(StandardizedErrorMixin, viewsets.ViewSet):
     """
@@ -44,6 +91,12 @@ class XblockViewSet(StandardizedErrorMixin, viewsets.ViewSet):
       PUT    /api/contentstore/v1/xblock/{usage_key_string}/   → update
       PATCH  /api/contentstore/v1/xblock/{usage_key_string}/   → partial_update
       DELETE /api/contentstore/v1/xblock/{usage_key_string}/   → destroy
+
+    Query parameters (ADR 0036, GET only):
+      ?view=minimal   Drop heavy / contextual fields from the response,
+                      keeping only structural fields (id, display_name,
+                      category, children, has_children, studio_url).
+                      Default response is the full xblock payload.
     """
 
     authentication_classes = (
@@ -98,8 +151,17 @@ class XblockViewSet(StandardizedErrorMixin, viewsets.ViewSet):
 
     @expect_json_in_class_view
     def retrieve(self, request, usage_key_string=None):
-        """Retrieve an xblock by its usage key."""
-        return retrieve_xblock_response(request, usage_key_string)
+        """
+        Retrieve an xblock by its usage key.
+
+        ADR 0036 — honours ``?view=minimal``; everything else is delegated to
+        ``retrieve_xblock_response`` (which keeps its legacy ``?fields=`` /
+        ``?fields=ancestorInfo`` / ``?fields=customReadToken`` semantics).
+        """
+        response = retrieve_xblock_response(request, usage_key_string)
+        if request.GET.get("view") == "minimal":
+            response = _apply_minimal_view(response)
+        return response
 
     @expect_json_in_class_view
     @validate_request_with_serializer

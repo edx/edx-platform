@@ -39,7 +39,11 @@ from rest_framework.response import Response
 
 from cms.djangoapps.contentstore.rest_api.v1.serializers import CourseDetailsSerializer
 from cms.djangoapps.contentstore.rest_api.v1.views.course_details import _classify_update
-from cms.djangoapps.contentstore.rest_api.v3.utils import COMMON_ERROR_RESPONSES, resolve_course_key
+from cms.djangoapps.contentstore.rest_api.v3.utils import (
+    COMMON_ERROR_RESPONSES,
+    apply_field_selection,
+    resolve_course_key,
+)
 from cms.djangoapps.contentstore.utils import update_course_details
 from openedx.core.djangoapps.authz.constants import LegacyAuthoringPermission
 from openedx.core.djangoapps.authz.decorators import user_has_course_permission
@@ -54,6 +58,68 @@ _COURSE_ID_PARAMETER = OpenApiParameter(
     type=str,
     location=OpenApiParameter.PATH,
 )
+
+# ADR 0036 — document the minimal/full response variants in OpenAPI (decision #3).
+# Declaring these as query parameters is what makes the presets discoverable by
+# OpenAPI consumers (Swagger UI, generated SDK clients, etc.). The 200 response
+# schema below points at the full ``CourseDetailsSerializer``; ``?view=minimal``
+# returns the subset of top-level keys listed in :data:`_MINIMAL_VIEW_FIELDS`.
+_VIEW_QUERY_PARAMETER = OpenApiParameter(
+    name="view",
+    description=(
+        "ADR 0036 response preset. ``minimal`` drops heavy fields (overview, "
+        "syllabus, description, instructor_info, learning_info, banner/video "
+        "assets, license) leaving only identification, schedule, and flags. "
+        "Omit the parameter to receive the full response."
+    ),
+    required=False,
+    type=str,
+    location=OpenApiParameter.QUERY,
+    enum=["minimal"],
+)
+_FIELDS_QUERY_PARAMETER = OpenApiParameter(
+    name="fields",
+    description=(
+        "ADR 0036 explicit field selection. Comma-separated list of top-level "
+        "keys to include in the response (e.g. ``course_id,title,start_date``). "
+        "When combined with ``?view=``, the preset is applied first and "
+        "``?fields=`` is applied to the result. Unknown keys are silently "
+        "skipped."
+    ),
+    required=False,
+    type=str,
+    location=OpenApiParameter.QUERY,
+)
+
+# ADR 0036 — the ``CourseDetailsSerializer`` has ~40 top-level fields plus a
+# nested ``instructor_info`` sub-object with bios and image URLs and a
+# ``learning_info`` long-form list. When ``?view=minimal`` is requested,
+# everything outside :data:`_MINIMAL_VIEW_FIELDS` is dropped so server-to-server
+# and AI-agent callers can fetch just the identification + schedule + flags
+# without paying for the heavy text and embedded sub-objects.
+_MINIMAL_VIEW_FIELDS = frozenset({
+    "course_id",
+    "org",
+    "run",
+    "title",
+    "subtitle",
+    "language",
+    "self_paced",
+    "start_date",
+    "end_date",
+    "enrollment_start",
+    "enrollment_end",
+    "certificate_available_date",
+    "certificates_display_behavior",
+    "has_changes",
+})
+
+
+def _apply_view_preset(data, view_preset):
+    """ADR 0036 — drop everything outside ``_MINIMAL_VIEW_FIELDS`` when ``?view=minimal``."""
+    if view_preset != "minimal" or not isinstance(data, dict):
+        return data
+    return {key: value for key, value in data.items() if key in _MINIMAL_VIEW_FIELDS}
 
 
 class CourseDetailsViewSet(StandardizedErrorMixin, viewsets.ViewSet):
@@ -78,12 +144,21 @@ class CourseDetailsViewSet(StandardizedErrorMixin, viewsets.ViewSet):
 
     @extend_schema(
         summary="Retrieve a course's details",
-        description="Get an object containing all the course details for the specified course.",
-        parameters=[_COURSE_ID_PARAMETER],
+        description=(
+            "Get an object containing the course details for the specified course. "
+            "Supports the ADR 0036 ``?view=minimal`` preset and ``?fields=`` "
+            "explicit field selection (see the parameter descriptions for details)."
+        ),
+        parameters=[_COURSE_ID_PARAMETER, _VIEW_QUERY_PARAMETER, _FIELDS_QUERY_PARAMETER],
         responses={
             200: OpenApiResponse(
                 response=CourseDetailsSerializer,
-                description="Course details retrieved successfully.",
+                description=(
+                    "Course details retrieved successfully. The schema below is "
+                    "the full default response; when ``?view=minimal`` and/or "
+                    "``?fields=`` is supplied, the response contains a subset of "
+                    "these top-level keys (see ADR 0036)."
+                ),
             ),
             **COMMON_ERROR_RESPONSES,
         },
@@ -95,6 +170,16 @@ class CourseDetailsViewSet(StandardizedErrorMixin, viewsets.ViewSet):
         **Example Request**
 
             GET /api/contentstore/v3/course_details/{course_id}/
+            GET /api/contentstore/v3/course_details/{course_id}/?view=minimal
+            GET /api/contentstore/v3/course_details/{course_id}/?fields=course_id,title
+
+        ADR 0036:
+            * ``?view=minimal`` drops heavy fields (overview, syllabus, description,
+              instructor_info, learning_info, banner/video assets, license, etc.)
+              leaving only identification, schedule, and flags.
+            * ``?fields=...`` keeps an arbitrary CSV subset of top-level keys.
+            * ``?fields=`` and ``?view=`` may be combined — ``?view=minimal``
+              is applied first, then ``?fields=`` is applied to the result.
         """
         course_key = resolve_course_key(course_id)
         if not user_has_course_permission(
@@ -106,8 +191,11 @@ class CourseDetailsViewSet(StandardizedErrorMixin, viewsets.ViewSet):
             self.permission_denied(request)
 
         course_details = CourseDetails.fetch(course_key)
-        serializer = self.serializer_class(course_details)
-        return Response(serializer.data)
+        data = self.serializer_class(course_details).data
+        # ADR 0036 — preset first, then explicit CSV subset.
+        data = _apply_view_preset(data, request.query_params.get("view"))
+        data = apply_field_selection(data, request.query_params.get("fields"))
+        return Response(data)
 
     @extend_schema(
         summary="Update a course's details",

@@ -18,6 +18,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from common.djangoapps.student.tests.factories import AdminFactory, UserFactory
+from openedx.core.djangoapps.enrollments.v2.views import EnrollmentViewSet
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 
 API_KEY = "test-enrollment-v2-api-key"
@@ -234,3 +235,55 @@ class TestUserRolesViewAliases(APITestCase):
         response = self.client.get(self.url)
         assert response.status_code == status.HTTP_200_OK
         assert "Deprecation" not in response.headers
+
+
+# ---------------------------------------------------------------------------
+# ADR 0036 — minimal view tests
+# ---------------------------------------------------------------------------
+@skip_unless_lms
+class TestEnrollmentViewSetMinimalView(APITestCase):
+    """
+    ADR 0036 — verify ``?view=minimal`` on the list action collapses each
+    enrollment's embedded ``course_details`` sub-object to a single ``course_id``
+    string and drops the heavy fields (``course_modes`` etc.).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.user = UserFactory.create(password="test")
+        self.client.force_authenticate(user=self.user)
+        self.url = reverse("v2:enrollment-list")
+
+    @patch(MOCK_OPS_LIST, return_value=[])
+    def test_default_list_includes_course_details(self, mock_list):  # noqa: ARG002
+        """Without ``?view=minimal``, embedded course_details is present (full shape)."""
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+        # An empty list naturally has no rows to inspect — the contract is that the
+        # envelope's `results` key is a list (already verified by the pagination test).
+        assert response.data["results"] == []
+
+    @patch.object(EnrollmentViewSet, "get_serializer")
+    @patch(MOCK_OPS_LIST, return_value=["e1", "e2"])
+    def test_minimal_view_collapses_course_details_to_course_id(self, mock_list, mock_get_ser):  # noqa: ARG002
+        """``?view=minimal`` replaces each ``course_details`` sub-object with a ``course_id`` string."""
+        mock_get_ser.return_value.data = [
+            {
+                "mode": "audit", "is_active": True, "user": "u1",
+                "course_details": {"course_id": "course-v1:org+a+r", "course_modes": [{"slug": "audit"}]},
+            },
+            {
+                "mode": "honor", "is_active": True, "user": "u1",
+                "course_details": {"course_id": "course-v1:org+b+r", "course_modes": [{"slug": "honor"}]},
+            },
+        ]
+
+        response = self.client.get(self.url, {"view": "minimal"})
+
+        assert response.status_code == status.HTTP_200_OK
+        for row in response.data["results"]:
+            assert "course_details" not in row, "ADR 0036: minimal must drop embedded course_details"
+            assert "course_id" in row, "ADR 0036: minimal must keep the flattened course_id"
+        assert {r["course_id"] for r in response.data["results"]} == {
+            "course-v1:org+a+r", "course-v1:org+b+r",
+        }

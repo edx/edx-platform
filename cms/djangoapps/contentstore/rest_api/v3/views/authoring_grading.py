@@ -17,6 +17,19 @@ restructured to apply the FC-0118 ADRs from the start:
     legacy ``course_id``. Since this is a brand-new versioned API, no
     deprecated alias is needed — clients on the v0 endpoint continue to use
     ``course_id`` there.
+  * ADR 0036 – **largely out of scope.** The ``CourseGradingModelSerializer``
+    response is a single top-level ``graders`` list of small fixed-shape
+    objects (type, min_count, drop_count, short_label, weight, id) — no
+    tree nesting, no embedded sub-objects, no ``children`` field, no wide
+    flat object that would benefit from ``?view=minimal`` / ``?fields=``.
+
+    The one ADR 0036 concern is anti-pattern #3 (unbounded child list): the
+    ``graders`` array has no upper bound in the serializer. In practice each
+    course has typically ≤8 graders (Homework, Lab, Exam, etc.) and the
+    update flow is exercised only by course-authoring staff, so the
+    real-world payload is always small. A hard cap is enforced upstream of
+    this endpoint by :func:`CourseGradingModel.update_from_json`; we surface
+    that as a documentation note rather than re-implement the bound here.
 
 Permission model note:
     PR #38363 proposed a class-level ``HasStudioReadAccess`` permission. The

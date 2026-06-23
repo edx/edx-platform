@@ -116,3 +116,58 @@ class TestHomeViewSetActions(APITestCase):
 
         assert response.status_code == status.HTTP_200_OK
         mock_libs.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# ADR 0036 — ?fields= field selection on the list action
+# ---------------------------------------------------------------------------
+class TestHomeViewSetFieldSelection(APITestCase):
+    """
+    ADR 0036 — verify ``?fields=`` filters top-level keys on the ``list``
+    action's wide ``StudioHomeSerializer`` response. ``courses`` and
+    ``libraries`` actions are out of scope (single-key dicts).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.user = UserFactory.create()
+        self.client.force_authenticate(user=self.user)
+        self.url = reverse('cms.djangoapps.contentstore:v3:home-list')
+
+    @patch.object(HomeViewSet, 'get_serializer')
+    @patch(MOCK_ORG_API)
+    @patch(MOCK_GET_HOME_CONTEXT)
+    def test_default_response_keeps_all_keys(self, mock_home, mock_org, mock_get_ser):  # noqa: ARG002
+        """Without ``?fields=`` every top-level key is returned."""
+        mock_home.return_value = {'can_create_organizations': True}
+        mock_org.is_autocreate_enabled.return_value = True
+        mock_get_ser.return_value.data = {
+            'studio_name': 'Studio', 'platform_name': 'edX',
+            'courses': [], 'libraries': [], 'archived_courses': [],
+        }
+
+        response = self.client.get(self.url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(response.data.keys()) == {
+            'studio_name', 'platform_name', 'courses', 'libraries', 'archived_courses',
+        }
+
+    @patch.object(HomeViewSet, 'get_serializer')
+    @patch(MOCK_ORG_API)
+    @patch(MOCK_GET_HOME_CONTEXT)
+    def test_fields_csv_restricts_top_level_keys(self, mock_home, mock_org, mock_get_ser):  # noqa: ARG002
+        """``?fields=courses,libraries`` returns exactly those keys."""
+        mock_home.return_value = {'can_create_organizations': True}
+        mock_org.is_autocreate_enabled.return_value = True
+        mock_get_ser.return_value.data = {
+            'studio_name': 'Studio', 'platform_name': 'edX',
+            'courses': [], 'libraries': [], 'archived_courses': [],
+        }
+
+        response = self.client.get(self.url, {'fields': 'courses,libraries'})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(response.data.keys()) == {'courses', 'libraries'}
+        assert 'studio_name' not in response.data
+        assert 'platform_name' not in response.data

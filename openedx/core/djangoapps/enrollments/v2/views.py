@@ -15,6 +15,13 @@ to apply the FC-0118 ADRs from the start:
   * ADR 0032 – ``DefaultPagination`` 7-field envelope on list endpoints
   * ADR 0033 – OEP-68 parameter naming (``course_key`` preferred,
     ``course_id`` as deprecated alias) plus standard ``ordering`` whitelist
+  * ADR 0036 – ``?view=minimal`` on the enrollment ``list`` and singleton
+    ``retrieve`` actions. By default each enrollment record embeds the full
+    ``course_details`` sub-object (which itself includes a ``course_modes``
+    list and other heavy fields). When ``?view=minimal`` is requested, the
+    embedded sub-object is flattened to a single ``course_id`` string so
+    callers that only need to know which courses a user is enrolled in (AI
+    agents, sync pipelines) can skip the per-row sub-object payload.
 
 Existing v1 endpoints at ``/api/enrollment/v1/`` are unchanged — v2 is a
 parallel new version mounted at ``/api/enrollment/v2/``.
@@ -100,6 +107,24 @@ _INCLUDE_EXPIRED_QUERY_PARAM = _query_param(
 _PAGE_QUERY_PARAM = _query_param("page", "Page number to retrieve. Default 1.")
 _PAGE_SIZE_QUERY_PARAM = _query_param("page_size", "Items per page (default 10, max 100).")
 
+# ADR 0036 decision #3 — document the ``?view=`` variant in OpenAPI so it's
+# discoverable. ``?view=minimal`` collapses each enrollment's embedded
+# ``course_details`` sub-object to a single ``course_id`` string; omit to
+# receive the full default shape declared by the 200 response schema.
+_VIEW_QUERY_PARAM = OpenApiParameter(
+    name="view",
+    description=(
+        "ADR 0036 response preset. ``minimal`` collapses the embedded "
+        "``course_details`` sub-object on each enrollment to a single "
+        "``course_id`` string (drops ``course_modes`` and other heavy "
+        "course-detail fields). Omit the parameter to receive the full response."
+    ),
+    required=False,
+    type=str,
+    location=OpenApiParameter.QUERY,
+    enum=["minimal"],
+)
+
 _RESP_UNAUTHENTICATED = OpenApiResponse(description="The requester is not authenticated.")
 _RESP_FORBIDDEN = OpenApiResponse(description="The requester does not have permission for this operation.")
 _RESP_NOT_FOUND = OpenApiResponse(description="The requested resource does not exist.")
@@ -133,6 +158,32 @@ def _maybe_set_legacy_param_deprecation_header(request, response, alias_pairs):
     if used:
         response["Deprecation"] = _build_legacy_param_deprecation_header(used)
     return response
+
+
+# ---------------------------------------------------------------------------
+# ADR 0036 — minimal enrollment view helper
+# ---------------------------------------------------------------------------
+def _to_minimal_enrollment(enrollment_dict):
+    """
+    ADR 0036 — collapse the embedded ``course_details`` sub-object on a serialized
+    enrollment dict down to a single ``course_id`` string. Heavy fields such as
+    ``course_modes`` are dropped. The enrollment-level fields (``created``,
+    ``mode``, ``is_active``, ``user``) are kept.
+
+    Returns a new dict — the original is not mutated.
+    """
+    if not isinstance(enrollment_dict, dict):
+        return enrollment_dict
+    minimal = {k: v for k, v in enrollment_dict.items() if k != "course_details"}
+    details = enrollment_dict.get("course_details") or {}
+    if isinstance(details, dict):
+        minimal["course_id"] = details.get("course_id")
+    return minimal
+
+
+def _is_minimal_view_requested(request) -> bool:
+    """Return True when the caller asked for the ADR 0036 minimal preset."""
+    return request.query_params.get("view") == "minimal"
 
 
 # ===========================================================================
@@ -185,20 +236,33 @@ class EnrollmentViewSet(StandardizedErrorMixin, viewsets.ViewSet, ApiKeyPermissi
             "Returns a paginated list of enrollments for the currently logged-in user, or for "
             "the user named by the 'user' query parameter. Staff/admin/api-key access is required "
             "to view another user's enrollments — otherwise the list is filtered to courses the "
-            "requester staffs."
+            "requester staffs. Supports the ADR 0036 ``?view=minimal`` preset (see parameter "
+            "description)."
         ),
-        parameters=[_USER_QUERY_PARAM, _PAGE_QUERY_PARAM, _PAGE_SIZE_QUERY_PARAM],
+        parameters=[_USER_QUERY_PARAM, _PAGE_QUERY_PARAM, _PAGE_SIZE_QUERY_PARAM, _VIEW_QUERY_PARAM],
         responses={
             200: OpenApiResponse(
                 response=CourseEnrollmentSerializer(many=True),
-                description="Paginated enrollment list.",
+                description=(
+                    "Paginated enrollment list. The schema below is the full "
+                    "default shape; when ``?view=minimal`` is supplied each "
+                    "enrollment's ``course_details`` is collapsed to a single "
+                    "``course_id`` string (ADR 0036)."
+                ),
             ),
             401: _RESP_UNAUTHENTICATED,
         },
     )
     @method_decorator(ensure_csrf_cookie_cross_domain)
     def list(self, request):
-        """List enrollments for the currently logged-in user (paginated)."""
+        """
+        List enrollments for the currently logged-in user (paginated).
+
+        ADR 0036 — when ``?view=minimal`` is supplied, each enrollment's embedded
+        ``course_details`` sub-object is collapsed to a single ``course_id``
+        string; ``course_modes`` and the other heavy course-detail fields are
+        dropped. Default response shape is unchanged for backwards compatibility.
+        """
         username = request.GET.get("user", request.user.username)
         enrollments = _OPS.list_enrollments_for_user(
             request_user=request.user,
@@ -207,7 +271,10 @@ class EnrollmentViewSet(StandardizedErrorMixin, viewsets.ViewSet, ApiKeyPermissi
         )
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(enrollments, request, view=self)
-        return paginator.get_paginated_response(self.get_serializer(page, many=True).data)
+        data = self.get_serializer(page, many=True).data
+        if _is_minimal_view_requested(request):
+            data = [_to_minimal_enrollment(item) for item in data]
+        return paginator.get_paginated_response(data)
 
     # ------------------------------------------------------------------
     # create — POST /enrollment/
@@ -413,7 +480,10 @@ class EnrollmentRetrieveView(StandardizedErrorMixin, ApiKeyPermissionMixIn, APIV
                 f"'{username}' in course '{course_id}'"
             ) from exc
 
-        return Response(self.serializer_class(enrollment).data)
+        data = self.serializer_class(enrollment).data
+        if _is_minimal_view_requested(request):
+            data = _to_minimal_enrollment(data)
+        return Response(data)
 
 
 # ===========================================================================
