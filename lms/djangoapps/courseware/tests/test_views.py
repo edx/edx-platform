@@ -26,7 +26,7 @@ from edx_django_utils.cache.utils import RequestCache
 from edx_toggles.toggles.testutils import override_waffle_flag, override_waffle_switch
 from freezegun import freeze_time
 from opaque_keys.edx.keys import CourseKey, UsageKey
-from openedx_filters.learning.filters import CoursewareViewStarted
+from openedx_filters.learning.filters import CourseStartDateValidationFailed, CoursewareViewStarted
 from pytz import UTC
 from openedx.core.djangoapps.waffle_utils.models import WaffleFlagCourseOverrideModel
 from rest_framework import status
@@ -107,13 +107,6 @@ from openedx.features.course_experience.url_helpers import (
     get_learning_mfe_home_url,
     make_learning_mfe_courseware_url
 )
-from openedx.features.enterprise_support.tests.factories import (
-    EnterpriseCourseEnrollmentFactory,
-    EnterpriseCustomerUserFactory,
-    EnterpriseCustomerFactory
-)
-from openedx.features.enterprise_support.api import add_enterprise_customer_to_session
-from enterprise.api.v1.serializers import EnterpriseCustomerSerializer
 
 QUERY_COUNT_TABLE_IGNORELIST = WAFFLE_TABLES
 
@@ -2645,27 +2638,21 @@ class AccessUtilsTestCase(ModuleStoreTestCase):
     @ddt.data(
         {
             'start_date_modifier': 1,  # course starts in future
-            'setup_enterprise_enrollment': False,
+            'filter_raises_override': False,
             'expected_has_access': False,
             'expected_error_code': 'course_not_started',
         },
         {
             'start_date_modifier': -1,  # course already started
-            'setup_enterprise_enrollment': False,
+            'filter_raises_override': False,
             'expected_has_access': True,
             'expected_error_code': None,
         },
         {
-            'start_date_modifier': 1,  # course starts in future
-            'setup_enterprise_enrollment': True,
+            'start_date_modifier': 1,  # course starts in future, filter overrides error
+            'filter_raises_override': True,
             'expected_has_access': False,
             'expected_error_code': 'course_not_started_enterprise_learner',
-        },
-        {
-            'start_date_modifier': -1,  # course already started
-            'setup_enterprise_enrollment': True,
-            'expected_has_access': True,
-            'expected_error_code': None,
         },
     )
     @ddt.unpack
@@ -2673,38 +2660,33 @@ class AccessUtilsTestCase(ModuleStoreTestCase):
     def test_is_course_open_for_learner(
         self,
         start_date_modifier,
-        setup_enterprise_enrollment,
+        filter_raises_override,
         expected_has_access,
         expected_error_code,
     ):
-        """
-        Test is_course_open_for_learner().
-
-        When setup_enterprise_enrollment == True, make an enterprise-subsidized enrollment, setting up one of each:
-        * CourseEnrollment
-        * EnterpriseCustomer
-        * EnterpriseCustomerUser
-        * EnterpriseCourseEnrollment
-        * A mock request session to pre-cache the enterprise customer data.
-        """
+        """Test is_course_open_for_learner()."""
         staff_user = AdminFactory()
         start_date = datetime.now(UTC) + timedelta(days=start_date_modifier)
         course = CourseFactory.create(start=start_date)
         request = RequestFactory().get('/')
         request.user = staff_user
         request.session = {}
-        if setup_enterprise_enrollment:
-            course_enrollment = CourseEnrollmentFactory(mode=CourseMode.VERIFIED, user=staff_user, course_id=course.id)
-            enterprise_customer = EnterpriseCustomerFactory(enable_learner_portal=True)
-            add_enterprise_customer_to_session(request, EnterpriseCustomerSerializer(enterprise_customer).data)
-            enterprise_customer_user = EnterpriseCustomerUserFactory(
-                user_id=staff_user.id,
-                enterprise_customer=enterprise_customer,
-            )
-            EnterpriseCourseEnrollmentFactory(enterprise_customer_user=enterprise_customer_user, course_id=course.id)
         set_current_request(request)
 
-        access_response = check_course_open_for_learner(staff_user, course)
+        if filter_raises_override:
+            # Mock the filter to simulate a plugin substituting the start-date error payload.
+            with patch(
+                'openedx_filters.learning.filters.CourseStartDateValidationFailed.run_filter'
+            ) as mock_filter:
+                mock_filter.side_effect = CourseStartDateValidationFailed.OverrideStartDateError(
+                    message='message',
+                    error_code='course_not_started_enterprise_learner',
+                    developer_message='developer message',
+                    user_message='user message',
+                )
+                access_response = check_course_open_for_learner(staff_user, course)
+        else:
+            access_response = check_course_open_for_learner(staff_user, course)
         assert bool(access_response) == expected_has_access
         assert access_response.error_code == expected_error_code
 
