@@ -6,9 +6,8 @@ This is useful when a partner is migrating from LTI 1.1 to LTI 1.3 and needs to
 match their existing per-user data (keyed by the LTI 1.1 hash) to the new LTI 1.3
 UUID that edX will send after the switch.
 
-Use ``--include-user-id`` to also export the Open edX user ID that was eligible
-to be sent as the optional LTI 1.1 ``lis_person_sourcedid`` parameter. User ID
-output contains PII and must be written to a file.
+Use ``--include-user-id`` to also export the Open edX user ID and username.
+This output contains PII and must be written to a file.
 
 Usage:
     ./manage.py lms generate_lti_id_mapping \\
@@ -28,7 +27,8 @@ Output columns:
     lti_13_uuid  - The UUID sent to LTI 1.3 tools (from the ExternalId table)
     course       - The course key
     lti_11_hash  - The anonymous user ID sent to LTI 1.1 tools (from AnonymousUserId)
-    lti_11_user_id - Optional PII column containing auth_user.username
+    lti_11_user_id - Optional PII column containing auth_user.id
+    lti_11_username - Optional PII column containing auth_user.username
 """
 
 import csv
@@ -81,8 +81,9 @@ class Command(BaseCommand):
             action='store_true',
             dest='include_user_id',
             help=(
-                'Include auth_user.username as lti_11_user_id. This value is PII '
-                'and requires --output.'
+                'Include auth_user.id as lti_11_user_id and auth_user.username '
+                'as lti_11_username. These values are PII '
+                'and require --output.'
             ),
         )
 
@@ -104,14 +105,14 @@ class Command(BaseCommand):
             writer = csv.writer(output_file)
             header = ['lti_13_uuid', 'course', 'lti_11_hash']
             if include_user_id:
-                header.append('lti_11_user_id')
+                header.extend(['lti_11_user_id', 'lti_11_username'])
             writer.writerow(header)
 
             # Single JOIN query at the DB level — no loops, no N+1.
             # Streams results in chunks of 1000 to keep memory flat.
             #
-            # User ID is selected only when explicitly requested. No email,
-            # name, or internal numeric user ID is selected or written to the output.
+            # User ID and username are selected only when explicitly requested.
+            # No email or name is selected or written to the output.
             #
             # De-duplicate: in rare cases a user may have multiple
             # AnonymousUserId rows per (user, course) due to historical
@@ -133,7 +134,7 @@ class Command(BaseCommand):
                 'anonymous_user_id',
             ]
             if include_user_id:
-                selected_fields.append('user__username')
+                selected_fields.extend(['user__id', 'user__username'])
 
             rows = (
                 AnonymousUserId.objects.filter(
@@ -152,7 +153,7 @@ class Command(BaseCommand):
                     row['anonymous_user_id'],
                 ]
                 if include_user_id:
-                    output_row.append(row['user__username'])
+                    output_row.extend([row['user__id'], row['user__username']])
                 writer.writerow(output_row)
                 row_count += 1
 
