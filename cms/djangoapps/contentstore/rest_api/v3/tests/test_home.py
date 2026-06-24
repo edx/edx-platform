@@ -75,10 +75,10 @@ class TestHomeViewSetErrorShape(APITestCase):
     def test_v1_endpoint_unaffected_by_v3_envelope(self):
         """
         The ADR 0029 envelope must be scoped to v3 — hitting the legacy v1
-        ``home/courses`` endpoint unauthenticated must NOT return the v3 envelope
+        ``home`` endpoint unauthenticated must NOT return the v3 envelope
         (it has no ``type`` / ``instance`` keys).
         """
-        v1_url = reverse("cms.djangoapps.contentstore:v1:courses")
+        v1_url = reverse("cms.djangoapps.contentstore:v1:home")
         response = self.client.get(v1_url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         # v1 still uses the project-default handler → ADR 0029 fields absent.
