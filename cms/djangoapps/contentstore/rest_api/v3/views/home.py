@@ -50,7 +50,8 @@ from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 
 class _HomeAutoSchema(AutoSchema):
-    """Override _is_list_view so drf-spectacular treats 'list' as a single-object response."""
+    """Custom AutoSchema that treats the 'list' action as a single-object response."""
+
     def _is_list_view(self, serializer=None):
         if self.view.action == 'list':
             return False
@@ -59,7 +60,6 @@ class _HomeAutoSchema(AutoSchema):
 
 @extend_schema(tags=["openedx-platform-sdk"])
 class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
-    schema = _HomeAutoSchema()
     """
     ViewSet for the Studio home page. Registered via DefaultRouter (basename ``home``).
 
@@ -69,6 +69,7 @@ class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
       GET  /api/contentstore/v3/home/libraries/ → libraries (library list only)
     """
 
+    schema = _HomeAutoSchema()
     authentication_classes = (JwtAuthentication, SessionAuthenticationAllowInactiveUser)
     permission_classes = (IsAuthenticated,)
     serializer_class = StudioHomeSerializer
