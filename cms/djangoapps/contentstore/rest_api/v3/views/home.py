@@ -28,7 +28,8 @@ to apply the FC-0118 ADRs:
 
 import edx_api_doc_tools as apidocs
 from django.conf import settings
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.openapi import AutoSchema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from organizations import api as org_api
@@ -48,8 +49,17 @@ from cms.djangoapps.contentstore.utils import get_course_context, get_home_conte
 from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 
+class _HomeAutoSchema(AutoSchema):
+    """Override _is_list_view so drf-spectacular treats 'list' as a single-object response."""
+    def _is_list_view(self, serializer=None):
+        if self.view.action == 'list':
+            return False
+        return super()._is_list_view(serializer)
+
+
 @extend_schema(tags=["openedx-platform-sdk"])
 class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
+    schema = _HomeAutoSchema()
     """
     ViewSet for the Studio home page. Registered via DefaultRouter (basename ``home``).
 
@@ -75,19 +85,14 @@ class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
         """Return a serializer instance using the action-appropriate class."""
         return self.get_serializer_class()(*args, **kwargs)
 
-    @apidocs.schema(
+    @extend_schema(
+        responses={(200, "application/json"): StudioHomeSerializer},
         parameters=[
-            apidocs.string_parameter(
-                "org",
-                apidocs.ParameterLocation.QUERY,
-                description="Query param to filter by course org",
-            ),
-            # ADR 0036 decision #3 — document the ``?fields=`` variant so it's
-            # discoverable by OpenAPI consumers. The 200 response below is the
-            # full default shape; ``?fields=`` returns a subset of top-level keys.
-            apidocs.string_parameter(
+            OpenApiParameter("org", str, OpenApiParameter.QUERY, description="Filter by course org"),
+            OpenApiParameter(
                 "fields",
-                apidocs.ParameterLocation.QUERY,
+                str,
+                OpenApiParameter.QUERY,
                 description=(
                     "ADR 0036 explicit field selection. Comma-separated list "
                     "of top-level keys to include in the response (e.g. "
@@ -96,10 +101,6 @@ class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
                 ),
             ),
         ],
-        responses={
-            200: StudioHomeSerializer,
-            401: "The requester is not authenticated.",
-        },
     )
     def list(self, request: Request):
         """
