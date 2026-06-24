@@ -6,8 +6,9 @@ This is useful when a partner is migrating from LTI 1.1 to LTI 1.3 and needs to
 match their existing per-user data (keyed by the LTI 1.1 hash) to the new LTI 1.3
 UUID that edX will send after the switch.
 
-Use ``--include-user-id`` to also export the Open edX user ID and username.
-This output contains PII and must be written to a file.
+Use ``--include-user-id`` to also export the Open edX user ID, and
+``--include-username`` to also export the Open edX username. This output
+contains PII and must be written to a file.
 
 Usage:
     ./manage.py lms generate_lti_id_mapping \\
@@ -21,6 +22,7 @@ Usage:
         course-v1:BerkeleyX+Data88.2EX+3T2025 \\
         course-v1:BerkeleyX+Data88.3EX+3T2025 \\
         --include-user-id \\
+        --include-username \\
         --output berkeley_lti_user_id_mapping.csv
 
 Output columns:
@@ -81,9 +83,17 @@ class Command(BaseCommand):
             action='store_true',
             dest='include_user_id',
             help=(
-                'Include auth_user.id as lti_11_user_id and auth_user.username '
-                'as lti_11_username. These values are PII '
-                'and require --output.'
+                'Include auth_user.id as lti_11_user_id. This value is PII '
+                'and requires --output.'
+            ),
+        )
+        parser.add_argument(
+            '--include-username',
+            action='store_true',
+            dest='include_username',
+            help=(
+                'Include auth_user.username as lti_11_username. This value is PII '
+                'and requires --output.'
             ),
         )
 
@@ -91,10 +101,11 @@ class Command(BaseCommand):
         course_keys = options['course_keys']
         output_path = options['output']
         include_user_id = options['include_user_id']
+        include_username = options['include_username']
 
-        if include_user_id and not output_path:
+        if (include_user_id or include_username) and not output_path:
             raise CommandError(
-                '--output is required when --include-user-id is used because the CSV contains PII.'
+                '--output is required when exporting user ID or username because the CSV contains PII.'
             )
 
         output_file = self.stdout
@@ -105,7 +116,9 @@ class Command(BaseCommand):
             writer = csv.writer(output_file)
             header = ['lti_13_uuid', 'course', 'lti_11_hash']
             if include_user_id:
-                header.extend(['lti_11_user_id', 'lti_11_username'])
+                header.append('lti_11_user_id')
+            if include_username:
+                header.append('lti_11_username')
             writer.writerow(header)
 
             # Single JOIN query at the DB level — no loops, no N+1.
@@ -134,7 +147,9 @@ class Command(BaseCommand):
                 'anonymous_user_id',
             ]
             if include_user_id:
-                selected_fields.extend(['user__id', 'user__username'])
+                selected_fields.append('user__id')
+            if include_username:
+                selected_fields.append('user__username')
 
             rows = (
                 AnonymousUserId.objects.filter(
@@ -153,7 +168,9 @@ class Command(BaseCommand):
                     row['anonymous_user_id'],
                 ]
                 if include_user_id:
-                    output_row.extend([row['user__id'], row['user__username']])
+                    output_row.append(row['user__id'])
+                if include_username:
+                    output_row.append(row['user__username'])
                 writer.writerow(output_row)
                 row_count += 1
 
