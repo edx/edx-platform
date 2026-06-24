@@ -28,6 +28,7 @@ to apply the FC-0118 ADRs:
 
 import edx_api_doc_tools as apidocs
 from django.conf import settings
+from drf_spectacular.utils import extend_schema
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from organizations import api as org_api
@@ -47,6 +48,7 @@ from cms.djangoapps.contentstore.utils import get_course_context, get_home_conte
 from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 
+@extend_schema(tags=["openedx-platform-sdk"])
 class HomeViewSet(StandardizedErrorMixin, viewsets.ViewSet):
     """
     ViewSet for the Studio home page. Registered via DefaultRouter (basename ``home``).

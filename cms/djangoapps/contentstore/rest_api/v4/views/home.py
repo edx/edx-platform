@@ -99,6 +99,7 @@ def _maybe_set_legacy_order_deprecation_header(
     return response
 
 
+@extend_schema(tags=["openedx-platform-sdk"])
 class HomeCoursesViewSet(StandardizedErrorMixin, viewsets.ViewSet):
     """
     ViewSet for course listing (v4). Registered via DefaultRouter (basename ``home-courses``).

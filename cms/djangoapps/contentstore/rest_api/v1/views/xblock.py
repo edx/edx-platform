@@ -33,6 +33,7 @@ import json
 import logging
 
 from django.http import JsonResponse
+from drf_spectacular.utils import extend_schema
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from opaque_keys import InvalidKeyError
@@ -88,6 +89,7 @@ def _apply_minimal_view(response):
     return JsonResponse({k: v for k, v in body.items() if k in _MINIMAL_VIEW_FIELDS})
 
 
+@extend_schema(tags=["openedx-platform-sdk"])
 class XblockViewSet(StandardizedErrorMixin, viewsets.ViewSet):
     """
     ViewSet for xblock CRUD operations (v1 — ADR 0028).

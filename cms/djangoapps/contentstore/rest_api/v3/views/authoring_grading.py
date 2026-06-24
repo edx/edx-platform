@@ -81,6 +81,7 @@ _COURSE_KEY_PARAMETER = OpenApiParameter(
 )
 
 
+@extend_schema(tags=["openedx-platform-sdk"])
 class AuthoringGradingViewSet(StandardizedErrorMixin, viewsets.ViewSet):
     """
     ViewSet for course grading settings (v3). Registered via DefaultRouter

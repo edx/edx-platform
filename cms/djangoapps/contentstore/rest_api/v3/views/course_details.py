@@ -128,6 +128,7 @@ def _apply_view_preset(data, view_preset):
     return {key: value for key, value in data.items() if key in _MINIMAL_VIEW_FIELDS}
 
 
+@extend_schema(tags=["openedx-platform-sdk"])
 class CourseDetailsViewSet(StandardizedErrorMixin, viewsets.ViewSet):
     """
     ViewSet for course details (v3). Registered via DefaultRouter (basename ``course_details``).

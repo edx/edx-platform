@@ -196,6 +196,7 @@ def _is_minimal_view_requested(request) -> bool:
 # EnrollmentViewSet — consolidates list / create / unenroll / allowed
 # ===========================================================================
 @can_disable_rate_limit
+@extend_schema(tags=["openedx-platform-sdk"])
 class EnrollmentViewSet(StandardizedErrorMixin, viewsets.ViewSet, ApiKeyPermissionMixIn):
     """
     Canonical ViewSet for the v2 Enrollment API.
@@ -423,6 +424,7 @@ class EnrollmentViewSet(StandardizedErrorMixin, viewsets.ViewSet, ApiKeyPermissi
 # ===========================================================================
 # Kept as a standalone APIView because the {username},{course_id} URL form
 # (comma-separated, both optional) is not expressible via DefaultRouter.
+@extend_schema(tags=["openedx-platform-sdk"])
 class EnrollmentRetrieveView(StandardizedErrorMixin, ApiKeyPermissionMixIn, APIView):
     """GET enrollment for a course (and optionally a named user)."""
 
@@ -501,6 +503,7 @@ class EnrollmentRetrieveView(StandardizedErrorMixin, ApiKeyPermissionMixIn, APIV
 # ===========================================================================
 # UserRolesView — GET /roles/  (singleton list endpoint for the current user)
 # ===========================================================================
+@extend_schema(tags=["openedx-platform-sdk"])
 class UserRolesView(StandardizedErrorMixin, APIView):
     """List the current user's course-level roles."""
 
@@ -574,6 +577,7 @@ class UserRolesView(StandardizedErrorMixin, APIView):
 # ===========================================================================
 # CourseEnrollmentDetailView — GET /course/{course_id}  (public, no auth)
 # ===========================================================================
+@extend_schema(tags=["openedx-platform-sdk"])
 class CourseEnrollmentDetailView(StandardizedErrorMixin, APIView):
     """Get enrollment information about a particular course."""
 
@@ -624,6 +628,7 @@ class CourseEnrollmentDetailView(StandardizedErrorMixin, APIView):
 # EnrollmentsAdminListView — GET /enrollments/  (admin paginated list)
 # ===========================================================================
 @extend_schema(
+    tags=["openedx-platform-sdk"],
     summary="List all course enrollments (admin-only, paginated)",
     description=(
         "Admin-only paginated list of CourseEnrollment records, optionally filtered by "
