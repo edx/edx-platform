@@ -132,7 +132,7 @@ def can_show_streak_discount_coupon(user, course):
     # Allow plugins to mark this user as ineligible for the discount.
     try:
         DiscountEligibilityCheckRequested.run_filter(
-            user=user, course_key=course.id, is_eligible=True
+            user=user, course_key=course.id,
         )
     except DiscountEligibilityCheckRequested.DiscountIneligible as exc:
         log.info("User is ineligible for streak discount: %s", exc.message)
@@ -189,7 +189,7 @@ def can_receive_discount(user, course, discount_expiration_date=None):
     # Allow plugins to mark this user as ineligible for the discount.
     try:
         DiscountEligibilityCheckRequested.run_filter(
-            user=user, course_key=course.id, is_eligible=True
+            user=user, course_key=course.id,
         )
     except DiscountEligibilityCheckRequested.DiscountIneligible as exc:
         log.info("User is ineligible for discount: %s", exc.message)
