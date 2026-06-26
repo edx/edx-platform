@@ -8,6 +8,7 @@ from django.urls import include, path, re_path
 from rest_framework.routers import SimpleRouter
 
 from lms.djangoapps.discussion.rest_api.views import (
+    BatchCommentResponsesView,
     BulkDeleteUserPosts,
     BulkRestoreUserPosts,
     CommentViewSet,
@@ -42,6 +43,11 @@ ROUTER.register("comments", CommentViewSet, basename="comment")
 
 urlpatterns = [
     # Moderation endpoints (defined first to avoid router conflicts)
+    path(
+        "v1/batch_responses/",
+        BatchCommentResponsesView.as_view(),
+        name="batch_comment_responses",
+    ),
     path(
         'v1/moderation/ban-user/',
         DiscussionModerationViewSet.as_view({'post': 'ban_user'}),

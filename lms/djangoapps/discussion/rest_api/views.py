@@ -86,6 +86,7 @@ from ..rest_api.api import (
     create_thread,
     delete_comment,
     delete_thread,
+    get_batch_response_comments,
     get_comment_list,
     get_course,
     get_course_discussion_user_stats,
@@ -2044,6 +2045,72 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
             {"comment_count": comment_count, "thread_count": thread_count},
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class BatchCommentResponsesView(DeveloperErrorViewMixin, APIView):
+    """
+    Fetch child replies for multiple parent response IDs in a single request.
+
+    **Example Request**:
+        GET /api/discussion/v1/batch_responses/?parent_ids=101,102,103&page_size=10
+
+    **Query Parameters**:
+        * parent_ids (required): Comma-separated list of parent comment IDs.
+        * page_size: Number of child replies per parent (default 10, max 25).
+        * requested_fields: Extra fields to include (e.g. 'profile_image').
+        * reverse_order: Boolean to reverse sort order.
+        * show_deleted: Boolean (moderators only).
+        * include_muted: Boolean to include muted content.
+
+    **Response**:
+        {
+            "results": {
+                "101": {
+                    "results": [... serialized child comments ...],
+                    "pagination": {
+                        "count": 5,
+                        "num_pages": 1,
+                        "current_page": 1,
+                        "next": false
+                    }
+                },
+                "102": { ... },
+                ...
+            }
+        }
+    """
+
+    authentication_classes = (
+        JwtAuthentication,
+        BearerAuthentication,
+        SessionAuthentication,
+    )
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        """
+        Handles GET requests to fetch child replies for multiple parent response IDs.
+        """
+        parent_ids_raw = request.GET.get("parent_ids", "")
+        if not parent_ids_raw:
+            raise ParseError("parent_ids query parameter is required.")
+
+        parent_ids = [pid.strip() for pid in parent_ids_raw.split(",") if pid.strip()]
+        if not parent_ids:
+            raise ParseError("parent_ids must contain at least one ID.")
+
+        page_size = min(int(request.GET.get("page_size", 10)), 25)
+        requested_fields = request.GET.get("requested_fields")
+        include_muted = request.GET.get("include_muted", "false").lower() == "true"
+
+        data = get_batch_response_comments(
+            request,
+            parent_ids,
+            page_size,
+            requested_fields,
+            include_muted,
+        )
+        return Response(data)
 
 
 class RestoreContent(DeveloperErrorViewMixin, APIView):

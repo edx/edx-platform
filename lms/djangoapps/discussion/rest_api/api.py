@@ -5,7 +5,6 @@ Discussion API internal interface
 
 from __future__ import annotations
 
-import itertools
 import logging
 import re
 from collections import defaultdict
@@ -31,6 +30,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
+from concurrent.futures import ThreadPoolExecutor
 from forum import api as forum_api
 from lms.djangoapps.course_api.blocks.api import get_blocks
 from lms.djangoapps.courseware.courses import get_course_with_access
@@ -172,18 +172,31 @@ def filter_muted_content(request_user, course_key, content_list, return_muted_id
             return (content_list if content_list is not None else [], set())
         return content_list if content_list is not None else []
 
-    # Get muted user IDs directly from forum_api.
-    # Personal mutes are requester-specific; course-wide mutes should affect ALL users.
     try:
         muted_user_ids = set()
 
-        # Always include requester's personal mutes.
-        personal_mutes = forum_api.get_all_muted_users_for_course(
-            course_id=str(course_key),
-            requester_id=str(request_user.id),
-            scope="personal",
-            requester_is_privileged=False,
-        )
+        # Fetch personal and course-wide mutes IN PARALLEL (each is an independent HTTP call)
+        def _fetch_personal_mutes():
+            return forum_api.get_all_muted_users_for_course(
+                course_id=str(course_key),
+                requester_id=str(request_user.id),
+                scope="personal",
+                requester_is_privileged=False,
+            )
+
+        def _fetch_course_mutes():
+            return forum_api.get_all_muted_users_for_course(
+                course_id=str(course_key),
+                requester_id=str(request_user.id),
+                scope="course",
+                requester_is_privileged=True,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            personal_future = pool.submit(_fetch_personal_mutes)
+            course_future = pool.submit(_fetch_course_mutes)
+            personal_mutes = personal_future.result()
+            course_mutes = course_future.result()
 
         muted_user_ids.update(
             {
@@ -198,14 +211,6 @@ def filter_muted_content(request_user, course_key, content_list, return_muted_id
             }
         )
 
-        # Always apply course-wide mutes for ALL users (learners and staff).
-        # Course-wide muted users should only appear in the "Muted" section (include_muted=True).
-        course_mutes = forum_api.get_all_muted_users_for_course(
-            course_id=str(course_key),
-            requester_id=str(request_user.id),
-            scope="course",
-            requester_is_privileged=True,
-        )
         muted_user_ids.update(
             {
                 int(str(user["muted_user_id"]))
@@ -1236,6 +1241,58 @@ def _serialize_discussion_entities(
     return results
 
 
+def _prefetch_author_data_into_context(context, content_items):
+    """
+    Bulk-prefetch User objects, Role assignments, and GlobalStaff status
+    for all content authors and inject into serializer context.
+
+    This eliminates N+1 DB queries in CommentSerializer.get_author(),
+    _get_user_label(), _get_user_labels_all(), and get_learner_status().
+    """
+    author_ids = set()
+    for item in content_items:
+        uid = item.get("user_id")
+        if uid:
+            try:
+                author_ids.add(int(uid))
+            except (ValueError, TypeError):
+                pass
+
+    if not author_ids:
+        return
+
+    # 1. Bulk fetch User objects (1 query instead of N)
+    users_by_id = {
+        u.id: u
+        for u in User.objects.filter(id__in=author_ids).only("id", "username")
+    }
+    context["_prefetched_users"] = users_by_id
+
+    # 2. Bulk fetch Role assignments
+    roles_by_user = defaultdict(set)
+    for uid, name in Role.objects.filter(
+        users__id__in=author_ids,
+        course_id=context["course"].id,
+        name__in=[
+            FORUM_ROLE_ADMINISTRATOR,
+            FORUM_ROLE_MODERATOR,
+            FORUM_ROLE_COMMUNITY_TA,
+            FORUM_ROLE_GROUP_MODERATOR,
+        ],
+    ).values_list("users__id", "name"):
+        roles_by_user[int(uid)].add(name)
+    context["_prefetched_roles"] = dict(roles_by_user)
+
+    # 3. Bulk check GlobalStaff (1 check per user, but from cached User objects)
+    from common.djangoapps.student.roles import GlobalStaff
+    global_staff_checker = GlobalStaff()
+    global_staff_ids = set()
+    for uid, user in users_by_id.items():
+        if global_staff_checker.has_user(user):
+            global_staff_ids.add(uid)
+    context["_prefetched_global_staff_ids"] = global_staff_ids
+
+
 def get_thread_list(  # pylint: disable=too-many-statements
     request: Request,
     course_key: CourseKey,
@@ -1419,6 +1476,9 @@ def get_thread_list(  # pylint: disable=too-many-statements
             course_key,
             paginated_results.collection
         )
+
+    # ── Bulk prefetch author data to avoid N+1 DB queries in serializer ──
+    _prefetch_author_data_into_context(context, filtered_threads)
 
     results = _serialize_discussion_entities(
         request,
@@ -2266,6 +2326,48 @@ def get_thread(request, thread_id, requested_fields=None, course_id=None):
     )[0]
 
 
+def _normalize_forum_comment(raw_comment):
+    """
+    Normalize a Comment.to_dict() output from the forum MySQL backend
+    to match the key format expected by CommentSerializer and permissions.py.
+
+    The MySQL backend's Comment.to_dict() uses keys like:
+        _id, _type, author_id, author_username, comment_thread_id
+    But CommentSerializer (via _ContentSerializer) and get_editable_fields expect:
+        id, type, user_id, username, thread_id
+    """
+    if not isinstance(raw_comment, dict):
+        return raw_comment
+
+    normalized = dict(raw_comment)  # shallow copy to avoid mutating original
+
+    # _id → id
+    if "_id" in normalized and "id" not in normalized:
+        normalized["id"] = normalized["_id"]
+
+    # _type "Comment" → type "comment"
+    if "_type" in normalized and "type" not in normalized:
+        normalized["type"] = normalized["_type"].lower()
+
+    # author_id → user_id
+    if "author_id" in normalized and "user_id" not in normalized:
+        normalized["user_id"] = normalized["author_id"]
+
+    # author_username → username
+    if "author_username" in normalized and "username" not in normalized:
+        normalized["username"] = normalized["author_username"]
+
+    # comment_thread_id → thread_id
+    if "comment_thread_id" in normalized and "thread_id" not in normalized:
+        normalized["thread_id"] = normalized["comment_thread_id"]
+
+    # Ensure children key exists (child comments are not recursively fetched)
+    if "children" not in normalized:
+        normalized["children"] = []
+
+    return normalized
+
+
 def get_response_comments(request, comment_id, page, page_size, requested_fields=None, include_muted=False):
     """
     Return the list of comments for the given thread response.
@@ -2291,6 +2393,7 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
     """
     try:
         cc_comment = Comment(id=comment_id).retrieve()
+
         reverse_order = request.GET.get("reverse_order", False)
         show_deleted = request.GET.get("show_deleted", False)
         show_deleted = show_deleted in ["true", "True", True]
@@ -2299,70 +2402,271 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
             request,
             cc_comment["thread_id"],
             retrieve_kwargs={
-                "with_responses": True,
-                "recursive": True,
-                "reverse_order": reverse_order,
-                "show_deleted": show_deleted,
+                "with_responses": False,
+                "recursive": False,
             },
         )
-        if cc_thread["thread_type"] == "question":
-            thread_responses = itertools.chain(
-                cc_thread["endorsed_responses"], cc_thread["non_endorsed_responses"]
+
+        # Permission check for show_deleted
+        if show_deleted and not context["has_moderation_privilege"]:
+            raise PermissionDenied(
+                "`show_deleted` can only be set by users with moderation roles."
             )
-        else:
-            thread_responses = cc_thread["children"]
-        response_comments = []
-        for response in thread_responses:
-            if response["id"] == comment_id:
-                response_comments = response["children"]
-                break
+
+        from forum.backend import get_backend
+
+        course_id = cc_thread["course_id"]
+        backend = get_backend(course_id)()
 
         response_skip = page_size * (page - 1)
-        paged_response_comments = response_comments[
-            response_skip: (response_skip + page_size)
-        ]
-        if not paged_response_comments and page != 1:
-            raise PageNotFoundError("Page not found (No results on this page).")
+
+        filter_kwargs = {
+            "parent_id": int(comment_id),
+            "comment_thread_id": int(cc_comment["thread_id"]),
+            "course_id": course_id,
+            "resp_skip": response_skip,
+            "resp_limit": page_size,
+            "sort": -1 if reverse_order else 1,
+        }
 
         if not show_deleted:
-            paged_response_comments = [
-                response
-                for response in paged_response_comments
-                if not response.get("is_deleted", False)
-            ]
-        else:
-            if not context["has_moderation_privilege"]:
-                raise PermissionDenied(
-                    "`show_deleted` can only be set by users with moderation roles."
-                )
+            filter_kwargs["is_deleted"] = False
 
-        # Apply muting filter if not including muted content
+        count_kwargs = {
+            "parent_id": int(comment_id),
+            "comment_thread_id": int(cc_comment["thread_id"]),
+            "course_id": course_id,
+        }
+
+        if not show_deleted:
+            count_kwargs["is_deleted"] = False
+
+        response_comments = backend.get_comments(**filter_kwargs)
+        total_comments_count = backend.get_comments_count(**count_kwargs)
+
+        # Normalize backend response for CommentSerializer compatibility
+        response_comments = [
+            _normalize_forum_comment(comment)
+            for comment in response_comments
+        ]
+
+        if not response_comments and page != 1:
+            raise PageNotFoundError("Page not found (No results on this page).")
+
         if not include_muted:
-            paged_response_comments = filter_muted_content(
+            response_comments = filter_muted_content(
                 request.user,
                 context["course"].id,
-                paged_response_comments
+                response_comments,
             )
+
+        # ── Bulk prefetch author data to avoid N+1 DB queries in serializer ──
+        _prefetch_author_data_into_context(context, response_comments)
 
         results = _serialize_discussion_entities(
             request,
             context,
-            paged_response_comments,
+            response_comments,
             requested_fields,
             DiscussionEntity.comment,
         )
 
-        total_comments_count = len(response_comments)
         num_pages = (
             (total_comments_count + page_size - 1) // page_size
             if total_comments_count else 1
         )
+
         paginator = DiscussionAPIPagination(
-            request, page, num_pages, total_comments_count
+            request,
+            page,
+            num_pages,
+            total_comments_count,
         )
+
         return paginator.get_paginated_response(results)
+
     except CommentClientRequestError as err:
         raise CommentNotFoundError("Comment not found") from err
+
+
+def get_batch_response_comments(request, parent_ids, page_size, requested_fields=None, include_muted=False):
+    """
+    Return child replies for multiple parent response IDs in a single call.
+
+    Each parent's replies are returned grouped by parent_id with independent
+    pagination metadata per parent.
+
+    Arguments:
+        request: The django request object.
+        parent_ids: List of parent comment IDs (strings).
+        page_size: Maximum number of child replies per parent.
+        requested_fields: Optional list of extra fields to include.
+        include_muted: Whether to include muted content.
+
+    Returns:
+        dict: {
+            "results": {
+                "<parent_id>": {
+                    "results": [...serialized child comments...],
+                    "pagination": {
+                        "count": <int>,
+                        "num_pages": <int>,
+                        "current_page": 1,
+                        "next": <bool>
+                    }
+                },
+                ...
+            }
+        }
+    """
+    reverse_order = request.GET.get("reverse_order", False)
+    show_deleted = request.GET.get("show_deleted", "false") in ("true", "True")
+    sort_order = -1 if reverse_order else 1
+    requesting_user_id = request.user.id
+
+    grouped_results = {}
+
+    # ── Step 1: Parallel-fetch all parent comments ──
+    from forum.backend import get_backend
+
+    parent_comments = {}
+
+    def _fetch_parent(cid):
+        return cid, Comment(id=cid).retrieve()
+
+    with ThreadPoolExecutor(max_workers=min(len(parent_ids), 10)) as pool:
+        futures = {pool.submit(_fetch_parent, cid): cid for cid in parent_ids}
+        for future in futures:
+            cid = futures[future]
+            try:
+                _, cc_comment = future.result()
+                parent_comments[cid] = cc_comment
+            except CommentClientRequestError:
+                grouped_results[cid] = {
+                    "results": [],
+                    "pagination": {"count": 0, "num_pages": 1, "current_page": 1, "next": False},
+                }
+
+    if not parent_comments:
+        return {"results": grouped_results}
+
+    # ── Step 2: Build thread context cache (one fetch per unique thread) ──
+    thread_context_cache = {}
+    failed_thread_ids = set()
+
+    for thread_id in {cc["thread_id"] for cc in parent_comments.values()}:
+        try:
+            thread_context_cache[thread_id] = _get_thread_and_context(
+                request, thread_id,
+                retrieve_kwargs={"with_responses": False, "recursive": False},
+            )
+        except Exception:  # pylint: disable=broad-except
+            failed_thread_ids.add(thread_id)
+
+    # Mark parents whose thread failed
+    for cid, cc in parent_comments.items():
+        if cc["thread_id"] in failed_thread_ids:
+            grouped_results[cid] = {
+                "results": [],
+                "pagination": {"count": 0, "num_pages": 1, "current_page": 1, "next": False},
+            }
+
+    # ── Step 3: Get muted user IDs once ──
+    muted_user_ids = set()
+    if not include_muted and thread_context_cache:
+        _, first_ctx = next(iter(thread_context_cache.values()))
+        _, muted_user_ids = filter_muted_content(
+            request.user, first_ctx["course"].id, None, return_muted_ids=True,
+        )
+
+    # ── Step 4: Fetch children + normalize + filter mutes in one pass ──
+    backend_cache = {}
+    all_response_comments = {}
+    all_comments_flat = []
+
+    for comment_id, cc_comment in parent_comments.items():
+        if comment_id in grouped_results:
+            continue
+
+        thread_id = cc_comment["thread_id"]
+        if thread_id not in thread_context_cache:
+            grouped_results[comment_id] = {
+                "results": [],
+                "pagination": {"count": 0, "num_pages": 1, "current_page": 1, "next": False},
+            }
+            continue
+
+        cc_thread, context = thread_context_cache[thread_id]
+
+        if show_deleted and not context["has_moderation_privilege"]:
+            grouped_results[comment_id] = {
+                "results": [],
+                "pagination": {"count": 0, "num_pages": 1, "current_page": 1, "next": False},
+            }
+            continue
+
+        course_id = cc_thread["course_id"]
+        if course_id not in backend_cache:
+            backend_cache[course_id] = get_backend(course_id)()
+        backend = backend_cache[course_id]
+
+        base_kwargs = {
+            "parent_id": int(comment_id),
+            "comment_thread_id": int(thread_id),
+            "course_id": course_id,
+        }
+        if not show_deleted:
+            base_kwargs["is_deleted"] = False
+
+        response_comments = backend.get_comments(
+            **base_kwargs, resp_skip=0, resp_limit=page_size, sort=sort_order,
+        )
+        total_count = backend.get_comments_count(**base_kwargs)
+
+        response_comments = [_normalize_forum_comment(c) for c in response_comments]
+
+        if muted_user_ids:
+            response_comments = [
+                c for c in response_comments
+                if not c.get("user_id")
+                or not str(c["user_id"]).isdigit()
+                or int(str(c["user_id"])) == requesting_user_id
+                or int(str(c["user_id"])) not in muted_user_ids
+            ]
+
+        all_comments_flat.extend(response_comments)
+        all_response_comments[comment_id] = {
+            "comments": response_comments,
+            "total_count": total_count,
+            "thread_id": thread_id,
+        }
+
+    # ── Step 5: Bulk prefetch author data once across ALL parents ──
+    if all_comments_flat:
+        any_thread_id = next(iter(all_response_comments.values()))["thread_id"]
+        _, prefetch_context = thread_context_cache[any_thread_id]
+        _prefetch_author_data_into_context(prefetch_context, all_comments_flat)
+
+    # ── Step 6: Serialize and build final results ──
+    for comment_id, data in all_response_comments.items():
+        _, context = thread_context_cache[data["thread_id"]]
+        total_count = data["total_count"]
+        num_pages = (total_count + page_size - 1) // page_size if total_count else 1
+
+        grouped_results[comment_id] = {
+            "results": _serialize_discussion_entities(
+                request, context, data["comments"],
+                requested_fields, DiscussionEntity.comment,
+            ),
+            "pagination": {
+                "count": total_count,
+                "num_pages": num_pages,
+                "current_page": 1,
+                "next": num_pages > 1,
+            },
+        }
+
+    return {"results": grouped_results}
 
 
 def get_user_comments(
