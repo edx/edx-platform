@@ -18,14 +18,20 @@ from waffle import get_waffle_flag_model  # pylint: disable=invalid-django-waffl
 
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
-from lms.djangoapps.course_goals.management.commands.goal_reminder_email import send_email_using_ses, send_ace_message
+from lms.djangoapps.course_goals.management.commands.goal_reminder_email import (
+    Command,
+    send_ace_message,
+    send_email_using_ses,
+)
 from lms.djangoapps.course_goals.models import CourseGoalReminderStatus
 from lms.djangoapps.course_goals.tests.factories import (
     CourseGoalFactory, CourseGoalReminderStatusFactory, UserActivityFactory,
 )
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
+from lms.djangoapps.courseware.models import LastSeenCoursewareTimezone
 from openedx.core.djangoapps.ace_common.template_context import get_base_template_context
+from openedx.core.djangoapps.user_api.models import UserPreference
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from openedx.core.lib.celery.task_utils import emulate_http_request
 from openedx.features.course_experience import ENABLE_COURSE_GOALS, ENABLE_SES_FOR_GOALREMINDER
@@ -182,6 +188,11 @@ class TestGoalReminderEmailCommand(TestCase):
         self.make_valid_goal(days_per_week=0)
         self.call_command(expect_sent=False)
 
+    def test_low_goal_does_not_underflow(self):
+        """A low unsigned days_per_week value must not be subtracted from in MySQL."""
+        self.make_valid_goal(days_per_week=1)
+        self.call_command(day=TUESDAY, expect_sent=False)
+
     @ddt.data(
         datetime(2021, 2, 1, tzinfo=UTC),  # very over and done with
         datetime(2021, 3, 7, tzinfo=UTC),  # ending this Sunday
@@ -234,6 +245,71 @@ class TestGoalReminderEmailCommand(TestCase):
         goal.user.save()
         send_ace_message(goal, str(uuid.uuid4()))
         assert mock_ace.called is value
+
+    def test_dirty_timezone_string_still_receives_email(self):
+        goal = self.make_valid_goal()
+        LastSeenCoursewareTimezone.objects.update_or_create(
+            user=goal.user,
+            defaults={'last_seen_courseware_timezone': 'America/New_York\x00'},
+        )
+
+        # The dirty value sanitizes to America/New_York, where 15:00 UTC is inside the send window.
+        self.call_command(expect_sent=True, time='2021-03-02 15:00:00')
+
+    def test_invalid_timezone_falls_back_to_utc(self):
+        goal = self.make_valid_goal()
+        LastSeenCoursewareTimezone.objects.update_or_create(
+            user=goal.user,
+            defaults={'last_seen_courseware_timezone': 'Unknown/Timezone'},
+        )
+
+        self.call_command(expect_sent=True, time='2021-03-02 10:00:00')
+
+    def test_empty_timezone_preference_uses_last_seen_timezone(self):
+        goal = self.make_valid_goal()
+        UserPreference.objects.create(user=goal.user, key='time_zone', value='')
+        LastSeenCoursewareTimezone.objects.update_or_create(
+            user=goal.user,
+            defaults={'last_seen_courseware_timezone': 'Asia/Tokyo'},
+        )
+
+        # At 00:00 UTC, UTC is outside the send window while Tokyo is at 09:00.
+        self.call_command(expect_sent=True, time='2021-03-02 00:00:00')
+
+    @mock.patch(
+        'lms.djangoapps.course_goals.management.commands.goal_reminder_email.CHUNK_SIZE',
+        1,
+    )
+    def test_processes_all_keyset_chunks(self):
+        self.make_valid_goal()
+        self.make_valid_goal()
+
+        self.call_command(expect_sent=True, expect_send_count=2)
+
+    @mock.patch('lms.djangoapps.course_goals.management.commands.goal_reminder_email.tracker.emit')
+    def test_session_events_report_count_only_after_processing(self, mock_emit):
+        self.make_valid_goal()
+
+        self.call_command(expect_sent=True)
+
+        event_payloads = {call.args[0]: call.args[1] for call in mock_emit.call_args_list}
+        assert 'goal_count' not in event_payloads['edx.course.goal.email.session_started']
+        assert event_payloads['edx.course.goal.email.session_completed']['goal_count'] == 1
+
+    def test_enrollment_prefetch_excludes_unrelated_user_course_pairs(self):
+        first_goal = self.make_valid_goal()
+        second_goal = self.make_valid_goal()
+        unrelated_enrollment = CourseEnrollmentFactory(
+            user=first_goal.user,
+            course_id=second_goal.course_key,
+        )
+
+        enrollment_map = Command._prefetch_enrollments_into_cache(  # pylint: disable=protected-access
+            [first_goal, second_goal]
+        )
+
+        assert len(enrollment_map) == 2
+        assert (unrelated_enrollment.user_id, unrelated_enrollment.course_id) not in enrollment_map
 
 
 class TestGoalReminderEmailSES(TestCase):

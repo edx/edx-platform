@@ -564,7 +564,7 @@ enmerkar==0.7.1
     # via enmerkar-underscore
 enmerkar-underscore==2.4.0
     # via -r requirements/edx/kernel.in
-enterprise-integrated-channels==0.1.59
+enterprise-integrated-channels==0.1.61
     # via -r requirements/edx/bundled.in
 event-tracking==3.3.0
     # via
@@ -819,7 +819,7 @@ openedx-django-pyfs==3.8.0
     #   xblocks-contrib
 openedx-django-require==3.0.0
     # via -r requirements/edx/kernel.in
-openedx-django-wiki==3.1.1
+openedx-django-wiki==3.1.2
     # via -r requirements/edx/kernel.in
 openedx-events==10.5.0
     # via

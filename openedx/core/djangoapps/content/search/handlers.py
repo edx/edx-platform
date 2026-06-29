@@ -334,6 +334,7 @@ def library_container_deleted(**kwargs) -> None:
 
 
 @receiver([COURSE_IMPORT_COMPLETED, COURSE_RERUN_COMPLETED])
+@only_if_meilisearch_enabled
 def handle_reindex_on_signal(**kwargs):
     """
     Automatically update Meiliesearch index for course in database on new import or rerun.
