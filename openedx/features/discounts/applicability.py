@@ -10,7 +10,6 @@ not other discounts like coupons or enterprise/program offers configured in ecom
 
 
 import logging
-
 from datetime import datetime, timedelta
 
 import pytz
