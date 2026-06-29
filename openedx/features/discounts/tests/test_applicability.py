@@ -3,8 +3,6 @@
 
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
-from zoneinfo import ZoneInfo
-
 import ddt
 import pytest
 import pytz
