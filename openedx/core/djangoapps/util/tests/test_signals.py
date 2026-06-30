@@ -38,7 +38,11 @@ class TestSuppressToggleNoRequestWarningInTasks(TestCase):
     """
     logger = logging.getLogger('edx_toggles.toggles.internal.waffle.flag')
 
-    @shared_task
+    # shared_task derives its registered name from the plain function name
+    # only, not the enclosing class - an unqualified name here would collide
+    # with TestClearRequestCache._dummy_task above, since both would register
+    # as "_dummy_task" in celery's global task registry.
+    @shared_task(name='test_signals.suppress_toggle_warning_dummy_task')
     def _dummy_task(self):
         """ A task that logs the same warning edx_toggles would log with no request bound. """
         self.logger.warning("Flag 'some.flag' accessed without a request, which is likely in the context of a celery task.")  # pylint: disable=line-too-long
