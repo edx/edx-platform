@@ -22,13 +22,13 @@ from openedx_filters.learning.filters import DiscountEligibilityCheckRequested
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.entitlements.models import CourseEntitlement
-from common.djangoapps.student.models import CourseEnrollment
-from common.djangoapps.track import segment
-from lms.djangoapps.courseware.toggles import COURSEWARE_MFE_MILESTONES_STREAK_DISCOUNT
 from lms.djangoapps.courseware.utils import is_mode_upsellable
+from lms.djangoapps.courseware.toggles import COURSEWARE_MFE_MILESTONES_STREAK_DISCOUNT
 from lms.djangoapps.experiments.models import ExperimentData
 from lms.djangoapps.experiments.stable_bucketing import stable_bucketing_hash_group
 from openedx.features.discounts.models import DiscountPercentageConfig, DiscountRestrictionConfig
+from common.djangoapps.student.models import CourseEnrollment
+from common.djangoapps.track import segment
 
 log = logging.getLogger(__name__)
 
