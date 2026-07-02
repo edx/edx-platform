@@ -37,7 +37,7 @@ from openedx.core.djangoapps.oauth_dispatch.tests import factories as dot_factor
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_api.accounts import EMAIL_MAX_LENGTH, EMAIL_MIN_LENGTH
 from openedx.core.djangoapps.user_api.accounts.utils import create_retirement_request_and_deactivate_account
-from openedx.core.djangoapps.user_api.models import RetirementState, UserRetirementRequest
+from openedx.core.djangoapps.user_api.models import RetirementState
 from openedx.core.djangoapps.user_api.tests.test_views import UserAPITestCase
 from openedx.core.djangoapps.user_authn.views.password_reset import (
     PASSWORD_RESET_INITIATED,
