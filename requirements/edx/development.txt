@@ -747,7 +747,7 @@ edx-drf-extensions==10.6.0
     #   edxval
     #   enterprise-integrated-channels
     #   openedx-learning
-edx-enterprise==8.0.17
+edx-enterprise==8.3.0
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/doc.txt
@@ -875,7 +875,7 @@ enmerkar-underscore==2.4.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
-enterprise-integrated-channels==0.1.59
+enterprise-integrated-channels==0.1.61
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -1361,7 +1361,7 @@ openedx-django-require==3.0.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
-openedx-django-wiki==3.1.1
+openedx-django-wiki==3.1.2
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
@@ -1375,7 +1375,7 @@ openedx-events==10.5.0
     #   edx-name-affirmation
     #   event-tracking
     #   ora2
-openedx-filters==3.3.0
+openedx-filters==3.5.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt

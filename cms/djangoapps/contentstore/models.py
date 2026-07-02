@@ -138,6 +138,8 @@ class ComponentLink(EntityLinkBase):
     """
     This represents link between any two publishable entities or link between publishable entity and a course
     XBlock. It helps in tracking relationship between XBlocks imported from libraries and used in different courses.
+
+    .. no_pii:
     """
     upstream_block = models.ForeignKey(
         Component,
@@ -310,6 +312,8 @@ class ContainerLink(EntityLinkBase):
     """
     This represents link between any two publishable entities or link between publishable entity and a course
     xblock. It helps in tracking relationship between xblocks imported from libraries and used in different courses.
+
+    .. no_pii:
     """
     upstream_container = models.ForeignKey(
         Container,
@@ -547,6 +551,8 @@ class LearningContextLinksStatus(models.Model):
     """
     This table stores current processing status of upstream-downstream links in ComponentLink table for a
     course or a learning context.
+
+    .. no_pii:
     """
     context_key = CourseKeyField(
         max_length=255,

@@ -165,8 +165,11 @@ def get_installed_plugins_module_names():
         root_modules[entry_point.group].add(root_module)
 
     return (
-        # Return all lms.djangopapp and cms.djangoapp plugins
-        (root_modules['lms.djangoapp'] | root_modules['cms.djangoapp'])
+        # Return all lms.djangopapp, cms.djangoapp and openedx.proctoring plugins.
+        # The openedx.proctoring group covers proctoring backends (e.g.
+        # edx-proctoring-proctortrack), which are not registered as edx-platform
+        # django app plugins but still ship their own conf/locale translations.
+        (root_modules['lms.djangoapp'] | root_modules['cms.djangoapp'] | root_modules['openedx.proctoring'])
         # excluding the edx-platform built-in plugins which don't need atlas
         - {'lms', 'cms', 'common', 'openedx', 'xmodule'}
         # excluding XBlocks, which is handled by `pull_xblock_translations` command
