@@ -547,42 +547,45 @@ def rebuild_index(status_cb: Callable[[str], None] | None = None, incremental=Fa
             return num_done
 
         for lib_key in lib_keys:
-            status_cb(f"{num_contexts_done + 1}/{num_contexts}. Now indexing blocks in library {lib_key}")
-            lib_docs = index_library(lib_key)
-            num_blocks_done += len(lib_docs)
+            try:
+                status_cb(f"{num_contexts_done + 1}/{num_contexts}. Now indexing blocks in library {lib_key}")
+                lib_docs = index_library(lib_key)
+                num_blocks_done += len(lib_docs)
 
-            # To reduce memory usage on large instances, split up the Collections into pages of 100 collections:
-            library = lib_api.get_library(lib_key)
-            collections = authoring_api.get_collections(library.learning_package_id, enabled=True)
-            num_collections = collections.count()
-            num_collections_done = 0
-            status_cb(f"{num_collections_done}/{num_collections}. Now indexing collections in library {lib_key}")
-            paginator = Paginator(collections, 100)
-            for p in paginator.page_range:
-                num_collections_done = index_collection_batch(
-                    paginator.page(p).object_list,
-                    num_collections_done,
-                    lib_key,
-                )
-            if incremental:
-                IncrementalIndexCompleted.objects.get_or_create(context_key=lib_key)
-            status_cb(f"{num_collections_done}/{num_collections} collections indexed for library {lib_key}")
+                # To reduce memory usage on large instances, split up the Collections into pages of 100 collections:
+                library = lib_api.get_library(lib_key)
+                collections = authoring_api.get_collections(library.learning_package_id, enabled=True)
+                num_collections = collections.count()
+                num_collections_done = 0
+                status_cb(f"{num_collections_done}/{num_collections}. Now indexing collections in library {lib_key}")
+                paginator = Paginator(collections, 100)
+                for p in paginator.page_range:
+                    num_collections_done = index_collection_batch(
+                        paginator.page(p).object_list,
+                        num_collections_done,
+                        lib_key,
+                    )
+                if incremental:
+                    IncrementalIndexCompleted.objects.get_or_create(context_key=lib_key)
+                status_cb(f"{num_collections_done}/{num_collections} collections indexed for library {lib_key}")
 
-            # Similarly, batch process Containers (units, sections, etc) in pages of 100
-            containers = authoring_api.get_containers(library.learning_package_id)
-            num_containers = containers.count()
-            num_containers_done = 0
-            status_cb(f"{num_containers_done}/{num_containers}. Now indexing containers in library {lib_key}")
-            paginator = Paginator(containers, 100)
-            for p in paginator.page_range:
-                num_containers_done = index_container_batch(
-                    paginator.page(p).object_list,
-                    num_containers_done,
-                    lib_key,
-                )
-                status_cb(f"{num_containers_done}/{num_containers} containers indexed for library {lib_key}")
-            if incremental:
-                IncrementalIndexCompleted.objects.get_or_create(context_key=lib_key)
+                # Similarly, batch process Containers (units, sections, etc) in pages of 100
+                containers = authoring_api.get_containers(library.learning_package_id)
+                num_containers = containers.count()
+                num_containers_done = 0
+                status_cb(f"{num_containers_done}/{num_containers}. Now indexing containers in library {lib_key}")
+                paginator = Paginator(containers, 100)
+                for p in paginator.page_range:
+                    num_containers_done = index_container_batch(
+                        paginator.page(p).object_list,
+                        num_containers_done,
+                        lib_key,
+                    )
+                    status_cb(f"{num_containers_done}/{num_containers} containers indexed for library {lib_key}")
+                if incremental:
+                    IncrementalIndexCompleted.objects.get_or_create(context_key=lib_key)
+            except Exception as err:  # pylint: disable=broad-except
+                status_cb(f"Error indexing library {lib_key}, skipping: {err}")
 
             num_contexts_done += 1
 
@@ -599,11 +602,14 @@ def rebuild_index(status_cb: Callable[[str], None] | None = None, incremental=Fa
                 if course.id in keys_indexed:
                     num_contexts_done += 1
                     continue
-                course_docs = index_course(course.id, index_name)
-                if incremental:
-                    IncrementalIndexCompleted.objects.get_or_create(context_key=course.id)
+                try:
+                    course_docs = index_course(course.id, index_name)
+                    if incremental:
+                        IncrementalIndexCompleted.objects.get_or_create(context_key=course.id)
+                    num_blocks_done += len(course_docs)
+                except Exception as err:  # pylint: disable=broad-except
+                    status_cb(f"Error indexing course {course.id}, skipping: {err}")
                 num_contexts_done += 1
-                num_blocks_done += len(course_docs)
 
     IncrementalIndexCompleted.objects.all().delete()
     status_cb(f"Done! {num_blocks_done} blocks indexed across {num_contexts_done} courses, collections and libraries.")
