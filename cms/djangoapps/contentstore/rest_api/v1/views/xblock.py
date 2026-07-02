@@ -33,7 +33,7 @@ import json
 import logging
 
 from django.http import JsonResponse
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiRequest, OpenApiResponse, extend_schema
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from opaque_keys import InvalidKeyError
@@ -54,6 +54,71 @@ from common.djangoapps.util.json_request import expect_json_in_class_view
 from openedx.core.lib.api.mixins import StandardizedErrorMixin
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# ADR 0027 — shared OpenAPI parameter and response building blocks
+# ---------------------------------------------------------------------------
+_USAGE_KEY_PATH_PARAMETER = OpenApiParameter(
+    name="usage_key_string",
+    description=(
+        "Usage key identifying the xblock (e.g. "
+        "``block-v1:edX+DemoX+Demo_Course+type@vertical+block@abcd``). Also "
+        "accepts legacy ``i4x://`` locators."
+    ),
+    required=True,
+    type=str,
+    location=OpenApiParameter.PATH,
+)
+
+# ADR 0036 — declare the ``?view=minimal`` preset in the OpenAPI schema so
+# consumers (Swagger UI, generated SDK clients) can discover it. Only the
+# ``retrieve`` action honours this parameter today.
+_VIEW_QUERY_PARAMETER = OpenApiParameter(
+    name="view",
+    description=(
+        "ADR 0036 response preset. ``minimal`` drops heavy/contextual xblock "
+        "fields (``data``, ``metadata``, ``fields``, ``student_view_data``, "
+        "``edited_on``, ``published`` …) and keeps only the structural fields "
+        "(``id``, ``display_name``, ``category``, ``children``, "
+        "``has_children``, ``studio_url``). Omit the parameter to receive "
+        "the full xblock response."
+    ),
+    required=False,
+    type=str,
+    location=OpenApiParameter.QUERY,
+    enum=["minimal"],
+)
+
+# ADR 0036 — the underlying ``retrieve_xblock_response`` accepts a legacy
+# ``?fields=`` selector with **type-of-response** semantics (not the ADR 0036
+# CSV-subset semantics). Documented here as a deprecated parameter so callers
+# can see it in Swagger UI and know it's a legacy pass-through.
+_LEGACY_FIELDS_QUERY_PARAMETER = OpenApiParameter(
+    name="fields",
+    description=(
+        "**Legacy pass-through** (v0/v1 semantics). Selects a *type* of "
+        "response rather than a subset of top-level keys:\n"
+        "  * ``fields=graderType`` — return the grader-type value directly\n"
+        "  * ``fields=ancestorInfo`` — return concise ancestor info\n"
+        "  * ``fields=customReadToken`` — include parent + children on the "
+        "response\n"
+        "Note: this is **not** the ADR 0036 ``?fields=`` CSV subset "
+        "convention. New callers should use ``?view=minimal`` instead."
+    ),
+    required=False,
+    type=str,
+    location=OpenApiParameter.QUERY,
+    deprecated=True,
+)
+
+_COMMON_ERROR_RESPONSES = {
+    401: OpenApiResponse(description="The requester is not authenticated."),
+    403: OpenApiResponse(description="The requester does not have permission for this xblock's course."),
+    404: OpenApiResponse(description="The requested xblock does not exist."),
+    406: OpenApiResponse(description="Requested representation is not available (e.g. non-JSON ``Accept``)."),
+}
+
 
 # ADR 0036 — top-level keys kept when ``?view=minimal`` is requested. Chosen so
 # the response is structurally complete (callers can navigate the tree by id
@@ -152,12 +217,49 @@ class XblockViewSet(StandardizedErrorMixin, viewsets.ViewSet):
                 self.course_key = None
         super().initial(request, *args, **kwargs)
 
+    @extend_schema(
+        summary="Create an xblock",
+        description=(
+            "Create a new xblock under a parent block. The ``parent_locator`` "
+            "field on the request body identifies the parent and (implicitly) "
+            "the course."
+        ),
+        request=OpenApiRequest(XblockSerializer),
+        responses={
+            200: OpenApiResponse(
+                response=XblockSerializer,
+                description="The xblock was created successfully.",
+            ),
+            400: OpenApiResponse(description="Request body failed validation."),
+            **_COMMON_ERROR_RESPONSES,
+        },
+    )
     @expect_json_in_class_view
     @validate_request_with_serializer
     def create(self, request):
         """Create a new xblock under the given parent."""
         return create_xblock_response(request)
 
+    @extend_schema(
+        summary="Retrieve an xblock",
+        description=(
+            "Retrieve an xblock (and, by default, its nested tree) by usage "
+            "key. Supports ADR 0036 ``?view=minimal`` to strip contextual "
+            "fields, plus the legacy ``?fields=`` type-of-response selector."
+        ),
+        parameters=[
+            _USAGE_KEY_PATH_PARAMETER,
+            _VIEW_QUERY_PARAMETER,
+            _LEGACY_FIELDS_QUERY_PARAMETER,
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=XblockSerializer,
+                description="The xblock representation.",
+            ),
+            **_COMMON_ERROR_RESPONSES,
+        },
+    )
     @expect_json_in_class_view
     def retrieve(self, request, usage_key_string=None):
         """
@@ -172,18 +274,58 @@ class XblockViewSet(StandardizedErrorMixin, viewsets.ViewSet):
             response = _apply_minimal_view(response)
         return response
 
+    @extend_schema(
+        summary="Update an xblock",
+        description="Fully update an xblock identified by its usage key.",
+        parameters=[_USAGE_KEY_PATH_PARAMETER],
+        request=OpenApiRequest(XblockSerializer),
+        responses={
+            200: OpenApiResponse(
+                response=XblockSerializer,
+                description="The xblock was updated successfully.",
+            ),
+            400: OpenApiResponse(description="Request body failed validation."),
+            **_COMMON_ERROR_RESPONSES,
+        },
+    )
     @expect_json_in_class_view
     @validate_request_with_serializer
     def update(self, request, usage_key_string=None):
         """Fully update an xblock."""
         return update_xblock_response(request, usage_key_string)
 
+    @extend_schema(
+        summary="Partially update an xblock",
+        description=(
+            "Partially update an xblock identified by its usage key. Only the "
+            "fields present in the request body are updated."
+        ),
+        parameters=[_USAGE_KEY_PATH_PARAMETER],
+        request=OpenApiRequest(XblockSerializer),
+        responses={
+            200: OpenApiResponse(
+                response=XblockSerializer,
+                description="The xblock was updated successfully.",
+            ),
+            400: OpenApiResponse(description="Request body failed validation."),
+            **_COMMON_ERROR_RESPONSES,
+        },
+    )
     @expect_json_in_class_view
     @validate_request_with_serializer
     def partial_update(self, request, usage_key_string=None):
         """Partially update an xblock."""
         return update_xblock_response(request, usage_key_string)
 
+    @extend_schema(
+        summary="Delete an xblock",
+        description="Delete an xblock identified by its usage key.",
+        parameters=[_USAGE_KEY_PATH_PARAMETER],
+        responses={
+            200: OpenApiResponse(description="The xblock was deleted successfully."),
+            **_COMMON_ERROR_RESPONSES,
+        },
+    )
     @expect_json_in_class_view
     def destroy(self, request, usage_key_string=None):
         """Delete an xblock."""
