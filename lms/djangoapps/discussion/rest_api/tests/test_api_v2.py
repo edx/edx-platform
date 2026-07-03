@@ -4025,6 +4025,7 @@ class GetCommentListTest(
                 "with_responses": True,
                 "reverse_order": False,
                 "merge_question_type_responses": False,
+                "show_deleted": False,
             },
             "course_id": str(self.course.id),
         }

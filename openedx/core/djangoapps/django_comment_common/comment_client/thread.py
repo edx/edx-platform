@@ -216,6 +216,7 @@ class Thread(models.Model):
             "merge_question_type_responses": kwargs.get(
                 "merge_question_type_responses", False
             ),
+            "show_deleted": kwargs.get("show_deleted"),
         }
         request_params = utils.clean_forum_params(request_params)
         course_id = kwargs.get("course_id")
