@@ -1685,6 +1685,7 @@ def get_comment_list(
             "response_limit": page_size,
             "reverse_order": reverse_order,
             "merge_question_type_responses": merge_question_type_responses,
+            "show_deleted": show_deleted,
         },
     )
     # Responses to discussion threads cannot be separated by endorsed, but
@@ -2317,17 +2318,11 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
                 response_comments = response["children"]
                 break
 
-        response_skip = page_size * (page - 1)
-        paged_response_comments = response_comments[
-            response_skip: (response_skip + page_size)
-        ]
-        if not paged_response_comments and page != 1:
-            raise PageNotFoundError("Page not found (No results on this page).")
-
+        # Filter deleted content from the FULL list first
         if not show_deleted:
-            paged_response_comments = [
+            response_comments = [
                 response
-                for response in paged_response_comments
+                for response in response_comments
                 if not response.get("is_deleted", False)
             ]
         else:
@@ -2336,13 +2331,30 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
                     "`show_deleted` can only be set by users with moderation roles."
                 )
 
-        # Apply muting filter if not including muted content
+        # Filter muted content from the FULL list
+        include_muted = request.GET.get("include_muted", False)
+        include_muted = include_muted in ["true", "True", True]
         if not include_muted:
-            paged_response_comments = filter_muted_content(
+            response_comments = filter_muted_content(
                 request.user,
                 context["course"].id,
-                paged_response_comments
+                response_comments
             )
+
+        # NOW calculate pagination based on FILTERED total
+        total_comments_count = len(response_comments)
+        num_pages = (
+            (total_comments_count + page_size - 1) // page_size
+            if total_comments_count else 1
+        )
+
+        # Then paginate the filtered list
+        response_skip = page_size * (page - 1)
+        paged_response_comments = response_comments[
+            response_skip: (response_skip + page_size)
+        ]
+        if not paged_response_comments and page != 1:
+            raise PageNotFoundError("Page not found (No results on this page).")
 
         results = _serialize_discussion_entities(
             request,
@@ -2352,11 +2364,6 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
             DiscussionEntity.comment,
         )
 
-        total_comments_count = len(response_comments)
-        num_pages = (
-            (total_comments_count + page_size - 1) // page_size
-            if total_comments_count else 1
-        )
         paginator = DiscussionAPIPagination(
             request, page, num_pages, total_comments_count
         )
