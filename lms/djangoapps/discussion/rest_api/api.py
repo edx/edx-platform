@@ -5,7 +5,6 @@ Discussion API internal interface
 
 from __future__ import annotations
 
-import itertools
 import logging
 import re
 from collections import defaultdict
