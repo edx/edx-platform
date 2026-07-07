@@ -42,7 +42,7 @@ from cms.lib.ai_aside_summary_config import AiAsideSummaryConfig
 from cms.lib.xblock.upstream_sync import BadUpstream, UpstreamLink
 from cms.lib.xblock.upstream_sync_block import sync_from_upstream_block
 from cms.lib.xblock.upstream_sync_container import sync_from_upstream_container
-from common.djangoapps.static_replace import replace_static_urls
+from common.djangoapps.static_replace import contract_static_urls, replace_static_urls
 from common.djangoapps.student.auth import (
     has_studio_read_access,
     has_studio_write_access,
@@ -353,6 +353,11 @@ def _save_xblock(
         old_content = xblock.get_explicitly_set_fields_by_scope(Scope.content)
 
         if data:
+            if isinstance(data, str):
+                # Editors receive `data` with /static/ URLs expanded (see get_block_info)
+                # and don't all contract them back on save; contract here so URLs pinned
+                # to this course are never persisted (they break on re-run/export/import).
+                data = contract_static_urls(data, xblock.location.course_key)
             # TODO Allow any scope.content fields not just "data" (exactly like the get below this)
             xblock.data = data
         else:

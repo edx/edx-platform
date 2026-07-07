@@ -1948,6 +1948,32 @@ class TestEditItem(TestEditItemSetup):
     Test xblock update.
     """
 
+    def test_data_saved_with_portable_static_urls(self):
+        """
+        Absolute asset URLs referencing this course's assets must be contracted
+        to the portable /static/ form before persisting, so re-runs and
+        export/import don't break them when an editor fails to contract.
+        """
+        asset_key = self.course.id.make_asset_key('asset', 'textlog.html')
+        self.client.ajax_post(
+            self.problem_update_url,
+            data={'data': f'<problem><jsinput html_file="/{asset_key}" gradefn="getGrade"/></problem>'},
+        )
+        problem = self.get_item_from_modulestore(self.problem_usage_key)
+        self.assertIn('html_file="/static/textlog.html"', problem.data)
+
+    def test_data_preserves_other_courses_asset_urls(self):
+        """
+        Asset URLs referencing another course's assets are not ours to rewrite.
+        """
+        foreign_url = '/asset-v1:OtherX+Other+1T2020+type@asset+block@textlog.html'
+        self.client.ajax_post(
+            self.problem_update_url,
+            data={'data': f'<problem><jsinput html_file="{foreign_url}" gradefn="getGrade"/></problem>'},
+        )
+        problem = self.get_item_from_modulestore(self.problem_usage_key)
+        self.assertIn(f'html_file="{foreign_url}"', problem.data)
+
     def test_delete_field(self):
         """
         Sending null in for a field 'deletes' it

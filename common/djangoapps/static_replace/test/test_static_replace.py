@@ -15,6 +15,7 @@ from web_fragments.fragment import Fragment
 
 from common.djangoapps.static_replace import (
     _url_replace_regex,
+    contract_static_urls,
     make_static_urls_absolute,
     process_static_urls,
     replace_course_urls,
@@ -60,6 +61,71 @@ def test_multi_replace():
         replace_static_urls(replace_static_urls(STATIC_SOURCE, DATA_DIRECTORY), DATA_DIRECTORY)
     assert replace_course_urls(course_source, COURSE_KEY) == \
         replace_course_urls(replace_course_urls(course_source, COURSE_KEY), COURSE_KEY)
+
+
+SPLIT_COURSE_KEY = CourseKey.from_string('course-v1:HarvardX+BDSG+2T2022')
+
+
+def test_contract_static_urls_jsinput_html_file():
+    text = '<jsinput html_file="/asset-v1:HarvardX+BDSG+2T2022+type@asset+block@textlog.html" gradefn="getGrade"/>'
+    expected = '<jsinput html_file="/static/textlog.html" gradefn="getGrade"/>'
+    assert contract_static_urls(text, SPLIT_COURSE_KEY) == expected
+
+
+def test_contract_static_urls_versioned_asset_path():
+    text = (
+        '<img src="/assets/courseware/v1/43761bc1cc13b218d267f790ed4313d1/'
+        'asset-v1:HarvardX+BDSG+2T2022+type@asset+block/image.jpg">'
+    )
+    expected = '<img src="/static/image.jpg">'
+    assert contract_static_urls(text, SPLIT_COURSE_KEY) == expected
+
+
+def test_contract_static_urls_versioned_asset_path_without_version_segment():
+    # VERSIONED_ASSETS_PATTERN treats the v1/ segment as optional
+    text = (
+        '<img src="/assets/courseware/43761bc1cc13b218d267f790ed4313d1/'
+        'asset-v1:HarvardX+BDSG+2T2022+type@asset+block/image.jpg">'
+    )
+    expected = '<img src="/static/image.jpg">'
+    assert contract_static_urls(text, SPLIT_COURSE_KEY) == expected
+
+
+def test_contract_static_urls_host_qualified():
+    text = '<a href="https://courses.edx.org/asset-v1:HarvardX+BDSG+2T2022+type@asset+block@syllabus.pdf">Syllabus</a>'
+    expected = '<a href="/static/syllabus.pdf">Syllabus</a>'
+    assert contract_static_urls(text, SPLIT_COURSE_KEY) == expected
+
+
+def test_contract_static_urls_preserves_query_string():
+    text = '<img src="/asset-v1:HarvardX+BDSG+2T2022+type@asset+block@pic.png?width=100">'
+    expected = '<img src="/static/pic.png?width=100">'
+    assert contract_static_urls(text, SPLIT_COURSE_KEY) == expected
+
+
+def test_contract_static_urls_leaves_foreign_course_urls():
+    """URLs pointing at a different course's assets are not this course's to rewrite."""
+    text = '<img src="/asset-v1:OtherX+Other+1T2020+type@asset+block@pic.png">'
+    assert contract_static_urls(text, SPLIT_COURSE_KEY) == text
+
+
+def test_contract_static_urls_leaves_external_and_portable_urls():
+    text = '<a href="https://example.com/asset.png">x</a> <img src="/static/already.png">'
+    assert contract_static_urls(text, SPLIT_COURSE_KEY) == text
+
+
+def test_contract_static_urls_old_style_course_key():
+    text = '<img src="/c4x/org/course/asset/foo.gif">'
+    expected = '<img src="/static/foo.gif">'
+    assert contract_static_urls(text, COURSE_KEY) == expected
+
+
+def test_contract_static_urls_non_string_passthrough():
+    assert contract_static_urls(None, SPLIT_COURSE_KEY) is None
+    assert contract_static_urls('', SPLIT_COURSE_KEY) == ''
+    data = {'key': 'value'}
+    assert contract_static_urls(data, SPLIT_COURSE_KEY) is data
+    assert contract_static_urls('text', None) == 'text'
 
 
 def test_process_url():
