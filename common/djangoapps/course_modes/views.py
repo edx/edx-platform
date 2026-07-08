@@ -23,10 +23,11 @@ from django.utils.translation import gettext as _
 from django.views.generic.base import View
 from edx_django_utils.monitoring.utils import increment
 from opaque_keys.edx.keys import CourseKey
+from openedx_filters.learning.filters import CourseModePriceRequested
 from urllib.parse import urljoin  # lint-amnesty, pylint: disable=wrong-import-order
 
 from common.djangoapps.course_modes.models import CourseMode
-from common.djangoapps.course_modes.helpers import get_course_final_price, get_verified_track_links
+from common.djangoapps.course_modes.helpers import get_verified_track_links
 from common.djangoapps.edxmako.shortcuts import render_to_response
 from common.djangoapps.util.date_utils import strftime_localized_html
 from lms.djangoapps.commerce.utils import EcommerceService
@@ -39,7 +40,6 @@ from openedx.features.content_type_gating.models import ContentTypeGatingConfig
 from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
 from openedx.features.course_duration_limits.access import get_user_course_duration, get_user_course_expiration_date
 from openedx.features.course_experience import course_home_url
-from openedx.features.enterprise_support.api import enterprise_customer_for_request
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.util.db import outer_atomic
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
@@ -187,15 +187,14 @@ class ChooseModeView(View):
                 if x.strip()
             ]
             price_before_discount = verified_mode.min_price
-            course_price = price_before_discount
-            enterprise_customer = enterprise_customer_for_request(request)
-            LOG.info(
-                '[e-commerce calculate API] Going to hit the API for user [%s] linked to [%s] enterprise',
-                request.user.username,
-                enterprise_customer.get('name') if isinstance(enterprise_customer, dict) else None  # Test Purpose
+            # this filter applies discounts (e.g. enterprise-negotiated pricing) to the price
+            # .. filter_implemented_name: CourseModePriceRequested
+            # .. filter_type: org.openedx.learning.course_mode.price.requested.v1
+            _, _, course_price = CourseModePriceRequested.run_filter(
+                user=request.user,
+                course_mode_data=verified_mode,
+                price=price_before_discount,
             )
-            if enterprise_customer and verified_mode.sku:
-                course_price = get_course_final_price(request.user, verified_mode.sku, price_before_discount)
 
             context["currency"] = verified_mode.currency.upper()
             context["currency_symbol"] = get_currency_symbol(verified_mode.currency.upper())
