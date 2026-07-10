@@ -475,7 +475,12 @@ def rebuild_index(status_cb: Callable[[str], None] | None = None, incremental=Fa
 
         def index_library(lib_key: LibraryLocatorV2) -> list:
             docs = []
-            for component in lib_api.get_library_components(lib_key):
+            try:
+                components = lib_api.get_library_components(lib_key)
+            except Exception as err:  # pylint: disable=broad-except
+                status_cb(f"Error fetching components for library {lib_key}, skipping: {err}")
+                return docs
+            for component in components:
                 try:
                     metadata = lib_api.LibraryXBlockMetadata.from_component(lib_key, component)
                     doc = {}
