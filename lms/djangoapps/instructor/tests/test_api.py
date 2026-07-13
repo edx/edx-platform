@@ -2855,6 +2855,7 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
                 if x['username'] == student.username
             ][0]
             assert student_json['username'] == student.username
+            assert student_json['lti_13_uuid'] == ''
             if has_program_enrollments:
                 assert student_json['external_user_key'] == external_key_dict[student.username]
             else:
