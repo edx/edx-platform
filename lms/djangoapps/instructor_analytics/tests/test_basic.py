@@ -12,6 +12,7 @@ from edx_proctoring.models import ProctoredExamStudentAttempt
 from opaque_keys.edx.locator import UsageKey
 from lms.djangoapps.instructor_analytics.basic import (  # lint-amnesty, pylint: disable=unused-import
     AVAILABLE_FEATURES,
+    EXTERNAL_ID_FEATURES,
     PROFILE_FEATURES,
     PROGRAM_ENROLLMENT_FEATURES,
     STUDENT_FEATURES,
@@ -23,6 +24,8 @@ from lms.djangoapps.instructor_analytics.basic import (  # lint-amnesty, pylint:
     list_problem_responses
 )
 from lms.djangoapps.program_enrollments.tests.factories import ProgramEnrollmentFactory
+from openedx.core.djangoapps.external_user_ids.models import ExternalIdType
+from openedx.core.djangoapps.external_user_ids.tests.factories import ExternalIdFactory
 from openedx.core.djangoapps.course_groups.tests.helpers import CohortFactory
 from common.djangoapps.student.models import CourseEnrollment, CourseEnrollmentAllowed
 from common.djangoapps.student.tests.factories import InstructorFactory
@@ -249,9 +252,35 @@ class TestAnalyticsBasic(ModuleStoreTestCase):
             else:
                 assert '' == report['external_user_key']
 
+    def test_enrolled_student_features_lti_13_uuid(self):
+        query_features = ('username', 'lti_13_uuid')
+        id_type, _ = ExternalIdType.objects.get_or_create(
+            name=ExternalIdType.LTI,
+            defaults={'description': 'LTI'},
+        )
+        user_with_lti_uuid = self.users[0]
+        external_id = ExternalIdFactory.create(
+            external_id_type=id_type,
+            user=user_with_lti_uuid,
+        )
+
+        userreports = enrolled_students_features(self.course_key, query_features)
+
+        assert len(userreports) == 30
+        for report in userreports:
+            assert set(report.keys()) == set(query_features)
+            if report['username'] == user_with_lti_uuid.username:
+                assert report['lti_13_uuid'] == str(external_id.external_user_id)
+            else:
+                assert report['lti_13_uuid'] == ''
+
     def test_available_features(self):
-        assert len(AVAILABLE_FEATURES) == len(STUDENT_FEATURES + PROFILE_FEATURES + PROGRAM_ENROLLMENT_FEATURES)
-        assert set(AVAILABLE_FEATURES) == set(STUDENT_FEATURES + PROFILE_FEATURES + PROGRAM_ENROLLMENT_FEATURES)
+        assert len(AVAILABLE_FEATURES) == len(
+            STUDENT_FEATURES + PROFILE_FEATURES + PROGRAM_ENROLLMENT_FEATURES + EXTERNAL_ID_FEATURES
+        )
+        assert set(AVAILABLE_FEATURES) == set(
+            STUDENT_FEATURES + PROFILE_FEATURES + PROGRAM_ENROLLMENT_FEATURES + EXTERNAL_ID_FEATURES
+        )
 
     def test_list_may_enroll(self):
         may_enroll = list_may_enroll(self.course_key, ['email'])

@@ -2848,6 +2848,7 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
         response = self.client.post(url, {})
         res_json = json.loads(response.content.decode('utf-8'))
         assert 'external_user_key' in res_json['feature_names']
+        assert 'lti_13_uuid' in res_json['feature_names']
         for student in self.students:
             student_json = [
                 x for x in res_json['students']
