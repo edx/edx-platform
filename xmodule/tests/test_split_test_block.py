@@ -7,6 +7,9 @@ from unittest.mock import Mock, patch
 import ddt
 import lxml
 from fs.memoryfs import MemoryFS
+from django.conf import settings
+
+from openedx.core.djangoapps.oauth_dispatch.tests.factories import ApplicationFactory
 
 from xmodule.modulestore.tests.factories import CourseFactory
 from xmodule.modulestore.tests.utils import MixedSplitTestCase
@@ -68,6 +71,7 @@ class SplitTestBlockTest(XModuleXmlImportTest, PartitionTestCase):
     """
     def setUp(self):
         super().setUp()
+        ApplicationFactory(name=settings.EDXNOTES_CLIENT_NAME)
         self.course_id = 'test_org/test_course_number/test_run'
         # construct module
         course = xml.CourseFactory.build()
