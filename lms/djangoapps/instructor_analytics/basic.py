@@ -87,7 +87,18 @@ def issued_certificates(course_key, features):
 
 
 def _get_external_id_dicts(students, include_program_enrollments, include_lti_13_uuid):
-    """Return (external_user_key_dict, lti_13_uuid_dict) for the given student queryset."""
+    """
+    Return (external_user_key_dict, lti_13_uuid_dict) for the given student queryset.
+
+    Arguments:
+        students: User queryset of enrolled students
+        include_program_enrollments (bool): whether to build the program enrollment key dict
+        include_lti_13_uuid (bool): whether to build the LTI 1.3 UUID dict
+
+    Returns:
+        tuple: (external_user_key_dict, lti_13_uuid_dict) where each dict maps user_id
+               to the corresponding external identifier string.
+    """
     external_user_key_dict = {}
     lti_13_uuid_dict = {}
     if include_program_enrollments and len(students) > 0:
