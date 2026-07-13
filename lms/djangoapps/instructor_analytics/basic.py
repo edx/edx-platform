@@ -26,6 +26,7 @@ from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.grades.api import context as grades_context
 from lms.djangoapps.program_enrollments.api import fetch_program_enrollments_by_students
 from lms.djangoapps.verify_student.services import IDVerificationService
+from openedx.core.djangoapps.external_user_ids.models import ExternalId, ExternalIdType
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangolib.markup import HTML, Text
 
@@ -38,6 +39,7 @@ PROFILE_FEATURES = ('name', 'language', 'location', 'year_of_birth', 'gender',
                     'level_of_education', 'mailing_address', 'goals', 'meta',
                     'city', 'country')
 PROGRAM_ENROLLMENT_FEATURES = ('external_user_key', )
+EXTERNAL_ID_FEATURES = ('lti_13_uuid', )
 ORDER_ITEM_FEATURES = ('list_price', 'unit_cost', 'status')
 ORDER_FEATURES = ('purchase_time',)
 
@@ -49,7 +51,7 @@ SALE_ORDER_FEATURES = ('id', 'company_name', 'company_contact_name', 'company_co
                        'bill_to_street2', 'bill_to_city', 'bill_to_state', 'bill_to_postalcode',
                        'bill_to_country', 'order_type', 'created')
 
-AVAILABLE_FEATURES = STUDENT_FEATURES + PROFILE_FEATURES + PROGRAM_ENROLLMENT_FEATURES
+AVAILABLE_FEATURES = STUDENT_FEATURES + PROFILE_FEATURES + PROGRAM_ENROLLMENT_FEATURES + EXTERNAL_ID_FEATURES
 COURSE_REGISTRATION_FEATURES = ('code', 'course_id', 'created_by', 'created_at', 'is_valid')
 COUPON_FEATURES = ('code', 'course_id', 'percentage_discount', 'description', 'expiration_date', 'is_active')
 CERTIFICATE_FEATURES = ('course_id', 'mode', 'status', 'grade', 'created_date', 'is_active', 'error_reason')
@@ -84,6 +86,33 @@ def issued_certificates(course_key, features):
     return generated_certificates
 
 
+def _get_external_id_dicts(students, include_program_enrollments, include_lti_13_uuid):
+    """
+    Return (external_user_key_dict, lti_13_uuid_dict) for the given student queryset.
+
+    Arguments:
+        students: User queryset of enrolled students
+        include_program_enrollments (bool): whether to build the program enrollment key dict
+        include_lti_13_uuid (bool): whether to build the LTI 1.3 UUID dict
+
+    Returns:
+        tuple: (external_user_key_dict, lti_13_uuid_dict) where each dict maps user_id
+               to the corresponding external identifier string.
+    """
+    external_user_key_dict = {}
+    lti_13_uuid_dict = {}
+    if include_program_enrollments and len(students) > 0:
+        for enrollment in fetch_program_enrollments_by_students(users=students, realized_only=True):
+            external_user_key_dict[enrollment.user_id] = enrollment.external_user_key
+    if include_lti_13_uuid and len(students) > 0:
+        lti_external_ids = ExternalId.objects.filter(
+            user_id__in=students.values_list('id', flat=True),
+            external_id_type__name=ExternalIdType.LTI,
+        ).values_list('user_id', 'external_user_id')
+        lti_13_uuid_dict = {user_id: str(ext_id) for user_id, ext_id in lti_external_ids}
+    return external_user_key_dict, lti_13_uuid_dict
+
+
 def enrolled_students_features(course_key, features):
     """
     Return list of student features as dictionaries.
@@ -101,7 +130,7 @@ def enrolled_students_features(course_key, features):
     include_enrollment_mode = 'enrollment_mode' in features
     include_verification_status = 'verification_status' in features
     include_program_enrollments = 'external_user_key' in features
-    external_user_key_dict = {}
+    include_lti_13_uuid = 'lti_13_uuid' in features
 
     students = User.objects.filter(
         courseenrollment__course_id=course_key,
@@ -114,10 +143,9 @@ def enrolled_students_features(course_key, features):
     if include_team_column:
         students = students.prefetch_related('teams')
 
-    if include_program_enrollments and len(students) > 0:
-        program_enrollments = fetch_program_enrollments_by_students(users=students, realized_only=True)
-        for program_enrollment in program_enrollments:
-            external_user_key_dict[program_enrollment.user_id] = program_enrollment.external_user_key
+    external_user_key_dict, lti_13_uuid_dict = _get_external_id_dicts(
+        students, include_program_enrollments, include_lti_13_uuid
+    )
 
     def extract_attr(student, feature):
         """Evaluate a student attribute that is ready for JSON serialization"""
@@ -188,6 +216,9 @@ def enrolled_students_features(course_key, features):
         if include_program_enrollments:
             # extra external_user_key
             student_dict['external_user_key'] = external_user_key_dict.get(student.id, '')
+
+        if include_lti_13_uuid:
+            student_dict['lti_13_uuid'] = lti_13_uuid_dict.get(student.id, '')
 
         return student_dict
 
