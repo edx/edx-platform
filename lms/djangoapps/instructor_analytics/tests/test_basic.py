@@ -264,7 +264,8 @@ class TestAnalyticsBasic(ModuleStoreTestCase):
             user=user_with_lti_uuid,
         )
 
-        userreports = enrolled_students_features(self.course_key, query_features)
+        with self.assertNumQueries(2):
+            userreports = enrolled_students_features(self.course_key, query_features)
 
         assert len(userreports) == 30
         for report in userreports:
