@@ -86,6 +86,22 @@ def issued_certificates(course_key, features):
     return generated_certificates
 
 
+def _get_external_id_dicts(students, include_program_enrollments, include_lti_13_uuid):
+    """Return (external_user_key_dict, lti_13_uuid_dict) for the given student queryset."""
+    external_user_key_dict = {}
+    lti_13_uuid_dict = {}
+    if include_program_enrollments and len(students) > 0:
+        for enrollment in fetch_program_enrollments_by_students(users=students, realized_only=True):
+            external_user_key_dict[enrollment.user_id] = enrollment.external_user_key
+    if include_lti_13_uuid and len(students) > 0:
+        lti_external_ids = ExternalId.objects.filter(
+            user_id__in=students.values_list('id', flat=True),
+            external_id_type__name=ExternalIdType.LTI,
+        ).values_list('user_id', 'external_user_id')
+        lti_13_uuid_dict = {user_id: str(ext_id) for user_id, ext_id in lti_external_ids}
+    return external_user_key_dict, lti_13_uuid_dict
+
+
 def enrolled_students_features(course_key, features):
     """
     Return list of student features as dictionaries.
@@ -104,8 +120,6 @@ def enrolled_students_features(course_key, features):
     include_verification_status = 'verification_status' in features
     include_program_enrollments = 'external_user_key' in features
     include_lti_13_uuid = 'lti_13_uuid' in features
-    external_user_key_dict = {}
-    lti_13_uuid_dict = {}
 
     students = User.objects.filter(
         courseenrollment__course_id=course_key,
@@ -118,20 +132,9 @@ def enrolled_students_features(course_key, features):
     if include_team_column:
         students = students.prefetch_related('teams')
 
-    if include_program_enrollments and len(students) > 0:
-        program_enrollments = fetch_program_enrollments_by_students(users=students, realized_only=True)
-        for program_enrollment in program_enrollments:
-            external_user_key_dict[program_enrollment.user_id] = program_enrollment.external_user_key
-
-    if include_lti_13_uuid and len(students) > 0:
-        lti_external_ids = ExternalId.objects.filter(
-            user_id__in=students.values_list('id', flat=True),
-            external_id_type__name=ExternalIdType.LTI,
-        ).values_list('user_id', 'external_user_id')
-        lti_13_uuid_dict = {
-            user_id: str(external_user_id)
-            for user_id, external_user_id in lti_external_ids
-        }
+    external_user_key_dict, lti_13_uuid_dict = _get_external_id_dicts(
+        students, include_program_enrollments, include_lti_13_uuid
+    )
 
     def extract_attr(student, feature):
         """Evaluate a student attribute that is ready for JSON serialization"""
