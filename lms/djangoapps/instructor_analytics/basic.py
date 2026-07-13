@@ -125,12 +125,12 @@ def enrolled_students_features(course_key, features):
 
     if include_lti_13_uuid and len(students) > 0:
         lti_external_ids = ExternalId.objects.filter(
-            user__in=students,
+            user_id__in=students.values_list('id', flat=True),
             external_id_type__name=ExternalIdType.LTI,
-        )
+        ).values_list('user_id', 'external_user_id')
         lti_13_uuid_dict = {
-            external_id.user_id: str(external_id.external_user_id)
-            for external_id in lti_external_ids
+            user_id: str(external_user_id)
+            for user_id, external_user_id in lti_external_ids
         }
 
     def extract_attr(student, feature):
