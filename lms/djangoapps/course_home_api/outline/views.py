@@ -195,7 +195,6 @@ class OutlineTabView(RetrieveAPIView):
         monitoring_utils.set_custom_attribute('course_id', course_key_string)
         monitoring_utils.set_custom_attribute('user_id', user.id)
         monitoring_utils.set_custom_attribute('is_staff', user.is_staff)
-        
         masquerade_object, request.user = setup_masquerade(
             request,
             course_key,
