@@ -57,12 +57,7 @@ from openedx.core.lib.api.permissions import ApiKeyHeaderPermission, ApiKeyHeade
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin
 from openedx.core.lib.exceptions import CourseNotFoundError
 from openedx.core.lib.log_utils import audit_log
-from openedx.features.enterprise_support.api import (
-    ConsentApiServiceClient,
-    EnterpriseApiException,
-    EnterpriseApiServiceClient,
-    enterprise_enabled,
-)
+from openedx_filters.learning.filters import CourseEnrollmentViewStarted
 
 log = logging.getLogger(__name__)
 REQUIRED_ATTRIBUTES = {
@@ -774,26 +769,18 @@ class EnrollmentListView(APIView, ApiKeyPermissionMixIn):
                     data={"message": ("'{value}' is an invalid enrollment activation status.").format(value=is_active)},
                 )
 
-            explicit_linked_enterprise = request.data.get("linked_enterprise_customer")
-            if explicit_linked_enterprise and has_api_key_permissions and enterprise_enabled():
-                enterprise_api_client = EnterpriseApiServiceClient()
-                consent_client = ConsentApiServiceClient()
-                try:
-                    enterprise_api_client.post_enterprise_course_enrollment(username, str(course_id))
-                except EnterpriseApiException as error:
-                    log.exception(
-                        "An unexpected error occurred while creating the new EnterpriseCourseEnrollment "
-                        "for user [%s] in course run [%s]",
-                        username,
-                        course_id,
-                    )
-                    raise CourseEnrollmentError(str(error))  # lint-amnesty, pylint: disable=raise-missing-from
-                kwargs = {
-                    "username": username,
-                    "course_id": str(course_id),
-                    "enterprise_customer_uuid": explicit_linked_enterprise,
-                }
-                consent_client.provide_consent(**kwargs)
+            # Filter hook that allows plugins (e.g., Enterprise) to run enrollment-related logic
+            # and optionally prevent enrollment via CourseEnrollmentViewStarted.PreventEnrollment.
+            try:
+                # .. filter_implemented_name: CourseEnrollmentViewStarted
+                # .. filter_type: org.openedx.learning.course.enrollment.view.started.v1
+                CourseEnrollmentViewStarted.run_filter(
+                    user=user,
+                    course_key=course_id,
+                    requester_is_backend_service=has_api_key_permissions,
+                )
+            except CourseEnrollmentViewStarted.PreventEnrollment as exc:
+                raise CourseEnrollmentError(str(exc)) from exc
 
             enrollment_attributes = request.data.get("enrollment_attributes")
             force_enrollment = request.data.get("force_enrollment")
