@@ -9,7 +9,7 @@ from completion.models import BlockCompletion
 from completion.utilities import get_key_to_last_completed_block  # lint-amnesty, pylint: disable=wrong-import-order
 from django.conf import settings  # lint-amnesty, pylint: disable=wrong-import-order
 from django.core.cache import cache
-from django.contrib.auth.models import User  # lint-amnesty, pylint:
+from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404  # lint-amnesty, pylint: disable=wrong-import-order
 from django.urls import reverse  # lint-amnesty, pylint: disable=wrong-import-order
 from django.utils.translation import gettext as _  # lint-amnesty, pylint: disable=wrong-import-order
@@ -195,10 +195,8 @@ class OutlineTabView(RetrieveAPIView):
         monitoring_utils.set_custom_attribute('course_id', course_key_string)
         monitoring_utils.set_custom_attribute('user_id', user.id)
         monitoring_utils.set_custom_attribute('is_staff', user.is_staff)
-
-        course = get_course_or_403(user, 'load', course_key, check_if_enrolled=False)
-
-        masquerade_object, user = setup_masquerade(
+        
+        masquerade_object, request.user = setup_masquerade(
             request,
             course_key,
             staff_access=has_access(user, 'staff', course_key),
@@ -210,12 +208,14 @@ class OutlineTabView(RetrieveAPIView):
         # Check if the user is masquerading as a student and get the masqueraded user object
         if user_is_masquerading and masquerade_object.role == 'student':
             try:
+                User = get_user_model()
                 # If the masqueraded user does not exist, we will continue with the original user object.
                 username = masquerade_object.user_name or 'audit'
                 user = User.objects.get(username=username)
             except User.DoesNotExist:
                 pass
 
+        course = get_course_or_403(user, 'load', course_key, check_if_enrolled=False)
         course_overview = get_course_overview_or_404(course_key)
         enrollment = CourseEnrollment.get_enrollment(user, course_key)
         enrollment_mode = getattr(enrollment, 'mode', None)
