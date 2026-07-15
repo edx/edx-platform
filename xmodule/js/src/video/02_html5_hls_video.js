@@ -23,7 +23,7 @@
                     var self = this;
 
                     this.config = config;
-                    this.hlsNetworkErrorRetries = {};
+                    this.hlsNetworkErrorRetries = Object.create(null);
 
                     // do common initialization independent of player type
                     this.init(el, config);
@@ -142,7 +142,7 @@
                                     '[HLS Video]: Stopped retrying repeated fatal network error. Details: %s',
                                     data.details
                                 );
-                                if (this.hls.stopLoad) {
+                                if (typeof this.hls.stopLoad === 'function') {
                                     this.hls.stopLoad();
                                 }
                             }
