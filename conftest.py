@@ -5,7 +5,6 @@ Default unit test configuration and fixtures.
 from unittest import TestCase
 
 import pytest
-from django.conf import settings
 
 # Import hooks and fixture overrides from the cms package to
 # avoid duplicating the implementation
@@ -19,14 +18,20 @@ TestCase.maxDiff = None
 
 
 @pytest.fixture(autouse=True)
-def create_edxnotes_oauth_client(db):
+def create_edxnotes_oauth_client(request):
     """
-    Create edx-notes OAuth2 Application for all tests when
-    ENABLE_EDXNOTES is enabled and the setting is configured.
+    Create edx-notes OAuth2 Application for tests that have DB access
+    when ENABLE_EDXNOTES is enabled.
+    """
+    from django.test import SimpleTestCase, TestCase as DjangoTestCase
 
-    Uses direct model creation to avoid creating an extra User
-    (which breaks tests that count users or look them up by unique fields).
-    """
+    # Only run for tests with DB access.
+    if request.cls:
+        if issubclass(request.cls, SimpleTestCase) and not issubclass(request.cls, DjangoTestCase):
+            return
+
+    from django.conf import settings
+
     client_name = getattr(settings, 'EDXNOTES_CLIENT_NAME', None)
     if not client_name:
         return
