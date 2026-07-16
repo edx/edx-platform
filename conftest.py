@@ -23,6 +23,9 @@ def create_edxnotes_oauth_client(db):
     """
     Create edx-notes OAuth2 Application for all tests when
     ENABLE_EDXNOTES is enabled and the setting is configured.
+
+    Uses direct model creation to avoid creating an extra User
+    (which breaks tests that count users or look them up by unique fields).
     """
     client_name = getattr(settings, 'EDXNOTES_CLIENT_NAME', None)
     if not client_name:
@@ -32,7 +35,11 @@ def create_edxnotes_oauth_client(db):
         return
 
     from oauth2_provider.models import Application
-    from openedx.core.djangoapps.oauth_dispatch.tests.factories import ApplicationFactory
 
     if not Application.objects.filter(name=client_name).exists():
-        ApplicationFactory(name=client_name)
+        Application.objects.create(
+            name=client_name,
+            user=None,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
+        )
