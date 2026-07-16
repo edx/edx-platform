@@ -31,6 +31,10 @@ def create_edxnotes_oauth_client(request):
     if not issubclass(request.cls, TransactionTestCase):
         return
 
+    # Skip for edxnotes tests; they create their own Application.
+    if 'edxnotes' in request.node.module.__name__:
+        return
+
     from django.conf import settings
 
     client_name = getattr(settings, 'EDXNOTES_CLIENT_NAME', None)
