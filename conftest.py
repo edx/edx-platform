@@ -23,12 +23,13 @@ def create_edxnotes_oauth_client(request):
     Create edx-notes OAuth2 Application for tests that have DB access
     when ENABLE_EDXNOTES is enabled.
     """
-    from django.test import SimpleTestCase, TestCase as DjangoTestCase
+    from django.test import TransactionTestCase
 
-    # Only run for tests with DB access.
-    if request.cls:
-        if issubclass(request.cls, SimpleTestCase) and not issubclass(request.cls, DjangoTestCase):
-            return
+    # Only run for Django class-based tests with DB access.
+    if not request.cls:
+        return
+    if not issubclass(request.cls, TransactionTestCase):
+        return
 
     from django.conf import settings
 
