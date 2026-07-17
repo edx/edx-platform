@@ -100,9 +100,9 @@ class IDVerificationAttempt(StatusModel):
     their identity through one of several methods that inherit from this Model,
     including PhotoVerification and SSOVerification.
 
-    .. pii: The User's name is stored in this and sub-models
+    .. pii: The User's name is stored in this and sub-models.
     .. pii_types: name
-    .. pii_retirement: retained
+    .. pii_retirement: local_api
     """
     STATUS = Choices('created', 'ready', 'submitted', 'must_retry', 'approved', 'denied')
     user = models.ForeignKey(User, db_index=True, on_delete=models.CASCADE)
@@ -303,7 +303,7 @@ class PhotoVerification(IDVerificationAttempt):
 
     .. pii: The User's name is stored in the parent model, this one stores links to face and photo ID images
     .. pii_types: name, image
-    .. pii_retirement: retained
+    .. pii_retirement: local_api
     """
     ######################## Fields Set During Creation ########################
     # See class docstring for description of status states
@@ -631,7 +631,7 @@ class SoftwareSecurePhotoVerification(PhotoVerification):
 
     .. pii: The User's name is stored in the parent model, this one stores links to face and photo ID images
     .. pii_types: name, image
-    .. pii_retirement: retained
+    .. pii_retirement: local_api
     """
     # This is a base64.urlsafe_encode(rsa_encrypt(photo_id_aes_key), ss_pub_key)
     # So first we generate a random AES-256 key to encrypt our photo ID with.
