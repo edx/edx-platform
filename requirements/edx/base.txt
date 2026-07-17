@@ -1120,12 +1120,14 @@ snowflake-connector-python==4.2.0
     # via enterprise-integrated-channels
 social-auth-app-django==5.4.1
     # via
+    #   -c requirements/common_constraints.txt
     #   -c requirements/constraints.txt
     #   -r requirements/edx/kernel.in
     #   edx-auth-backends
     #   edx-enterprise
 social-auth-core==4.7.0
     # via
+    #   -c requirements/common_constraints.txt
     #   -r requirements/edx/kernel.in
     #   edx-auth-backends
     #   social-auth-app-django
