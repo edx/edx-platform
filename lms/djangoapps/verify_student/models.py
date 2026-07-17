@@ -46,6 +46,7 @@ from lms.djangoapps.verify_student.ssencrypt import (
 )
 from common.djangoapps.util.storage import resolve_storage_backend
 from openedx.core.djangoapps.signals.signals import LEARNER_SSO_VERIFIED, PHOTO_VERIFICATION_APPROVED
+from openedx.core.djangolib.model_mixins import DeletableByUserValue
 
 from .utils import auto_verify_for_testing_enabled, earliest_allowed_verification_date, submit_request_to_ss
 
@@ -161,10 +162,13 @@ class IDVerificationAttempt(StatusModel):
         )
 
 
-class ManualVerification(IDVerificationAttempt):
+class ManualVerification(IDVerificationAttempt, DeletableByUserValue):
     """
     Each ManualVerification represents a user's verification that bypasses the need for
     any other verification.
+
+    The PII is retained by default, but can be redacted during retirement
+    by enabling ``REDACT_MANUAL_VERIFICATION_HISTORICAL_PII``.
 
     .. pii: The User's name is stored in the parent model
     .. pii_types: name
@@ -193,6 +197,13 @@ class ManualVerification(IDVerificationAttempt):
         Whether or not the status should be displayed to the user.
         """
         return False
+
+    @classmethod
+    def redact_before_delete_fields(cls):
+        """
+        Clear PII fields before delete in downstream soft-delete systems.
+        """
+        return {'name': ''}
 
 
 class SSOVerification(IDVerificationAttempt):
