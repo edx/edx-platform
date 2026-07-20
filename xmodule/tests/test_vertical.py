@@ -304,6 +304,45 @@ class VerticalBlockTestCase(BaseVerticalBlockTest):
 
         assert should_block == has_access_error
 
+    def test_block_has_access_error_uses_selected_children_for_dynamic_blocks(self):
+        """
+        Tests block_has_access_error only checks selected children for dynamic blocks.
+        """
+        selected_child = Mock()
+        selected_child.has_access_error = False
+        selected_child.get_children.return_value = []
+
+        dynamic_child = Mock()
+        dynamic_child.has_access_error = False
+        dynamic_child.has_dynamic_children.return_value = True
+        dynamic_child.get_child_blocks.return_value = [selected_child]
+        dynamic_child.get_children.side_effect = AssertionError('Unselected children should not be inspected')
+
+        should_block = self.vertical.block_has_access_error(dynamic_child)
+
+        assert not should_block
+        dynamic_child.get_child_blocks.assert_called_once()
+        dynamic_child.get_children.assert_not_called()
+
+    def test_block_has_access_error_detects_selected_dynamic_child_access_error(self):
+        """
+        Tests block_has_access_error still detects access errors on selected dynamic children.
+        """
+        selected_child = Mock()
+        selected_child.has_access_error = True
+
+        dynamic_child = Mock()
+        dynamic_child.has_access_error = False
+        dynamic_child.has_dynamic_children.return_value = True
+        dynamic_child.get_child_blocks.return_value = [selected_child]
+        dynamic_child.get_children.side_effect = AssertionError('Unselected children should not be inspected')
+
+        should_block = self.vertical.block_has_access_error(dynamic_child)
+
+        assert should_block
+        dynamic_child.get_child_blocks.assert_called_once()
+        dynamic_child.get_children.assert_not_called()
+
     @ddt.unpack
     @ddt.data(
         (True, 0.9, True),

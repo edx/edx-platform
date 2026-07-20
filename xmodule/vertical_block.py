@@ -108,10 +108,8 @@ class VerticalBlock(
         child_context['child_of_vertical'] = True
         is_child_of_vertical = context.get('child_of_vertical', False)
 
-        # pylint: disable=no-member
         for child in child_blocks:
-            child_has_access_error = self.block_has_access_error(child)
-            if context.get('hide_access_error_blocks') and child_has_access_error:
+            if context.get('hide_access_error_blocks') and self.block_has_access_error(child):
                 continue
             child_block_context = copy(child_context)
             if child in list(child_blocks_to_complete_on_view):
@@ -189,8 +187,16 @@ class VerticalBlock(
         if has_access_error:
             return True
 
-        # Check child nodes if they exist (e.g. randomized library question aka LegacyLibraryContentBlock)
-        for child in block.get_children():
+        # Dynamic blocks, such as randomized library content, should only
+        # inspect the child blocks selected for the learner.
+        has_dynamic_children = getattr(block, 'has_dynamic_children', None)
+        get_child_blocks = getattr(block, 'get_child_blocks', None)
+        if callable(has_dynamic_children) and has_dynamic_children() and callable(get_child_blocks):
+            child_blocks = get_child_blocks()
+        else:
+            child_blocks = block.get_children()
+
+        for child in child_blocks:
             has_access_error = getattr(child, 'has_access_error', False)
             if has_access_error:
                 return True
