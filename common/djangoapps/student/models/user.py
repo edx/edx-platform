@@ -1318,11 +1318,10 @@ def log_successful_login(sender, request, user, **kwargs):  # lint-amnesty, pyli
             'event_type': "login",
         }
     )
-    user_identifier_for_log = (
-        user.id if getattr(settings, 'SQUELCH_PII_IN_LOGS', False)
-        else f"{user.username} ({user.email})"
-    )
-    AUDIT_LOG.info(f"Login success - {user_identifier_for_log}")
+    if settings.SQUELCH_PII_IN_LOGS:
+        AUDIT_LOG.info(f"Login success - user.id: {user.id}")
+    else:
+        AUDIT_LOG.info(f"Login success - {user.username} ({user.email})")
 
 
 @receiver(user_logged_out)
@@ -1336,11 +1335,10 @@ def log_successful_logout(sender, request, user, **kwargs):  # lint-amnesty, pyl
                 'event_type': "logout",
             }
         )
-        user_identifier_for_log = (
-            request.user.id if getattr(settings, 'SQUELCH_PII_IN_LOGS', False)
-            else request.user
-        )
-        AUDIT_LOG.info(f'Logout - {user_identifier_for_log}')  # pylint: disable=logging-format-interpolation
+        if settings.SQUELCH_PII_IN_LOGS:
+            AUDIT_LOG.info(f'Logout - user.id: {request.user.id}')  # pylint: disable=logging-format-interpolation
+        else:
+            AUDIT_LOG.info(f'Logout - {request.user}')  # pylint: disable=logging-format-interpolation
         if request.user.id:
             segment.track(request.user.id, 'edx.bi.user.account.logout')
 
