@@ -308,10 +308,9 @@ class VerticalBlockTestCase(BaseVerticalBlockTest):
         """
         Tests block_has_access_error only checks selected children for dynamic blocks.
         """
-        selected_child = Mock()
+        selected_child = Mock(spec_set=['has_access_error', 'get_children'])
         selected_child.has_access_error = False
         selected_child.get_children.return_value = []
-
         dynamic_child = Mock()
         dynamic_child.has_access_error = False
         dynamic_child.has_dynamic_children.return_value = True
