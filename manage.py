@@ -27,13 +27,17 @@ from openedx_filters.tooling import OpenEdxPublicFilter
 
 
 class ManagementCommandExecutionRequested(OpenEdxPublicFilter):
-    """Filter triggered before a management command is executed."""
+    """
+    Filter triggered before a management command is executed.
+    """
 
     filter_type = 'org.openedx.platform.management.command.execute.requested.v1'
 
     @classmethod
     def run_filter(cls, command_name, service_variant, command_runner):
-        """Run the management command execution pipeline."""
+        """
+        Run the management command execution pipeline.
+        """
         return cls.run_pipeline(
             command_name=command_name,
             service_variant=service_variant,
@@ -42,7 +46,9 @@ class ManagementCommandExecutionRequested(OpenEdxPublicFilter):
 
 
 def parse_args():
-    """Parse edx specific arguments to manage.py"""
+    """
+    Parse edx specific arguments to manage.py
+    """
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(title='system', description='edX service to run')
 
