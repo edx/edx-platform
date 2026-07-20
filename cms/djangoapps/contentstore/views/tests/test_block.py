@@ -2097,6 +2097,129 @@ class TestEditItem(TestEditItemSetup):
         self.assertEqual(unit1_usage_key, children[2])
         self.assertEqual(unit2_usage_key, children[1])
 
+    def test_duplicate_children_error(self):
+        """
+        Submitting a children list that repeats an existing child returns 400
+        and leaves the block unchanged.
+        """
+        resp = self.client.ajax_post(
+            self.seq_update_url,
+            data={
+                "children": [
+                    str(self.problem_usage_key),
+                    str(self.problem_usage_key),
+                ]
+            },
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.json(),
+            {"error": "Duplicate children are not allowed."},
+        )
+
+        # The sequential still has exactly one reference to the problem.
+        self.assertListEqual(
+            self.get_item_from_modulestore(self.seq_usage_key).children,
+            [self.problem_usage_key],
+        )
+
+    def test_duplicate_children_rejection_is_atomic(self):
+        """
+        A request combining duplicate children with other edits (fields) must
+        persist nothing at all. `data`/`fields` are applied to the in-memory
+        xblock BEFORE the children validation, so this proves the early
+        return discards them rather than saving a partial update.
+        """
+        original_display_name = self.get_item_from_modulestore(
+            self.seq_usage_key
+        ).display_name
+        resp = self.client.ajax_post(
+            self.seq_update_url,
+            data={
+                "children": [
+                    str(self.problem_usage_key),
+                    str(self.problem_usage_key),
+                ],
+                "fields": {"display_name": "Must not be saved"},
+            },
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            self.get_item_from_modulestore(self.seq_usage_key).display_name,
+            original_display_name,
+        )
+
+    def test_duplicate_children_does_not_reparent(self):
+        """
+        A rejected duplicate-children request must not mutate ANY structure —
+        in particular, a duplicated child that lives under another parent must
+        not be removed from that parent (the reparenting step must not run).
+        """
+        unit_1_key = self.response_usage_key(
+            self.create_xblock(
+                parent_usage_key=self.seq2_usage_key,
+                category="vertical",
+                display_name="unit 1",
+            )
+        )
+
+        # Try to move unit 1 into sequential 1, but with a duplicated entry.
+        resp = self.client.ajax_post(
+            self.seq_update_url,
+            data={
+                "children": [
+                    str(self.problem_usage_key),
+                    str(unit_1_key),
+                    str(unit_1_key),
+                ]
+            },
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.json(),
+            {"error": "Duplicate children are not allowed."},
+        )
+
+        # Neither the target nor the old parent changed.
+        self.assertListEqual(
+            self.get_item_from_modulestore(self.seq_usage_key).children,
+            [self.problem_usage_key],
+        )
+        self.assertListEqual(
+            self.get_item_from_modulestore(self.seq2_usage_key).children,
+            [unit_1_key],
+        )
+
+    def test_unique_children_order_preserved(self):
+        """
+        A valid unique children list is accepted and stored in exactly the
+        submitted order.
+        """
+        unit_1_key = self.response_usage_key(
+            self.create_xblock(
+                parent_usage_key=self.seq_usage_key, category="vertical"
+            )
+        )
+        unit_2_key = self.response_usage_key(
+            self.create_xblock(
+                parent_usage_key=self.seq_usage_key, category="vertical"
+            )
+        )
+
+        submitted_order = [
+            str(unit_2_key),
+            str(self.problem_usage_key),
+            str(unit_1_key),
+        ]
+        resp = self.client.ajax_post(
+            self.seq_update_url, data={"children": submitted_order}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertListEqual(
+            self.get_item_from_modulestore(self.seq_usage_key).children,
+            [unit_2_key, self.problem_usage_key, unit_1_key],
+        )
+
     def test_move_parented_child(self):
         """
         Test moving a child from one Section to another
