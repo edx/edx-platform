@@ -29,8 +29,6 @@ def create_edxnotes_oauth_client(request):
     if not request.cls:
         return
 
-   
-
     if not issubclass(request.cls, TransactionTestCase):
         return
 
@@ -38,16 +36,12 @@ def create_edxnotes_oauth_client(request):
     if request.node.module.__name__.startswith('lms.djangoapps.edxnotes.'):
         return
 
-
-
     client_name = getattr(settings, 'EDXNOTES_CLIENT_NAME', None)
     if not client_name:
         return
 
     if not getattr(settings, 'FEATURES', {}).get('ENABLE_EDXNOTES', False):
         return
-
- 
 
     Application.objects.get_or_create(
         name=client_name,
