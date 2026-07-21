@@ -4,11 +4,15 @@ Decorators related to edXNotes.
 
 
 import json
+import logging
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from xblock.exceptions import NoSuchServiceError
 
 from common.djangoapps.edxmako.shortcuts import render_to_string
+
+log = logging.getLogger(__name__)
 
 
 def edxnotes(cls):
@@ -49,8 +53,20 @@ def edxnotes(cls):
         if is_studio or not is_feature_enabled(course, user):
             return original_get_html(self, *args, **kwargs)
         else:
+            original_content = original_get_html(self, *args, **kwargs)
+            try:
+                token = get_edxnotes_id_token(user)
+                token_url = get_token_url(course.id)
+                endpoint = get_public_endpoint()
+            except ImproperlyConfigured as e:
+                log.warning(
+                    "EdxNotes OAuth2 client not configured, falling back to original HTML. Error: %s",
+                    str(e)
+                )
+                return original_content
+
             return render_to_string("edxnotes_wrapper.html", {
-                "content": original_get_html(self, *args, **kwargs),
+                "content": original_content,
                 "uid": generate_uid(),
                 "edxnotes_visibility": json.dumps(
                     getattr(self, 'edxnotes_visibility', course.edxnotes_visibility)
@@ -59,9 +75,9 @@ def edxnotes(cls):
                     # Use camelCase to name keys.
                     "usageId": self.scope_ids.usage_id,
                     "courseId": course.id,
-                    "token": get_edxnotes_id_token(user),
-                    "tokenUrl": get_token_url(course.id),
-                    "endpoint": get_public_endpoint(),
+                    "token": token,
+                    "tokenUrl": token_url,
+                    "endpoint": endpoint,
                     "debug": settings.DEBUG,
                     "eventStringLimit": settings.TRACK_MAX_EVENT / 6,
                 },
