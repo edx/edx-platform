@@ -35,7 +35,8 @@ def runchecks(include_extended=False):
                 'status': is_ok,
                 'message': message
             }
-            set_custom_attribute(f"heartbeat.status.{path}", is_ok)
+            if not is_ok:
+                set_custom_attribute(f"heartbeat.failure.{path}", message)
         except ImportError as e:
             raise ImproperlyConfigured(f'Error importing module {module}: "{e}"')  # lint-amnesty, pylint: disable=raise-missing-from
         except AttributeError:

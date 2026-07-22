@@ -29,10 +29,8 @@ class HeartbeatTestCase(ModuleStoreTestCase):
         response = self.client.get(self.heartbeat_url + '?extended')
 
         assert response.status_code == 200
-        # Spot-checking a success
-        mock_set_attribute.assert_any_call(
-            'heartbeat.status.openedx.core.djangoapps.heartbeat.default_checks.check_database', True
-        )
+        # We only annotate failing requests
+        mock_set_attribute.assert_not_called()
 
     def test_sql_fail(self):
         with patch('openedx.core.djangoapps.heartbeat.default_checks.connection') as mock_connection:
@@ -50,5 +48,5 @@ class HeartbeatTestCase(ModuleStoreTestCase):
             assert response.status_code == 503
         # Spot-checking a failure
         mock_set_attribute.assert_any_call(
-            'heartbeat.status.openedx.core.djangoapps.heartbeat.default_checks.check_modulestore', False
+            'heartbeat.failure.openedx.core.djangoapps.heartbeat.default_checks.check_modulestore', 'msg'
         )
