@@ -123,18 +123,18 @@ if __name__ == "__main__":
     def command_runner():
         return execute_from_command_line([sys.argv[0]] + django_args)
 
-    command_name = 'help'
-    if django_args and not django_args[0].startswith('-'):
-        command_name = django_args[0]
+    command_name = next((arg for arg in django_args if not arg.startswith('-')), 'help')
 
-    try:
-        pipeline_output = ManagementCommandExecutionRequested.run_filter(
-            command_name=command_name,
-            service_variant=os.environ.get("SERVICE_VARIANT", edx_args.service_variant),
-            command_runner=command_runner,
-        )
+    pipeline_output = ManagementCommandExecutionRequested.run_filter(
+        command_name=command_name,
+        service_variant=os.environ.get("SERVICE_VARIANT", edx_args.service_variant),
+        command_runner=command_runner,
+    )
+
+    runner = command_runner
+    if isinstance(pipeline_output, dict):
         runner = pipeline_output.get('command_runner', command_runner)
-    except Exception:  # pylint: disable=broad-except
+    if not callable(runner):
         runner = command_runner
 
     runner()
