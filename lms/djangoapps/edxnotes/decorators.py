@@ -58,11 +58,13 @@ def edxnotes(cls):
                 token = get_edxnotes_id_token(user)
                 token_url = get_token_url(course.id)
                 endpoint = get_public_endpoint()
-            except ImproperlyConfigured as e:
-                log.warning(
-                    "EdxNotes OAuth2 client not configured, falling back to original HTML. Error: %s",
-                    str(e)
-                )
+            except ImproperlyConfigured:
+                if not getattr(get_html, "_edxnotes_oauth_missing_logged", False):
+                    log.warning(
+                        "EdxNotes OAuth2 client not configured; falling back to original HTML.",
+                        exc_info=True,
+                    )
+                    get_html._edxnotes_oauth_missing_logged = True
                 return original_content
 
             return render_to_string("edxnotes_wrapper.html", {
