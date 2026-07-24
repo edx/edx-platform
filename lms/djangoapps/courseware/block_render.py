@@ -66,7 +66,12 @@ from lms.djangoapps.courseware.field_overrides import OverrideFieldData
 from lms.djangoapps.courseware.services import UserStateService
 from lms.djangoapps.grades.api import GradesUtilService
 from lms.djangoapps.lms_xblock.field_data import LmsFieldData
-from lms.djangoapps.lms_xblock.runtime import UserTagsService, lms_wrappers_aside, lms_applicable_aside_types
+from lms.djangoapps.lms_xblock.runtime import (
+    UserTagsService,
+    lms_applicable_aside_types,
+    lms_layout_asides,
+    lms_wrappers_aside,
+)
 from lms.djangoapps.verify_student.services import XBlockVerificationService
 from openedx.core.djangoapps.bookmarks.api import BookmarksService
 from openedx.core.djangoapps.crawlers.models import CrawlersConfig
@@ -644,6 +649,7 @@ def prepare_runtime_for_user(
     runtime.request_token = request_token
     runtime.wrap_asides_override = lms_wrappers_aside
     runtime.applicable_aside_types_override = lms_applicable_aside_types
+    runtime.layout_asides_override = partial(lms_layout_asides, wrap_aside=runtime.wrap_aside)
 
 
 def load_single_xblock(request, user_id, course_id, usage_key_string, course=None, will_recheck_access=False):

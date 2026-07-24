@@ -4,6 +4,7 @@ Module implementing `xblock.runtime.Runtime` functionality for the LMS
 
 from django.conf import settings
 from django.urls import reverse
+from web_fragments.fragment import Fragment
 
 from lms.djangoapps.lms_xblock.models import XBlockAsidesConfig
 from openedx.core.djangoapps.user_api.course_tag import api as user_course_tag_api
@@ -127,6 +128,38 @@ def lms_applicable_aside_types(block, applicable_aside_types=None):
         for aside_type in applicable_aside_types(block)
         if aside_type != 'acid_aside'
     ]
+
+
+def lms_layout_asides(block, context, frag, view_name, aside_frag_fns, wrap_aside=None):
+    """
+    Custom aside layout for the LMS.
+
+    XBlock's default `layout_asides` (xblock.runtime.Runtime.layout_asides) renders
+    aside content after the block's own content. summaryhook_aside (the Xpert Unit
+    Summary button) renders before instead; every other aside keeps the default
+    after-block placement.
+    """
+    before_content = []
+    after_content = []
+
+    result = Fragment()
+
+    for aside, aside_fn in aside_frag_fns:
+        aside_frag = wrap_aside(block, aside, view_name, aside_fn(block, context), context)
+        aside.save()
+        result.add_fragment_resources(aside_frag)
+
+        if aside.scope_ids.block_type == 'summaryhook_aside':
+            before_content.append(aside_frag.content)
+        else:
+            after_content.append(aside_frag.content)
+
+    result.add_content(''.join(before_content))
+    result.add_content(frag.content)
+    result.add_fragment_resources(frag)
+    result.add_content(''.join(after_content))
+
+    return result
 
 
 class UserTagsService:
