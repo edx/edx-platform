@@ -40,6 +40,9 @@ from openedx.features.content_type_gating.models import ContentTypeGatingConfig
 from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
 from openedx.features.course_duration_limits.access import get_user_course_duration, get_user_course_expiration_date
 from openedx.features.course_experience import course_home_url
+from openedx.features.course_experience.url_helpers import get_learning_mfe_home_url
+from lms.djangoapps.course_home_api.toggles import course_home_mfe_track_selection_is_active
+from openedx.features.enterprise_support.api import enterprise_customer_for_request
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.util.db import outer_atomic
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
@@ -145,6 +148,13 @@ class ChooseModeView(View):
                 course_id, request.user.username
             )
             return redirect('{}?{}'.format(reverse('dashboard'), params))
+
+        if course_home_mfe_track_selection_is_active(course_key):
+            return redirect(get_learning_mfe_home_url(
+                course_key=course_key,
+                url_fragment='track-selection',
+                # params=request.GET,
+            ))
 
         course_id = str(course_key)
         gated_content = ContentTypeGatingConfig.enabled_for_enrollment(

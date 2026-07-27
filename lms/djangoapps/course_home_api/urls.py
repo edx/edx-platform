@@ -16,6 +16,7 @@ from lms.djangoapps.course_home_api.outline.views import (
     unsubscribe_from_course_goal_by_token,
 )
 from lms.djangoapps.course_home_api.progress.views import ProgressTabView
+from lms.djangoapps.course_home_api.track_selection.views import TrackSelectionView
 
 # This API is a BFF ("backend for frontend") designed for the learning MFE. It's not versioned because there is no
 # guarantee of stability over time. It may change from one Open edX release to another. Don't write any scripts
@@ -81,5 +82,14 @@ urlpatterns += [
         fr'progress/{settings.COURSE_KEY_PATTERN}',
         ProgressTabView.as_view(),
         name='progress-tab'
+    ),
+]
+
+# Track selection (MFE injection)
+urlpatterns += [
+    re_path(
+        fr'track_selection/{settings.COURSE_KEY_PATTERN}',
+        TrackSelectionView.as_view(),
+        name='track-selection-tab'
     ),
 ]

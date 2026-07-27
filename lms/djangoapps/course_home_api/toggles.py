@@ -23,6 +23,19 @@ COURSE_HOME_MICROFRONTEND_PROGRESS_TAB = CourseWaffleFlag(
     f'{WAFFLE_FLAG_NAMESPACE}.course_home_mfe_progress_tab', __name__
 )
 
+# .. toggle_name: course_home.course_home_mfe_track_selection
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, GET /course_modes/choose/ redirects to the Learning MFE track
+#   selection page (plugin-owned UI). POST enrollment remains on edx-platform.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-07-27
+# .. toggle_target_removal_date: 2026-07-27
+# .. toggle_tickets: LP-837
+COURSE_HOME_MICROFRONTEND_TRACK_SELECTION = CourseWaffleFlag(
+    f'{WAFFLE_FLAG_NAMESPACE}.course_home_mfe_track_selection', __name__
+)
+
 
 # Waffle flag to enable new discussion sidebar view on course home page
 #
@@ -76,6 +89,13 @@ def course_home_mfe_progress_tab_is_active(course_key):
         not course_key.deprecated and
         COURSE_HOME_MICROFRONTEND_PROGRESS_TAB.is_enabled(course_key) and
         not DisableProgressPageStackedConfig.current(course_key=course_key).disabled
+    )
+
+
+def course_home_mfe_track_selection_is_active(course_key):
+    return (
+        not course_key.deprecated and
+        COURSE_HOME_MICROFRONTEND_TRACK_SELECTION.is_enabled(course_key)
     )
 
 
