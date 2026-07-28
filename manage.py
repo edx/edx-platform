@@ -22,27 +22,37 @@ defuse_xml_libs()
 import os
 import sys
 from argparse import ArgumentParser
+from contextlib import nullcontext
 
 from openedx_filters.tooling import OpenEdxPublicFilter
 
 
-class ManagementCommandExecutionRequested(OpenEdxPublicFilter):
+class ManagementCommandContextmanagerRequested(OpenEdxPublicFilter):
     """
     Filter triggered before a management command is executed.
+
+    Pipeline steps may provide a context manager to wrap command execution.
     """
 
-    filter_type = 'org.openedx.platform.management.command.execute.requested.v1'
+    filter_type = 'org.openedx.platform.management.command.contextmanager.requested.v1'
 
     @classmethod
-    def run_filter(cls, command_name, service_variant, command_runner):
+    def run_filter(cls, command_contextmanager, command_name, service_variant):
         """
-        Run the management command execution pipeline.
+        Run the management command context manager pipeline.
         """
-        return cls.run_pipeline(
+        pipeline_output = cls.run_pipeline(
+            command_contextmanager=command_contextmanager,
             command_name=command_name,
             service_variant=service_variant,
-            command_runner=command_runner,
         )
+
+        if isinstance(pipeline_output, dict):
+            contextmanager_result = pipeline_output.get('command_contextmanager', command_contextmanager)
+            if hasattr(contextmanager_result, '__enter__') and hasattr(contextmanager_result, '__exit__'):
+                return contextmanager_result
+
+        return command_contextmanager
 
 
 def parse_args():
@@ -120,21 +130,18 @@ if __name__ == "__main__":
 
     from django.core.management import execute_from_command_line
 
-    def command_runner():
-        return execute_from_command_line([sys.argv[0]] + django_args)
-
+    # django_args contains only the args that argparse did not consume.
+    # We treat the first non-option token as the Django command name.
+    # Example: django_args=['--verbosity', '2', 'migrate', '--noinput'] -> 'migrate'.
+    # If there is no non-option token (for example, django_args=['--help']),
+    # default to 'help' because Django will print command help in that case.
     command_name = next((arg for arg in django_args if not arg.startswith('-')), 'help')
 
-    pipeline_output = ManagementCommandExecutionRequested.run_filter(
+    command_contextmanager = ManagementCommandContextmanagerRequested.run_filter(
+        command_contextmanager=nullcontext(),
         command_name=command_name,
         service_variant=os.environ.get("SERVICE_VARIANT", edx_args.service_variant),
-        command_runner=command_runner,
     )
 
-    runner = command_runner
-    if isinstance(pipeline_output, dict):
-        runner = pipeline_output.get('command_runner', command_runner)
-    if not callable(runner):
-        runner = command_runner
-
-    runner()
+    with command_contextmanager:
+        execute_from_command_line([sys.argv[0]] + django_args)
