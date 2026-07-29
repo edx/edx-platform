@@ -130,12 +130,12 @@ if __name__ == "__main__":
 
     from django.core.management import execute_from_command_line
 
-    # django_args contains only the args that argparse did not consume.
-    # We treat the first non-option token as the Django command name.
-    # Example: django_args=['--verbosity', '2', 'migrate', '--noinput'] -> 'migrate'.
-    # If there is no non-option token (for example, django_args=['--help']),
-    # default to 'help' because Django will print command help in that case.
-    command_name = next((arg for arg in django_args if not arg.startswith('-')), 'help')
+    # django_args contains only args that argparse did not consume.
+    # Django treats the first positional token as the command name.
+    # Example: django_args=['migrate', '--noinput'] -> 'migrate'.
+    # If the first token is an option (for example, django_args=['--help']),
+    # default to 'help' so the filter sees a command-like label.
+    command_name = django_args[0] if django_args and not django_args[0].startswith('-') else 'help'
 
     command_contextmanager = ManagementCommandContextmanagerRequested.run_filter(
         command_contextmanager=nullcontext(),
