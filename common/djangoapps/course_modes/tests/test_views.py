@@ -27,6 +27,8 @@ from lms.djangoapps.verify_student.services import IDVerificationService
 from openedx.core.djangoapps.catalog.tests.mixins import CatalogIntegrationMixin
 from openedx.core.djangoapps.embargo.test_utils import restrict_course
 from openedx.core.djangoapps.theming.tests.test_util import with_comprehensive_theme
+from edx_toggles.toggles.testutils import override_waffle_flag
+from lms.djangoapps.course_home_api.toggles import COURSE_HOME_MICROFRONTEND_TRACK_SELECTION
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
@@ -106,6 +108,22 @@ class CourseModeViewTest(CatalogIntegrationMixin, UrlResetMixin, ModuleStoreTest
                 self.assertRedirects(response, reverse('dashboard'))
         else:
             assert response.status_code == 200
+
+    @override_waffle_flag(COURSE_HOME_MICROFRONTEND_TRACK_SELECTION, active=True)
+    def test_redirects_to_mfe_track_selection_when_waffle_enabled(self):
+        course = self.course_that_started
+        for mode in ('audit', 'verified'):
+            CourseModeFactory.create(mode_slug=mode, course_id=course.id)
+        CourseEnrollmentFactory(
+            is_active=True,
+            mode='audit',
+            course_id=course.id,
+            user=self.user,
+        )
+        url = reverse('course_modes_choose', args=[str(course.id)])
+        response = self.client.get(url)
+        mfe_url = f'{settings.LEARNING_MICROFRONTEND_URL}/course/{course.id}/track-selection'
+        self.assertRedirects(response, mfe_url, fetch_redirect_response=False)
 
     def test_no_id_redirect(self):
         # Create the course modes
