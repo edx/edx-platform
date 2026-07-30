@@ -660,6 +660,22 @@ class UserInfoCache(DjangoOrmFieldCache):
         return key.field_name
 
 
+def _children_for_field_data_cache(block):
+    """
+    Return child blocks whose field data should be prefetched for ``block``.
+
+    Dynamic blocks such as library_content expose a learner-specific subset via
+    ``get_child_blocks()``. Prefetching all modulestore children (``get_children()``)
+    loads user state for blocks that will never render for the current learner.
+    """
+    get_child_blocks = getattr(block, 'get_child_blocks', None)
+    has_dynamic_children = getattr(block, 'has_dynamic_children', None)
+    if callable(has_dynamic_children) and has_dynamic_children() and callable(get_child_blocks):
+        return list(get_child_blocks())
+
+    return list(block.get_children()) + list(block.get_required_block_descriptors())
+
+
 class FieldDataCache:
     """
     A cache of django model objects needed to supply the data
@@ -731,7 +747,7 @@ class FieldDataCache:
                 should be cached
         """
 
-        def get_child_blocks(block, depth, block_filter):
+        def collect_descendant_blocks(block, depth, block_filter):
             """
             Return a list of all child blocks down to the specified depth
             that match the block filter. Includes `block`
@@ -749,13 +765,13 @@ class FieldDataCache:
             if depth is None or depth > 0:
                 new_depth = depth - 1 if depth is not None else depth
 
-                for child in block.get_children() + block.get_required_block_descriptors():
-                    blocks.extend(get_child_blocks(child, new_depth, block_filter))
+                for child in _children_for_field_data_cache(block):
+                    blocks.extend(collect_descendant_blocks(child, new_depth, block_filter))
 
             return blocks
 
         with modulestore().bulk_operations(block.location.course_key):
-            blocks = get_child_blocks(block, depth, block_filter)
+            blocks = collect_descendant_blocks(block, depth, block_filter)
 
         self.add_blocks_to_cache(blocks)
 

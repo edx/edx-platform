@@ -13,7 +13,13 @@ from xblock.exceptions import KeyValueMultiSaveError
 from xblock.fields import BlockScope, Scope, ScopeIds
 
 from common.djangoapps.student.tests.factories import UserFactory
-from lms.djangoapps.courseware.model_data import DjangoKeyValueStore, FieldDataCache, InvalidScopeError
+from lms.djangoapps.courseware.model_data import (
+    DjangoKeyValueStore,
+    FieldDataCache,
+    InvalidScopeError,
+    UserStateCache,
+    _children_for_field_data_cache,
+)
 from lms.djangoapps.courseware.models import (
     StudentModule,
     XModuleStudentInfoField,
@@ -444,3 +450,100 @@ class TestStudentInfoStorage(OtherUserFailureTestMixin, StorageTestBase, TestCas
     storage_class = XModuleStudentInfoField
     other_key_factory = partial(DjangoKeyValueStore.Key, Scope.user_info, 2, 'mock_problem')  # user_id=2, not 1
     existing_field_name = "existing_field"
+
+
+class TestFieldDataCacheDynamicChildren(TestCase):
+    """Tests for dynamic-child handling in FieldDataCache descendant prefetch."""
+
+    def test_children_for_field_data_cache_uses_get_child_blocks(self):
+        """
+        Dynamic blocks should only expose learner-selected children for prefetch.
+        """
+        selected_child = Mock(name='selected_child')
+        dynamic_block = Mock(name='dynamic_block')
+        dynamic_block.has_dynamic_children.return_value = True
+        dynamic_block.get_child_blocks.return_value = [selected_child]
+        dynamic_block.get_children.side_effect = AssertionError(
+            'get_children should not be called for dynamic blocks'
+        )
+
+        assert _children_for_field_data_cache(dynamic_block) == [selected_child]
+        dynamic_block.get_child_blocks.assert_called_once_with()
+        dynamic_block.get_children.assert_not_called()
+
+    def test_children_for_field_data_cache_uses_get_children_for_static_blocks(self):
+        """
+        Static blocks should continue to prefetch all modulestore children.
+        """
+        static_child = Mock(name='static_child')
+        static_block = Mock(name='static_block')
+        static_block.has_dynamic_children.return_value = False
+        static_block.get_children.return_value = [static_child]
+        static_block.get_required_block_descriptors.return_value = []
+
+        assert _children_for_field_data_cache(static_block) == [static_child]
+        static_block.get_children.assert_called_once_with()
+        static_block.get_required_block_descriptors.assert_called_once_with()
+
+    @patch('lms.djangoapps.courseware.model_data.modulestore')
+    def test_add_block_descendents_prefetches_only_selected_dynamic_children(self, mock_modulestore):
+        """
+        add_block_descendents should not walk unselected modulestore children.
+        """
+        mock_modulestore.return_value.bulk_operations.return_value.__enter__ = Mock(return_value=None)
+        mock_modulestore.return_value.bulk_operations.return_value.__exit__ = Mock(return_value=False)
+
+        user_state_field = mock_field(Scope.user_state, 'state')
+
+        def configure_static_block(block):
+            block.get_children.return_value = []
+            block.get_required_block_descriptors.return_value = []
+            block.has_dynamic_children.return_value = False
+            block.fields.values.return_value = [user_state_field]
+            block.has_score = False
+            block.location = LOCATION('usage_id')
+
+        unselected_children = [Mock(name=f'unselected_{index}') for index in range(3)]
+        selected_children = [Mock(name='selected_0'), Mock(name='selected_1')]
+        for child in selected_children + unselected_children:
+            configure_static_block(child)
+
+        library_content = Mock(name='library_content')
+        library_content.has_dynamic_children.return_value = True
+        library_content.get_child_blocks.return_value = selected_children
+        library_content.get_children.return_value = unselected_children + selected_children
+        library_content.get_required_block_descriptors.return_value = []
+        library_content.fields.values.return_value = [user_state_field]
+        library_content.has_score = False
+        library_content.location = LOCATION('library_content')
+        library_content.location.course_key = COURSE_KEY
+
+        vertical = Mock(name='vertical')
+        vertical.has_dynamic_children.return_value = False
+        vertical.get_children.return_value = [library_content]
+        vertical.get_required_block_descriptors.return_value = []
+        vertical.fields.values.return_value = [user_state_field]
+        vertical.has_score = False
+        vertical.location = LOCATION('vertical')
+        vertical.location.course_key = COURSE_KEY
+
+        user = UserFactory.create(username='dynamic_children_user')
+        field_data_cache = FieldDataCache([], COURSE_KEY, user)
+
+        cached_blocks = []
+
+        def capture_cache_fields(fields, blocks, aside_types):  # lint-amnesty, pylint: disable=unused-argument
+            cached_blocks.extend(blocks)
+
+        with patch.object(UserStateCache, 'cache_fields', side_effect=capture_cache_fields):
+            field_data_cache.add_block_descendents(vertical)
+
+        cached_block_names = {block._mock_name for block in cached_blocks}  # pylint: disable=protected-access
+        assert 'vertical' in cached_block_names
+        assert 'library_content' in cached_block_names
+        assert 'selected_0' in cached_block_names
+        assert 'selected_1' in cached_block_names
+        assert 'unselected_0' not in cached_block_names
+        assert 'unselected_1' not in cached_block_names
+        assert 'unselected_2' not in cached_block_names
+        library_content.get_child_blocks.assert_called_once_with()
