@@ -24,35 +24,7 @@ import sys
 from argparse import ArgumentParser
 from contextlib import nullcontext
 
-from openedx_filters.tooling import OpenEdxPublicFilter
-
-
-class ManagementCommandContextmanagerRequested(OpenEdxPublicFilter):
-    """
-    Filter triggered before a management command is executed.
-
-    Pipeline steps may provide a context manager to wrap command execution.
-    """
-
-    filter_type = 'org.openedx.platform.management.command.contextmanager.requested.v1'
-
-    @classmethod
-    def run_filter(cls, command_contextmanager, command_name, service_variant):
-        """
-        Run the management command context manager pipeline.
-        """
-        pipeline_output = cls.run_pipeline(
-            command_contextmanager=command_contextmanager,
-            command_name=command_name,
-            service_variant=service_variant,
-        )
-
-        if isinstance(pipeline_output, dict):
-            contextmanager_result = pipeline_output.get('command_contextmanager', command_contextmanager)
-            if hasattr(contextmanager_result, '__enter__') and hasattr(contextmanager_result, '__exit__'):
-                return contextmanager_result
-
-        return command_contextmanager
+from openedx_filters.management.filters import ManagementCommandContextmanagerRequested
 
 
 def parse_args():
@@ -130,14 +102,11 @@ if __name__ == "__main__":
 
     from django.core.management import execute_from_command_line
 
-    # django_args contains only args that argparse did not consume.
-    # Django treats the first positional token as the command name.
-    # Example: django_args=['migrate', '--noinput'] -> 'migrate'.
-    # If the first token is an option (for example, django_args=['--help']),
-    # default to 'help' so the filter sees a command-like label.
-    command_name = django_args[0] if django_args and not django_args[0].startswith('-') else 'help'
+    # First unconsumed argument is treated as the Django command name (e.g. 'migrate', 'runserver').
+    # Falls back to 'no-argument' if django_args is empty.
+    command_name = django_args[0] if django_args else 'no-argument'
 
-    command_contextmanager = ManagementCommandContextmanagerRequested.run_filter(
+    command_contextmanager, _, _ = ManagementCommandContextmanagerRequested.run_filter(
         command_contextmanager=nullcontext(),
         command_name=command_name,
         service_variant=os.environ.get("SERVICE_VARIANT", edx_args.service_variant),
