@@ -153,7 +153,7 @@ class ChooseModeView(View):
             return redirect(get_learning_mfe_home_url(
                 course_key=course_key,
                 url_fragment='track-selection',
-                # params=request.GET,
+                params=request.GET,
             ))
 
         course_id = str(course_key)
