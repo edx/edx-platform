@@ -10,9 +10,7 @@ from opaque_keys.edx.keys import CourseKey
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 
-from ..toggles import (
-    learner_can_preview_verified_content,
-)
+from ..toggles import learner_can_preview_verified_content
 
 
 class TestLearnerCanPreviewVerifiedContent(TestCase):
