@@ -1,0 +1,19 @@
+docs/concepts/completion-sql-aggregate-plan.md
+  s_74f54147abdf3b::t_60906c145fdb29 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "8679e30fe69073a2ad91aca1725628e9f0a42b7e",
+  "prompts": {},
+  "sessions": {
+    "s_74f54147abdf3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc41c1a4-a0ea-4690-a6db-16c84abbf39d",
+        "model": "unknown"
+      },
+      "human_author": "Alexander Dusenbery <adusenbery@2u.com>"
+    }
+  }
+}
