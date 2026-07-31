@@ -4,6 +4,7 @@ Build JSON-serializable track selection page data for the Learning MFE.
 
 from __future__ import annotations
 
+import decimal
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -33,6 +34,13 @@ class TrackSelectionRedirect:
     """Indicates the caller should redirect instead of rendering the MFE page."""
 
     url: str
+
+
+@dataclass
+class TrackSelectionSubmissionError:
+    """Indicates track selection submission failed with a user-facing message."""
+
+    error: str
 
 
 def load_course_for_track_selection(course_key):
@@ -167,10 +175,65 @@ def get_track_selection_page_data(request, course_id: str) -> dict[str, Any] | T
         'course_name': course.display_name_with_default,
         'course_org': course.display_org_with_default,
         'course_num': course.display_number_with_default,
-        'course_modes_choose_url': reverse('course_modes_choose', kwargs={'course_id': course_id}),
         'fbe_is_on': fbe_is_on,
         'audit_access_deadline': audit_access_deadline,
         'track_links': get_verified_track_links(get_language()),
         'verified_mode': verified_payload,
         'audit_mode': audit_payload,
     }
+
+
+def submit_track_selection_choice(
+    request,
+    course_id: str,
+    mode: str,
+    contribution=None,
+) -> TrackSelectionRedirect | TrackSelectionSubmissionError:
+    """
+    Process a track selection choice from the Learning MFE.
+
+    Mirrors ChooseModeView.post so the MFE can submit via the BFF API.
+    """
+    course_key = CourseKey.from_string(course_id)
+    user = request.user
+    course = load_course_for_track_selection(course_key)
+
+    if course is None or not user.has_perm(ENROLL_IN_COURSE, course):
+        return TrackSelectionSubmissionError(error='Enrollment is closed')
+
+    allowed_modes = CourseMode.modes_for_course_dict(course_key)
+    requested_mode = mode
+
+    if requested_mode not in allowed_modes:
+        return TrackSelectionSubmissionError(error='Enrollment mode not supported')
+
+    if requested_mode == 'audit':
+        CourseEnrollment.enroll(request.user, course_key, CourseMode.AUDIT)
+        return _redirect_course_or_dashboard(course, course_key, user)
+
+    if requested_mode == 'honor':
+        CourseEnrollment.enroll(user, course_key, mode=requested_mode)
+        return _redirect_course_or_dashboard(course, course_key, user)
+
+    if requested_mode == 'verified':
+        amount = contribution or 0
+        try:
+            amount_value = decimal.Decimal(str(amount)).quantize(
+                decimal.Decimal('.01'),
+                rounding=decimal.ROUND_DOWN,
+            )
+        except decimal.InvalidOperation:
+            return TrackSelectionSubmissionError(error='Invalid amount selected.')
+
+        mode_info = allowed_modes[requested_mode]
+        if amount_value < mode_info.min_price:
+            return TrackSelectionSubmissionError(error='No selected price or selected price is too low.')
+
+        donation_for_course = request.session.get('donation_for_course', {})
+        donation_for_course[str(course_key)] = amount_value
+        request.session['donation_for_course'] = donation_for_course
+
+        verify_url = IDVerificationService.get_verify_location(course_id=course_key)
+        return TrackSelectionRedirect(url=verify_url)
+
+    return TrackSelectionSubmissionError(error='Enrollment mode not supported')

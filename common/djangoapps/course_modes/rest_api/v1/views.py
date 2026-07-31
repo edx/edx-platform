@@ -15,11 +15,17 @@ from rest_framework import status
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.rest_api.serializers import CourseModeSerializer
 from common.djangoapps.course_modes.toggles import course_modes_mfe_track_selection_is_active
-from common.djangoapps.course_modes.track_selection_data import TrackSelectionRedirect, get_track_selection_page_data
+from common.djangoapps.course_modes.track_selection_data import (
+    TrackSelectionRedirect,
+    TrackSelectionSubmissionError,
+    get_track_selection_page_data,
+    submit_track_selection_choice,
+)
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.core.lib.api.parsers import MergePatchParser
 
@@ -183,11 +189,12 @@ class CourseModesDetailView(CourseModesMixin, RetrieveUpdateDestroyAPIView):
             )
 
 
-class TrackSelectionView(RetrieveAPIView):
+class TrackSelectionView(APIView):
     """
-    GET api/course_modes/v1/track_selection/{course_id}
+    POST api/course_modes/v1/track_selection/{course_id}
 
-    Backend-for-frontend payload for the track selection plugin slot in frontend-app-learning.
+    Without a mode, returns track selection page data for the Learning MFE.
+    With a mode, processes the learner's track selection choice.
     """
 
     authentication_classes = (
@@ -197,11 +204,27 @@ class TrackSelectionView(RetrieveAPIView):
     )
     permission_classes = (IsAuthenticated,)
 
-    def get(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         course_id = kwargs.get('course_id')
         course_key = CourseKey.from_string(course_id)
 
         if not course_modes_mfe_track_selection_is_active(course_key):
+            raise Http404
+
+        mode = request.data.get('mode')
+        if mode:
+            contribution = request.data.get('contribution')
+            result = submit_track_selection_choice(request, course_id, mode, contribution)
+
+            if isinstance(result, TrackSelectionRedirect):
+                redirect_url = result.url
+                if not redirect_url.startswith(('http://', 'https://')):
+                    redirect_url = request.build_absolute_uri(redirect_url)
+                return Response({'redirect_url': redirect_url})
+
+            if isinstance(result, TrackSelectionSubmissionError):
+                return Response({'error': result.error}, status=status.HTTP_400_BAD_REQUEST)
+
             raise Http404
 
         result = get_track_selection_page_data(request, course_id)
