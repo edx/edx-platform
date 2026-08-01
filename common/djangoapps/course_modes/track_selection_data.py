@@ -35,15 +35,6 @@ from openedx.features.enterprise_support.api import enterprise_customer_for_requ
 from xmodule.modulestore.django import modulestore
 
 
-class PurchaseWorkflow:
-    """Query parameter values for single vs bulk ecommerce checkout."""
-
-    QUERY_PARAM = "purchase_workflow"
-    SINGLE = "single"
-    BULK = "bulk"
-    DEFAULT = SINGLE
-
-
 @dataclass
 class TrackSelectionRedirect:
     """Indicates the caller should redirect instead of rendering the MFE page."""
@@ -90,14 +81,12 @@ def get_professional_mode_redirect(
         professional_mode = modes.get(CourseMode.NO_ID_PROFESSIONAL_MODE) or modes.get(
             CourseMode.PROFESSIONAL
         )
-        purchase_workflow = request.GET.get(
-            PurchaseWorkflow.QUERY_PARAM, PurchaseWorkflow.DEFAULT
-        )
-        if purchase_workflow == PurchaseWorkflow.SINGLE and professional_mode.sku:
+        purchase_workflow = request.GET.get("purchase_workflow", "single")
+        if purchase_workflow == "single" and professional_mode.sku:
             redirect_url = ecommerce_service.get_checkout_page_url(
                 professional_mode.sku, course_run_keys=[course_id]
             )
-        if purchase_workflow == PurchaseWorkflow.BULK and professional_mode.bulk_sku:
+        if purchase_workflow == "bulk" and professional_mode.bulk_sku:
             redirect_url = ecommerce_service.get_checkout_page_url(
                 professional_mode.bulk_sku, course_run_keys=[course_id]
             )
