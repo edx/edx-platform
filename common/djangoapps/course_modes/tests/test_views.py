@@ -114,11 +114,11 @@ class CourseModeViewTest(CatalogIntegrationMixin, UrlResetMixin, ModuleStoreTest
     @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
     def test_redirects_to_mfe_track_selection_when_waffle_enabled(self):
         course = self.course_that_started
-        for mode in ("audit", "verified"):
+        for mode in (CourseMode.AUDIT, CourseMode.VERIFIED):
             CourseModeFactory.create(mode_slug=mode, course_id=course.id)
         CourseEnrollmentFactory(
             is_active=True,
-            mode="audit",
+            mode=CourseMode.AUDIT,
             course_id=course.id,
             user=self.user,
         )

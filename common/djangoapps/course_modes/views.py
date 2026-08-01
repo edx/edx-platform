@@ -28,6 +28,7 @@ from opaque_keys.edx.keys import CourseKey
 from common.djangoapps.course_modes.helpers import get_course_final_price, get_verified_track_links
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.toggles import course_modes_mfe_track_selection_is_active
+from common.djangoapps.course_modes.track_selection_data import PurchaseWorkflow
 from common.djangoapps.edxmako.shortcuts import render_to_response
 from common.djangoapps.util.date_utils import strftime_localized_html
 from lms.djangoapps.commerce.utils import EcommerceService
@@ -111,15 +112,17 @@ class ChooseModeView(View):
         # If there are both modes, default to 'no-id-professional'.
         has_enrolled_professional = (CourseMode.is_professional_slug(enrollment_mode) and is_active)
         if CourseMode.has_professional_mode(modes) and not has_enrolled_professional:
-            purchase_workflow = request.GET.get("purchase_workflow", "single")
+            purchase_workflow = request.GET.get(
+                PurchaseWorkflow.QUERY_PARAM, PurchaseWorkflow.DEFAULT
+            )
             redirect_url = IDVerificationService.get_verify_location(course_id=course_key)
             if ecommerce_service.is_enabled(request.user):
                 professional_mode = modes.get(CourseMode.NO_ID_PROFESSIONAL_MODE) or modes.get(CourseMode.PROFESSIONAL)
-                if purchase_workflow == "single" and professional_mode.sku:
+                if purchase_workflow == PurchaseWorkflow.SINGLE and professional_mode.sku:
                     redirect_url = ecommerce_service.get_checkout_page_url(
                         professional_mode.sku, course_run_keys=[course_id]
                     )
-                if purchase_workflow == "bulk" and professional_mode.bulk_sku:
+                if purchase_workflow == PurchaseWorkflow.BULK and professional_mode.bulk_sku:
                     redirect_url = ecommerce_service.get_checkout_page_url(
                         professional_mode.bulk_sku, course_run_keys=[course_id]
                     )
