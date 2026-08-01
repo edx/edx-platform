@@ -15,8 +15,12 @@ WAFFLE_FLAG_NAMESPACE = "course_modes"
 # .. toggle_creation_date: 2026-07-27
 # .. toggle_target_removal_date: 2027-01-27
 # .. toggle_tickets: LP-837
-COURSE_MODES_MFE_TRACK_SELECTION = CourseWaffleFlag(f"{WAFFLE_FLAG_NAMESPACE}.mfe_track_selection", __name__)
+COURSE_MODES_MFE_TRACK_SELECTION = CourseWaffleFlag(
+    f"{WAFFLE_FLAG_NAMESPACE}.mfe_track_selection", __name__
+)
 
 
 def course_modes_mfe_track_selection_is_active(course_key):
-    return not course_key.deprecated and COURSE_MODES_MFE_TRACK_SELECTION.is_enabled(course_key)
+    return not course_key.deprecated and COURSE_MODES_MFE_TRACK_SELECTION.is_enabled(
+        course_key
+    )

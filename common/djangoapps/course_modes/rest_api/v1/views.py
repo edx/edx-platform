@@ -208,33 +208,37 @@ class TrackSelectionView(APIView):
         """
         Return track selection page data, or process a track selection submission.
         """
-        course_id = kwargs.get('course_id')
+        course_id = kwargs.get("course_id")
         course_key = CourseKey.from_string(course_id)
 
         if not course_modes_mfe_track_selection_is_active(course_key):
             raise Http404
 
-        mode = request.data.get('mode')
+        mode = request.data.get("mode")
         if mode:
-            contribution = request.data.get('contribution')
-            result = submit_track_selection_choice(request, course_id, mode, contribution)
+            contribution = request.data.get("contribution")
+            result = submit_track_selection_choice(
+                request, course_id, mode, contribution
+            )
 
             if isinstance(result, TrackSelectionRedirect):
                 redirect_url = result.url
-                if not redirect_url.startswith(('http://', 'https://')):
+                if not redirect_url.startswith(("http://", "https://")):
                     redirect_url = request.build_absolute_uri(redirect_url)
-                return Response({'redirect_url': redirect_url})
+                return Response({"redirect_url": redirect_url})
 
             if isinstance(result, TrackSelectionSubmissionError):
-                return Response({'error': result.error}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": result.error}, status=status.HTTP_400_BAD_REQUEST
+                )
 
             raise Http404
 
         result = get_track_selection_page_data(request, course_id)
         if isinstance(result, TrackSelectionRedirect):
             redirect_url = result.url
-            if not redirect_url.startswith(('http://', 'https://')):
+            if not redirect_url.startswith(("http://", "https://")):
                 redirect_url = request.build_absolute_uri(redirect_url)
-            return Response({'redirect_url': redirect_url})
+            return Response({"redirect_url": redirect_url})
 
         return Response(result)

@@ -12,11 +12,15 @@ app_name = 'v1'
 
 urlpatterns = [
     re_path(
-        fr'^track_selection/{settings.COURSE_ID_PATTERN}/$',
+        rf"^track_selection/{settings.COURSE_ID_PATTERN}/$",
         views.TrackSelectionView.as_view(),
-        name='track-selection',
+        name="track-selection",
     ),
-    re_path(fr'^courses/{settings.COURSE_ID_PATTERN}/$', views.CourseModesView.as_view(), name='course_modes_list'),
+    re_path(
+        fr'^courses/{settings.COURSE_ID_PATTERN}/$',
+        views.CourseModesView.as_view(),
+        name='course_modes_list'
+    ),
     re_path(
         fr'^courses/{settings.COURSE_ID_PATTERN}/(?P<mode_slug>.*)$',
         views.CourseModesDetailView.as_view(),

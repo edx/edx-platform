@@ -114,17 +114,19 @@ class CourseModeViewTest(CatalogIntegrationMixin, UrlResetMixin, ModuleStoreTest
     @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
     def test_redirects_to_mfe_track_selection_when_waffle_enabled(self):
         course = self.course_that_started
-        for mode in ('audit', 'verified'):
+        for mode in ("audit", "verified"):
             CourseModeFactory.create(mode_slug=mode, course_id=course.id)
         CourseEnrollmentFactory(
             is_active=True,
-            mode='audit',
+            mode="audit",
             course_id=course.id,
             user=self.user,
         )
-        url = reverse('course_modes_choose', args=[str(course.id)])
+        url = reverse("course_modes_choose", args=[str(course.id)])
         response = self.client.get(url)
-        mfe_url = f'{settings.LEARNING_MICROFRONTEND_URL}/course/{course.id}/track-selection'
+        mfe_url = (
+            f"{settings.LEARNING_MICROFRONTEND_URL}/course/{course.id}/track-selection"
+        )
         self.assertRedirects(response, mfe_url, fetch_redirect_response=False)
 
     def test_no_id_redirect(self):
