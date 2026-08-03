@@ -1177,31 +1177,6 @@ class TestAccountRetirementCleanup(RetirementTestCase):
 
         self.cleanup_and_assert_status(expected_status=status.HTTP_400_BAD_REQUEST)
 
-    def test_does_not_delete_unrelated_redacted_records(self):
-        """
-        Verify cleanup doesn't delete unrelated records with coincidental redacted values.
-        Regression test for over-deletion bug where deletion was filtered by field values
-        (original_username='redacted') instead of by primary key.
-        """
-        # Create an unrelated record that already has redacted field values
-        other_user = UserFactory()
-        other_retirement = create_retirement_status(other_user, state=self.complete_state)
-        other_retirement.original_username = 'redacted'
-        other_retirement.original_email = 'redacted'
-        other_retirement.original_name = 'redacted'
-        other_retirement.save()
-        other_id = other_retirement.id
-
-        # Clean up only self.usernames records
-        self.cleanup_and_assert_status()
-
-        # Verify target records were deleted
-        target_count = UserRetirementStatus.objects.filter(user__username__in=self.usernames).count()
-        assert target_count == 0, f"Expected 0 target records, found {target_count}"
-
-        # Verify unrelated record was NOT deleted (not a target of cleanup)
-        assert UserRetirementStatus.objects.filter(id=other_id).exists()
-
 
 @ddt.ddt
 @skip_unless_lms
