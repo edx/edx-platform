@@ -1141,6 +1141,7 @@ class TestAccountRetirementCleanup(RetirementTestCase):
         assert target_count == 0, f"Expected 0 target records, found {target_count}"
         # Verify unrelated record was NOT deleted (not a target of cleanup)
         assert UserRetirementStatus.objects.filter(id=other_id).exists()
+
     def test_leaves_other_users(self):
         remaining_usernames = []
 
