@@ -232,6 +232,18 @@ class TestItemBankForLms(ItemBankTestBase):
         # Check that get_content_titles() doesn't return titles for hidden/unused children
         assert len(self.item_bank.get_content_titles()) == 1
 
+    def test_prefetch_child_blocks_does_not_publish_or_persist_selection(self):
+        """
+        Read-only child selection should avoid analytics events and user-state writes.
+        """
+        self._bind_course_block(self.item_bank)
+
+        selected_children = self.item_bank.get_child_blocks_for_prefetch()
+
+        assert len(selected_children) == 1
+        self.publisher.assert_not_called()
+        assert self.item_bank.selected == []
+
     def test_overlimit_blocks_chosen_randomly(self):
         """
         Tests that blocks to remove from selected children are chosen
