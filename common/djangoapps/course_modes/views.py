@@ -19,17 +19,21 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
-from django.utils.translation import get_language, to_locale
+from django.utils.translation import get_language
 from django.utils.translation import gettext as _
+from django.utils.translation import to_locale
 from django.views.generic.base import View
 from edx_django_utils.monitoring.utils import increment
 from opaque_keys.edx.keys import CourseKey
+from openedx_filters.learning.filters import CourseModePriceRequested
 
-from common.djangoapps.course_modes.helpers import get_course_final_price, get_verified_track_links
+from common.djangoapps.course_modes.helpers import get_verified_track_links
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.toggles import course_modes_mfe_track_selection_is_active
 from common.djangoapps.edxmako.shortcuts import render_to_response
+from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.util.date_utils import strftime_localized_html
+from common.djangoapps.util.db import outer_atomic
 from lms.djangoapps.commerce.utils import EcommerceService
 from lms.djangoapps.experiments.utils import get_experiment_user_metadata_context
 from lms.djangoapps.verify_student.services import IDVerificationService
@@ -37,13 +41,11 @@ from openedx.core.djangoapps.catalog.utils import get_currency_data
 from openedx.core.djangoapps.embargo import api as embargo_api
 from openedx.core.djangoapps.enrollments.permissions import ENROLL_IN_COURSE
 from openedx.features.content_type_gating.models import ContentTypeGatingConfig
-from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
 from openedx.features.course_duration_limits.access import get_user_course_duration, get_user_course_expiration_date
+from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
 from openedx.features.course_experience import course_home_url
 from openedx.features.course_experience.url_helpers import get_learning_mfe_home_url
 from openedx.features.enterprise_support.api import enterprise_customer_for_request
-from common.djangoapps.student.models import CourseEnrollment
-from common.djangoapps.util.db import outer_atomic
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 
 LOG = logging.getLogger(__name__)
@@ -149,13 +151,11 @@ class ChooseModeView(View):
             return redirect('{}?{}'.format(reverse('dashboard'), params))
 
         if course_modes_mfe_track_selection_is_active(course_key):
-            return redirect(
-                get_learning_mfe_home_url(
-                    course_key=course_key,
-                    url_fragment="track-selection",
-                    params=request.GET,
-                )
-            )
+            return redirect(get_learning_mfe_home_url(
+                course_key=course_key,
+                url_fragment='track-selection',
+                # params=request.GET,
+            ))
 
         course_id = str(course_key)
         gated_content = ContentTypeGatingConfig.enabled_for_enrollment(
