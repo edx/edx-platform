@@ -5,6 +5,7 @@ Defines the "ReSTful" API for course modes.
 
 import logging
 
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from edx_rest_framework_extensions import permissions
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
@@ -12,10 +13,19 @@ from edx_rest_framework_extensions.auth.session.authentication import SessionAut
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import status
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from common.djangoapps.course_modes.rest_api.serializers import CourseModeSerializer
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.rest_api.serializers import CourseModeSerializer
+from common.djangoapps.course_modes.toggles import course_modes_mfe_track_selection_is_active
+from common.djangoapps.course_modes.track_selection_data import (
+    TrackSelectionRedirect,
+    TrackSelectionSubmissionError,
+    get_track_selection_page_data,
+    submit_track_selection_choice,
+)
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.core.lib.api.parsers import MergePatchParser
 
@@ -177,3 +187,58 @@ class CourseModesDetailView(CourseModesMixin, RetrieveUpdateDestroyAPIView):
                 status=status.HTTP_204_NO_CONTENT,
                 content_type='application/json',
             )
+
+
+class TrackSelectionView(APIView):
+    """
+    POST api/course_modes/v1/track_selection/{course_id}
+
+    Without a mode, returns track selection page data for the Learning MFE.
+    With a mode, processes the learner's track selection choice.
+    """
+
+    authentication_classes = (
+        JwtAuthentication,
+        BearerAuthenticationAllowInactiveUser,
+        SessionAuthenticationAllowInactiveUser,
+    )
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Return track selection page data, or process a track selection submission.
+        """
+        course_id = kwargs.get("course_id")
+        course_key = CourseKey.from_string(course_id)
+
+        if not course_modes_mfe_track_selection_is_active(course_key):
+            raise Http404
+
+        mode = request.data.get("mode")
+        if mode:
+            contribution = request.data.get("contribution")
+            result = submit_track_selection_choice(
+                request, course_id, mode, contribution
+            )
+
+            if isinstance(result, TrackSelectionRedirect):
+                redirect_url = result.url
+                if not redirect_url.startswith(("http://", "https://")):
+                    redirect_url = request.build_absolute_uri(redirect_url)
+                return Response({"redirect_url": redirect_url})
+
+            if isinstance(result, TrackSelectionSubmissionError):
+                return Response(
+                    {"error": result.error}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            raise Http404
+
+        result = get_track_selection_page_data(request, course_id)
+        if isinstance(result, TrackSelectionRedirect):
+            redirect_url = result.url
+            if not redirect_url.startswith(("http://", "https://")):
+                redirect_url = request.build_absolute_uri(redirect_url)
+            return Response({"redirect_url": redirect_url})
+
+        return Response(result)
