@@ -6,7 +6,7 @@ Views for the course_mode module
 import decimal
 import json
 import logging
-from urllib.parse import urljoin  # lint-amnesty, pylint: disable=wrong-import-order
+from urllib.parse import urljoin
 
 import six
 import waffle  # lint-amnesty, pylint: disable=invalid-django-waffle-import
@@ -45,7 +45,6 @@ from openedx.features.course_duration_limits.access import get_user_course_durat
 from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
 from openedx.features.course_experience import course_home_url
 from openedx.features.course_experience.url_helpers import get_learning_mfe_home_url
-from openedx.features.enterprise_support.api import enterprise_customer_for_request
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 
 LOG = logging.getLogger(__name__)
@@ -151,11 +150,13 @@ class ChooseModeView(View):
             return redirect('{}?{}'.format(reverse('dashboard'), params))
 
         if course_modes_mfe_track_selection_is_active(course_key):
-            return redirect(get_learning_mfe_home_url(
-                course_key=course_key,
-                url_fragment='track-selection',
-                # params=request.GET,
-            ))
+            return redirect(
+                get_learning_mfe_home_url(
+                    course_key=course_key,
+                    url_fragment="track-selection",
+                    params=request.GET,
+                )
+            )
 
         course_id = str(course_key)
         gated_content = ContentTypeGatingConfig.enabled_for_enrollment(
