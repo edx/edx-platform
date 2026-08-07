@@ -201,7 +201,8 @@
     }
 
     .accomplishment-type {
-      margin-top: -(map-get($spacing-vertical, mid-large));
+      margin-top: -(map-get($spacing-vertical, large));
+      margin-bottom: 0;
     }
 
     .accomplishment-type-symbol {
