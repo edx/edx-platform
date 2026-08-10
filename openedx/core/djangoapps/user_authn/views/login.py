@@ -10,6 +10,7 @@ import logging
 import re
 import urllib
 
+from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth import login as django_login
@@ -19,6 +20,7 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
+from django.core.validators import validate_email
 from django.views.decorators.csrf import csrf_exempt, csrf_protect, ensure_csrf_cookie
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods
@@ -50,6 +52,7 @@ from openedx.core.djangoapps.user_authn.config.waffle import ENABLE_LOGIN_USING_
 from openedx.core.djangoapps.user_authn.cookies import get_response_with_refreshed_jwt_cookies, set_logged_in_cookies
 from openedx.core.djangoapps.user_authn.exceptions import AuthFailedError, VulnerablePasswordError
 from openedx.core.djangoapps.user_authn.tasks import check_pwned_password_and_send_track_event
+from openedx.core.djangoapps.user_authn.views.registration_form import validate_username
 from openedx.core.djangoapps.user_authn.toggles import (
     is_require_third_party_auth_enabled,
     should_redirect_to_authn_microfrontend,
@@ -66,6 +69,8 @@ log = logging.getLogger("edx.student")
 AUDIT_LOG = logging.getLogger("audit")
 USER_MODEL = get_user_model()
 PASSWORD_RESET_INITIATED = "edx.user.passwordreset.initiated"
+LOGIN_INFO_ERROR = _("There was an error receiving your login information. Please email us.")
+LOGIN_INVALID_INPUT_EMAIL = "[invalid input]"
 
 
 def _do_third_party_auth(request):
@@ -125,6 +130,26 @@ def _get_user_by_username(username):
         return None
 
 
+def _validate_login_identifier(identifier):
+    """
+    Validate the submitted login identifier before any auth logic runs.
+    """
+    if "@" in identifier:
+        try:
+            validate_email(identifier)
+        except ValidationError as exc:
+            raise AuthFailedError(LOGIN_INFO_ERROR) from exc
+        return
+
+    if not accounts.USERNAME_MIN_LENGTH <= len(identifier) <= accounts.USERNAME_MAX_LENGTH:
+        raise AuthFailedError(LOGIN_INFO_ERROR)
+
+    try:
+        validate_username(identifier)
+    except ValidationError as exc:
+        raise AuthFailedError(LOGIN_INFO_ERROR)
+
+
 def _get_user_by_email_or_username(request, api_version):
     """
     Finds a user object in the database based on the given request, ignores all fields except for email and username.
@@ -135,7 +160,7 @@ def _get_user_by_email_or_username(request, api_version):
         login_fields = ["email_or_username", "password"]
 
     if any(f not in request.POST.keys() for f in login_fields):
-        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+        raise AuthFailedError(LOGIN_INFO_ERROR)
 
     email_or_username = request.POST.get("email", None) or request.POST.get("email_or_username", None)
     user = _get_user_by_email(email_or_username)
@@ -557,6 +582,7 @@ def login_user(request, api_version="v1"):  # pylint: disable=too-many-statement
     third_party_auth_requested = third_party_auth.is_enabled() and pipeline.running(request)
     first_party_auth_requested = any(bool(request.POST.get(p)) for p in ["email", "email_or_username", "password"])
     is_user_third_party_authenticated = False
+    user = None
 
     set_custom_attribute("login_user_course_id", request.POST.get("course_id"))
 
@@ -564,8 +590,13 @@ def login_user(request, api_version="v1"):  # pylint: disable=too-many-statement
         return HttpResponseForbidden(
             "Third party authentication is required to login. Username and password were received instead."
         )
-    possibly_authenticated_user = None
     try:
+        login_identifier = request.POST.get("email_or_username")
+        if login_identifier is None:
+            login_identifier = request.POST.get("email")
+        if login_identifier is not None:
+            _validate_login_identifier(login_identifier)
+
         if third_party_auth_requested and not first_party_auth_requested:
             # The user has already authenticated via third-party auth and has not
             # asked to do first party auth by supplying a username or password. We
@@ -682,10 +713,7 @@ def login_user(request, api_version="v1"):  # pylint: disable=too-many-statement
         error_code = response_content.get("error_code")
         if error_code:
             set_custom_attribute("login_error_code", error_code)
-        email_or_username_key = "email" if api_version == API_V1 else "email_or_username"
-        email_or_username = request.POST.get(email_or_username_key, None)
-        email_or_username = possibly_authenticated_user.email if possibly_authenticated_user else email_or_username
-        response_content["email"] = email_or_username
+        response_content["email"] = user.email if user else LOGIN_INVALID_INPUT_EMAIL
     except VulnerablePasswordError as error:
         response_content = error.get_response()
         log.exception(response_content)
