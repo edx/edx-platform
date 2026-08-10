@@ -1211,7 +1211,7 @@ class LoginSessionViewTest(ApiTestCase, OpenEdxEventsTestMixin):
             "password": "invalid"
         })
         self.assertHttpBadRequest(response)
-        self._assert_response(response, success=False, absent_keys=["email"])
+        self._assert_response(response, success=False, email_value=self.EMAIL)
 
         # Invalid email address
         response = self.client.post(self.url, {
@@ -1219,7 +1219,7 @@ class LoginSessionViewTest(ApiTestCase, OpenEdxEventsTestMixin):
             "password": self.PASSWORD,
         })
         self.assertHttpBadRequest(response)
-        self._assert_response(response, success=False, absent_keys=["email"])
+        self._assert_response(response, success=False, email_value="[invalid input]")
 
     @ddt.data(
         "bad input!",
