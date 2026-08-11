@@ -1035,6 +1035,7 @@ def insert_enterprise_pipeline_elements(pipeline):
     """
     additional_elements = (
         'enterprise.tpa_pipeline.handle_enterprise_logistration',
+        'channel_integrations.integrated_channel.pipeline.sync_tpa_budget_group',
     )
 
     insert_point = pipeline.index('social_core.pipeline.social_auth.load_extra_data')
