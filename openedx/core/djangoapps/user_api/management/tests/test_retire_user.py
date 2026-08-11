@@ -96,6 +96,30 @@ def test_successful_retire_with_userfile(setup_retirement_states):  # lint-amnes
 
 
 @skip_unless_lms
+def test_successful_retire_with_userfile_header(
+    setup_retirement_states
+):  # lint-amnesty, pylint: disable=redefined-outer-name, unused-argument
+    user = UserFactory.create(username='header-user', email="header-user@example.com")
+    username = user.username
+    user_email = user.email
+    with open(user_file, 'w', newline='') as file:
+        write = csv.writer(file)
+        write.writerow(['username', 'email'])
+        write.writerow([username, user_email])
+
+    try:
+        call_command('retire_user', user_file=user_file)
+        user = User.objects.get(username=username)
+        retired_user_status = UserRetirementStatus.objects.all()[0]
+        assert retired_user_status.original_username == username
+        assert retired_user_status.original_email == user_email
+        # Make sure that we have changed the email address linked to the original user
+        assert user.email != user_email
+    finally:
+        remove_user_file()
+
+
+@skip_unless_lms
 def test_retire_user_with_usename_email_mismatch(setup_retirement_states):  # lint-amnesty, pylint: disable=redefined-outer-name, unused-argument
     create_user_file(True)
     with pytest.raises(CommandError, match=r'Could not find users with specified username and email '):
