@@ -154,7 +154,13 @@ from openedx.features.course_experience.url_helpers import (
 from openedx.features.course_experience.utils import dates_banner_should_display
 from openedx.features.course_experience.waffle import ENABLE_COURSE_ABOUT_SIDEBAR_HTML
 
-from ..block_render import get_block, get_block_by_usage_id, get_block_for_descriptor
+from ..block_render import (
+    field_data_cache_depth_for_shell,
+    get_block,
+    get_block_by_usage_id,
+    get_block_for_descriptor,
+    should_use_shell_render,
+)
 from ..tabs import _get_dynamic_tabs
 from ..toggles import (
     COURSEWARE_OPTIMIZED_RENDER_XBLOCK,
@@ -1607,6 +1613,12 @@ def render_xblock(request, usage_key_string, check_if_enrolled=True, disable_sta
             f"Rendering of the xblock view '{nh3.clean(requested_view)}' is not supported."
         )
 
+    requested_render_mode = request.GET.get('render_mode', 'full')
+    if requested_render_mode not in ('full', 'shell'):
+        return HttpResponseBadRequest(
+            f"Unsupported render_mode '{nh3.clean(requested_render_mode)}'."
+        )
+
     staff_access = bool(has_access(request.user, 'staff', course_key))
     is_preview = request.GET.get('preview', '0') == '1'
 
@@ -1642,6 +1654,15 @@ def render_xblock(request, usage_key_string, check_if_enrolled=True, disable_sta
                 request.user, usage_key.course_key, request=request, only_if_mobile_app=True
             )
 
+            # Decide shell vs full before binding so FieldDataCache depth can stay shallow.
+            try:
+                unbound_block = store.get_item(usage_key)
+            except (ItemNotFoundError, NoPathToItem) as exc:
+                raise Http404("Block not found.") from exc
+            use_shell = should_use_shell_render(course_key, requested_render_mode, unbound_block)
+            set_custom_attribute('render_mode', 'shell' if use_shell else 'full')
+            cache_depth = field_data_cache_depth_for_shell(unbound_block) if use_shell else None
+
             # get the block, which verifies whether the user has access to the block.
             recheck_access = request.GET.get('recheck_access') == '1'
             block, _ = get_block_by_usage_id(
@@ -1651,11 +1672,13 @@ def render_xblock(request, usage_key_string, check_if_enrolled=True, disable_sta
                 disable_staff_debug_info=disable_staff_debug_info,
                 course=course,
                 will_recheck_access=recheck_access,
+                field_data_cache_depth=cache_depth,
             )
 
             student_view_context = request.GET.dict()
             student_view_context['show_bookmark_button'] = request.GET.get('show_bookmark_button', '0') == '1'
             student_view_context['show_title'] = request.GET.get('show_title', '1') == '1'
+            student_view_context['render_mode'] = 'shell' if use_shell else 'full'
 
             is_learning_mfe = is_request_from_learning_mfe(request)
             # Right now, we only care about this in regards to the Learning MFE because it results

@@ -57,3 +57,45 @@ class AddCssToFragmentTests(TestCase):
             mimetype='text/css',
             placement='head',
         )
+
+
+class AddWebpackJsToFragmentTests(TestCase):
+    """
+    Tests for add_webpack_js_to_fragment.
+    """
+
+    def _add_bundle(self, chunks):
+        """
+        Call add_webpack_js_to_fragment with get_files stubbed to return ``chunks``.
+        """
+        fragment = Fragment()
+        with patch('webpack_loader.utils.get_files', return_value=chunks):
+            builtin_assets.add_webpack_js_to_fragment(fragment, 'XModuleShim')
+        return fragment
+
+    def test_chunk_named_by_file(self):
+        """django-webpack-loader 1.x reports the asset's file name."""
+        fragment = self._add_bundle([{'name': 'XModuleShim.js', 'url': '/static/bundles/XModuleShim.js'}])
+        assert fragment.resources == [FragmentResource(
+            kind='url',
+            data='/static/bundles/XModuleShim.js',
+            mimetype='application/javascript',
+            placement='foot',
+        )]
+
+    def test_chunk_named_by_key(self):
+        """django-webpack-loader 2.x/3.x reports the chunk key, which has no extension."""
+        fragment = self._add_bundle([{'name': 'XModuleShim', 'url': '/static/bundles/XModuleShim.js'}])
+        assert fragment.resources == [FragmentResource(
+            kind='url',
+            data='/static/bundles/XModuleShim.js',
+            mimetype='application/javascript',
+            placement='foot',
+        )]
+
+    def test_non_js_chunks_are_skipped(self):
+        fragment = self._add_bundle([
+            {'name': 'XModuleShim', 'url': '/static/bundles/XModuleShim.css'},
+            {'name': 'XModuleShim', 'url': '/static/bundles/XModuleShim.js.map'},
+        ])
+        assert fragment.resources == []

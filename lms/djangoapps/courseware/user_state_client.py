@@ -6,7 +6,6 @@ data in a Django ORM model.
 
 import itertools
 import logging
-from operator import attrgetter
 from time import time
 
 from abc import abstractmethod
@@ -20,8 +19,36 @@ from django.db.utils import IntegrityError
 from edx_django_utils import monitoring as monitoring_utils
 from xblock.fields import Scope
 
-from lms.djangoapps.courseware.models import BaseStudentModuleHistory, StudentModule
+from common.djangoapps.util.query import use_read_replica_if_available
+from lms.djangoapps.courseware.models import BaseStudentModuleHistory, StudentModule, chunks
 
+# Prefer the fastest decoder available without adding new hard dependencies.
+# orjson is optional; simplejson is already pinned in edx-platform requirements.
+try:
+    import orjson as _fast_json
+
+    def loads_user_state(raw):
+        """Parse user-state JSON with orjson when installed."""
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            raw = raw.encode('utf-8')
+        return _fast_json.loads(raw)
+
+except ImportError:
+    try:
+        import simplejson as _fast_json
+    except ImportError:
+        import json as _fast_json  # lint-amnesty, pylint: disable=wrong-import-order
+
+    def loads_user_state(raw):
+        """Parse user-state JSON with simplejson/stdlib json."""
+        if raw is None:
+            return None
+        return _fast_json.loads(raw)
+
+# Encoder stays on simplejson/stdlib: orjson.dumps returns bytes, while StudentModule.state
+# is a text field and existing callers expect str.
 try:
     import simplejson as json
 except ImportError:
@@ -29,6 +56,140 @@ except ImportError:
 
 
 log = logging.getLogger(__name__)
+
+# When fetching fewer usage keys than this (per course), issue a single IN query
+# instead of going through ChunkingManager.chunked_filter. Matches the default
+# chunk size used by ChunkingManager.
+STUDENTMODULE_BULK_QUERY_THRESHOLD = 500
+
+# Columns needed to build XBlockUserState from StudentModule rows during get_many.
+# Omitting grade/max_grade/module_type/etc. reduces row transfer for large prefetches.
+STUDENTMODULE_GET_MANY_FIELDS = (
+    'state',
+    'modified',
+    'module_state_key',
+    'course_id',
+)
+
+
+def _is_empty_user_state_json(raw):
+    """
+    Return True when ``raw`` is a deleted/empty user-state sentinel.
+
+    Avoids a full JSON parse for the common ``"{}"`` deleted-state marker.
+    """
+    if raw is None:
+        return True
+    if not isinstance(raw, str):
+        return False
+    stripped = raw.strip()
+    return stripped in ('', '{}', 'null')
+
+
+class LazyUserState(dict):
+    """
+    Dict-like wrapper that defers JSON parsing until the first content access.
+
+    Used by :meth:`DjangoXBlockUserStateClient.get_many` so FieldDataCache can
+    prefetch many blocks without paying JSON CPU cost for blocks whose fields
+    are never read during the request (common after A1 narrows the tree but
+    some siblings still never render).
+
+    Once parsed, this object behaves as a normal ``dict``. Mutations
+    (``__setitem__``, ``update``, ``__delitem__``) force a parse first so
+    set/delete semantics stay consistent with eager dicts.
+    """
+    __slots__ = ('_raw', '_parsed')
+
+    def __init__(self, raw_json):
+        super().__init__()
+        # Use object.__setattr__ in case a future slots/dict mix changes behavior.
+        object.__setattr__(self, '_raw', raw_json)
+        object.__setattr__(self, '_parsed', False)
+
+    @property
+    def is_parsed(self):
+        """Whether the underlying JSON has been decoded."""
+        return object.__getattribute__(self, '_parsed')
+
+    def _ensure_parsed(self):
+        """Decode raw JSON into this dict on first field access."""
+        if object.__getattribute__(self, '_parsed'):
+            return
+        raw = object.__getattribute__(self, '_raw')
+        data = loads_user_state(raw) or {}
+        if data:
+            super().update(data)
+        object.__setattr__(self, '_raw', None)
+        object.__setattr__(self, '_parsed', True)
+
+    def __bool__(self):
+        # Yielded states are pre-filtered as non-empty; avoid parsing for truthiness.
+        if not object.__getattribute__(self, '_parsed'):
+            return True
+        return super().__len__() > 0
+
+    def __getitem__(self, key):
+        self._ensure_parsed()
+        return super().__getitem__(key)
+
+    def __setitem__(self, key, value):
+        self._ensure_parsed()
+        super().__setitem__(key, value)
+
+    def __delitem__(self, key):
+        self._ensure_parsed()
+        super().__delitem__(key)
+
+    def __contains__(self, key):
+        self._ensure_parsed()
+        return super().__contains__(key)
+
+    def __iter__(self):
+        self._ensure_parsed()
+        return super().__iter__()
+
+    def __len__(self):
+        self._ensure_parsed()
+        return super().__len__()
+
+    def get(self, key, default=None):
+        self._ensure_parsed()
+        return super().get(key, default)
+
+    def keys(self):
+        self._ensure_parsed()
+        return super().keys()
+
+    def items(self):
+        self._ensure_parsed()
+        return super().items()
+
+    def values(self):
+        self._ensure_parsed()
+        return super().values()
+
+    def update(self, *args, **kwargs):
+        self._ensure_parsed()
+        return super().update(*args, **kwargs)
+
+    def pop(self, key, *args):
+        self._ensure_parsed()
+        return super().pop(key, *args)
+
+    def copy(self):
+        self._ensure_parsed()
+        return dict(self)
+
+    def __eq__(self, other):
+        self._ensure_parsed()
+        return super().__eq__(other)
+
+    def __repr__(self):
+        if not object.__getattribute__(self, '_parsed'):
+            raw = object.__getattribute__(self, '_raw') or ''
+            return f'{self.__class__.__name__}(<unparsed len={len(raw)}>)'
+        return f'{self.__class__.__name__}({dict.__repr__(self)})'
 
 
 class XBlockUserState(namedtuple('_XBlockUserState', ['username', 'block_key', 'state', 'updated', 'scope'])):
@@ -46,6 +207,8 @@ class XBlockUserState(namedtuple('_XBlockUserState', ['username', 'block_key', '
                       * ``TYPE``: :class:`str`
                       * ``ALL``: ``None``
         state: A dict mapping field names to the values of those fields for this XBlock.
+            For :meth:`~DjangoXBlockUserStateClient.get_many` without ``fields``, this may be a
+            :class:`LazyUserState` that parses JSON on first access.
         updated: A :class:`datetime.datetime`. We guarantee that the fields
                  that were returned in "state" have not been changed since
                  this time (in UTC).
@@ -267,27 +430,78 @@ class DjangoXBlockUserStateClient(XBlockUserStateClient):
         """
         self.user = user
 
-    def _get_student_modules(self, username, block_keys):
+    def _bulk_query_threshold(self):
+        """Return the max usage-key count for a single StudentModule IN query."""
+        return getattr(
+            settings,
+            'STUDENTMODULE_BULK_QUERY_THRESHOLD',
+            STUDENTMODULE_BULK_QUERY_THRESHOLD,
+        )
+
+    def _student_module_query(self, username, course_key, usage_keys, *, read_only=False):
+        """
+        Build a StudentModule queryset for ``username`` / ``course_key`` / ``usage_keys``.
+
+        When ``read_only`` is True (prefetch / get_many), project only the columns
+        needed to build :class:`XBlockUserState` and prefer the read replica when
+        configured. Callers that mutate returned rows (e.g. delete_many) must leave
+        ``read_only`` False so the full model is loaded for safe saves.
+        """
+        query = StudentModule.objects.filter(
+            student__username=username,
+            course_id=course_key,
+            module_state_key__in=usage_keys,
+        )
+        if read_only:
+            query = query.only(*STUDENTMODULE_GET_MANY_FIELDS)
+            query = use_read_replica_if_available(query)
+        return query
+
+    def _get_student_modules(self, username, block_keys, *, read_only=False):
         """
         Retrieve the :class:`~StudentModule`s for the supplied ``username`` and ``block_keys``.
 
         Arguments:
             username (str): The name of the user to load `StudentModule`s for.
             block_keys (list of :class:`~UsageKey`): The set of XBlocks to load data for.
+            read_only (bool): If True, apply field projection and optional read-replica
+                routing suitable for get_many prefetch. Must be False when callers
+                will save the returned instances.
         """
-        course_key_func = attrgetter('course_key')
+        # Dynamic-children traversal (get_child_blocks) can hand back usage keys whose
+        # course_key is version/branch-pinned, mixed with unpinned keys from get_children().
+        # Comparing those two CourseLocator forms directly can raise TypeError (str vs
+        # None), so sort/group on a branch/version-agnostic key instead; StudentModule
+        # .course_id is stored unversioned anyway. Strip only what a key type supports:
+        # V2 library keys are learning contexts with no version concept and no
+        # for_version(), and blocks from them reach this client too.
+        def course_key_func(block_key):
+            context_key = block_key.course_key
+            for strip_name in ('for_branch', 'for_version'):
+                strip = getattr(context_key, strip_name, None)
+                if strip is not None:
+                    context_key = strip(None)
+            return context_key
+
         by_course = itertools.groupby(
-            sorted(block_keys, key=course_key_func),
+            sorted(block_keys, key=lambda block_key: str(course_key_func(block_key))),
             course_key_func,
         )
+        threshold = self._bulk_query_threshold()
 
         for course_key, usage_keys in by_course:
-            query = StudentModule.objects.chunked_filter(
-                'module_state_key__in',
-                usage_keys,
-                student__username=username,
-                course_id=course_key,
-            )
+            usage_keys = list(usage_keys)
+            if len(usage_keys) <= threshold:
+                query = self._student_module_query(
+                    username, course_key, usage_keys, read_only=read_only,
+                )
+            else:
+                query = itertools.chain.from_iterable(
+                    self._student_module_query(
+                        username, course_key, chunk, read_only=read_only,
+                    )
+                    for chunk in chunks(usage_keys, threshold)
+                )
 
             for student_module in query:
                 usage_key = student_module.module_state_key.map_into_course(student_module.course_id)
@@ -364,32 +578,43 @@ class DjangoXBlockUserStateClient(XBlockUserStateClient):
         # keep track of blocks requested
         self._nr_stat_accumulate('get_many', 'blocks_requested', len(block_keys))
 
-        modules = self._get_student_modules(username, block_keys)
+        db_start = time()
+        # Materialize so DB time is separable from JSON parse time below.
+        modules = list(self._get_student_modules(username, block_keys, read_only=True))
+        db_ms = (time() - db_start) * 1000  # milliseconds
+        self._nr_stat_accumulate('get_many', 'db_ms', db_ms)
+
+        parse_ms = 0.0
         for module, usage_key in modules:
-            if module.state is None:
+            if module.state is None or _is_empty_user_state_json(module.state):
                 continue
 
-            state = json.loads(module.state)
             state_length = len(module.state)
 
-            # If the state is the empty dict, then it has been deleted, and so
-            # conformant UserStateClients should treat it as if it doesn't exist.
-            if state == {}:
-                continue
+            if fields is not None:
+                # Field filtering requires a concrete dict.
+                parse_start = time()
+                state = loads_user_state(module.state)
+                parse_ms += (time() - parse_start) * 1000
+                if not state:
+                    continue
+                state = {
+                    field: state[field]
+                    for field in fields
+                    if field in state
+                }
+            else:
+                # Defer JSON CPU until a field is actually read (UserStateCache / KVS).
+                state = LazyUserState(module.state)
 
             # collect statistics for custom attribute reporting
             self._nr_block_stat_increment('get_many', usage_key.block_type, 'blocks_out')
             self._nr_block_stat_accumulate('get_many', usage_key.block_type, 'size', state_length)
             total_block_count += 1
 
-            # filter state on fields
-            if fields is not None:
-                state = {
-                    field: state[field]
-                    for field in fields
-                    if field in state
-                }
             yield XBlockUserState(username, usage_key, state, module.modified, scope)
+
+        self._nr_stat_accumulate('get_many', 'parse_ms', parse_ms)
 
         # The rest of this method exists only to report custom attributes.
         finish_time = time()
@@ -457,7 +682,7 @@ class DjangoXBlockUserStateClient(XBlockUserStateClient):
                 if student_module.state is None:
                     current_state = {}
                 else:
-                    current_state = json.loads(student_module.state)
+                    current_state = loads_user_state(student_module.state)
                 num_fields_before = len(current_state)
                 current_state.update(state)
                 num_fields_after = len(current_state)
@@ -517,7 +742,7 @@ class DjangoXBlockUserStateClient(XBlockUserStateClient):
             if fields is None:
                 student_module.state = "{}"
             else:
-                current_state = json.loads(student_module.state)
+                current_state = loads_user_state(student_module.state)
                 for field in fields:
                     if field in current_state:
                         del current_state[field]
@@ -568,7 +793,7 @@ class DjangoXBlockUserStateClient(XBlockUserStateClient):
 
             # If the state is serialized json, then load it
             if state is not None:
-                state = json.loads(state)
+                state = loads_user_state(state)
 
             # If the state is empty, then for the purposes of `get_history`, it has been
             # deleted, and so we list that entry as `None`.
@@ -607,7 +832,9 @@ class DjangoXBlockUserStateClient(XBlockUserStateClient):
             page = p.page(page_number)
 
             for sm in page.object_list:
-                state = json.loads(sm.state)
+                if _is_empty_user_state_json(sm.state):
+                    continue
+                state = loads_user_state(sm.state)
 
                 if state == {}:
                     continue
@@ -642,7 +869,9 @@ class DjangoXBlockUserStateClient(XBlockUserStateClient):
             page = p.page(page_number)
 
             for sm in page.object_list:
-                state = json.loads(sm.state)
+                if _is_empty_user_state_json(sm.state):
+                    continue
+                state = loads_user_state(sm.state)
 
                 if state == {}:
                     continue
