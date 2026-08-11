@@ -65,7 +65,12 @@ class ItemBankMixin(
 
     max_count = Integer(
         display_name=_("Count"),
-        help=_("Enter the number of components to display to each student. Set it to -1 to display all components."),
+        help=_(
+            "Enter the number of components to display to each student. "
+            "Set it to -1 to display all components. "
+            "Very large counts in a single unit can cause slow loads; "
+            "prefer splitting quizzes across multiple units."
+        ),
         default=1,
         scope=Scope.settings,
     )
@@ -315,6 +320,10 @@ class ItemBankMixin(
         fragment = Fragment()
         contents = []
         child_context = {} if not context else copy(context)
+        render_mode = (context or {}).get('render_mode', 'full')
+
+        if render_mode == 'shell':
+            return self._student_view_shell(context)
 
         for child in self._get_selected_child_blocks():
             if child is None:
@@ -344,6 +353,32 @@ class ItemBankMixin(
 
         fragment.add_javascript_url(self.runtime.local_resource_url(self, 'public/js/library_content_reset.js'))
         fragment.initialize_js('LibraryContentReset')
+        return fragment
+
+    def _student_view_shell(self, context):
+        """
+        Chromeless shell: emit placeholders for selected children without rendering CAPA HTML.
+
+        Used when render_xblock is called with render_mode=shell for large library quizzes.
+        Posts ``xblock.lazy.ready`` so a parent (Learning MFE) can batch-load children.
+        """
+        fragment = Fragment()
+        contents = []
+        for child in self._get_selected_child_blocks():
+            if child is None:
+                continue
+            contents.append({
+                'id': str(child.usage_key),
+                'content': '',
+            })
+
+        fragment.add_content(self.runtime.service(self, 'mako').render_lms_template('vert_module_lazy.html', {
+            'items': contents,
+            'xblock_context': context,
+            'show_bookmark_button': False,
+            'parent_usage_key': str(self.location),
+            'reset_button': False,
+        }))
         return fragment
 
     def studio_view(self, _context):
@@ -442,6 +477,81 @@ class ItemBankMixin(
         """
         raise NotImplementedError
 
+    def max_count_warning_threshold(self) -> int:
+        """Return Studio threshold for large max_count (default 25)."""
+        return int(getattr(settings, 'LIBRARY_CONTENT_MAX_COUNT_WARNING_THRESHOLD', 25))
+
+    def is_max_count_hard_capped(self) -> bool:
+        """
+        Return True when org/course waffle escalates large max_count to ERROR.
+
+        Lazy-imports CMS toggles so LMS imports of this module stay safe.
+        """
+        try:
+            from cms.djangoapps.contentstore.toggles import (  # pylint: disable=import-outside-toplevel
+                hard_cap_library_content_max_count,
+            )
+            course_key = getattr(self.location, 'course_key', None)
+            if course_key is None:
+                return False
+            return hard_cap_library_content_max_count(course_key)
+        except Exception:  # pylint: disable=broad-except
+            # CMS not installed / waffle unavailable (e.g. some unit contexts).
+            return False
+
+    def large_max_count_validation_message(self):
+        """
+        Build StudioValidationMessage when max_count exceeds the performance threshold.
+
+        Returns None when max_count is within limits (including -1 = show all).
+        """
+        threshold = self.max_count_warning_threshold()
+        # max_count < 0 means "show all"; do not treat as a large explicit Count.
+        if self.max_count < 0 or self.max_count <= threshold:
+            return None
+
+        help_url = getattr(settings, 'LIBRARY_CONTENT_LARGE_MAX_COUNT_HELP_URL', '') or ''
+        text = _(
+            "This block is configured to show {count} problems to each learner. "
+            "Large counts in a single unit can cause slow loads or timeouts for learners. "
+            "Split the quiz across multiple units or verticals, or lower Count to {threshold} or fewer."
+        ).format(count=self.max_count, threshold=threshold)
+        if help_url:
+            text = f"{text} {help_url}"
+
+        if self.is_max_count_hard_capped():
+            text = (
+                f"{text} "
+                + _("Your organization requires Count to be at most {threshold}.").format(
+                    threshold=threshold
+                )
+            )
+            message_type = StudioValidationMessage.ERROR
+        else:
+            message_type = StudioValidationMessage.WARNING
+
+        return StudioValidationMessage(
+            message_type,
+            text,
+            action_class='edit-button',
+            action_label=_("Edit the configuration."),
+        )
+
+    def apply_large_max_count_validation(self, validation):
+        """
+        Attach large-max_count Studio validation when applicable.
+
+        Hard-cap (waffle) overwrites an existing summary with ERROR.
+        Otherwise only sets a WARNING when validation is still empty so more
+        specific configuration issues keep precedence.
+        """
+        message = self.large_max_count_validation_message()
+        if message is None:
+            return validation
+        if message.type == StudioValidationMessage.ERROR or validation.empty:
+            validation.set_summary(message)
+        return validation
+
 
 class ItemBankBlock(ItemBankMixin, XBlock):
     """
@@ -490,6 +600,7 @@ class ItemBankBlock(ItemBankMixin, XBlock):
                     action_label=_("Edit the problem bank configuration.")
                 )
             )
+        self.apply_large_max_count_validation(validation)
         return validation
 
     def author_view(self, context):

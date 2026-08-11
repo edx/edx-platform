@@ -367,6 +367,7 @@ class LegacyLibraryContentBlock(ItemBankMixin, XModuleToXBlockMixin, XBlock):
                 )
             )
 
+        self.apply_large_max_count_validation(validation)
         return validation
 
     def source_library_values(self):

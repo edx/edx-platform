@@ -319,6 +319,35 @@ class LegacyLibraryContentBlockTestMixin:
         self._sync_lc_block_from_library(upgrade_to_latest=True)
         assert self.lc_block.validate()
 
+    def test_large_max_count_performance_warning(self):
+        """
+        Phase C: warn when Count exceeds the configurable performance threshold.
+        """
+        from django.test import override_settings
+        from edx_toggles.toggles.testutils import override_waffle_flag
+        from cms.djangoapps.contentstore.toggles import HARD_CAP_LIBRARY_CONTENT_MAX_COUNT
+
+        self._sync_lc_block_from_library()
+        assert len(self.lc_block.children) == 4
+
+        with override_settings(LIBRARY_CONTENT_MAX_COUNT_WARNING_THRESHOLD=2):
+            self.lc_block.max_count = 3
+            result = self.lc_block.validate()
+            assert not result
+            assert StudioValidationMessage.WARNING == result.summary.type
+            assert 'configured to show 3 problems' in result.summary.text
+            assert 'Split the quiz' in result.summary.text
+
+            self.lc_block.max_count = 1
+            assert self.lc_block.validate()
+
+            with override_waffle_flag(HARD_CAP_LIBRARY_CONTENT_MAX_COUNT, active=True):
+                self.lc_block.max_count = 3
+                result = self.lc_block.validate()
+                assert not result
+                assert StudioValidationMessage.ERROR == result.summary.type
+                assert 'organization requires' in result.summary.text
+
     def _assert_has_only_N_matching_problems(self, result, n):
         assert result.summary
         assert StudioValidationMessage.WARNING == result.summary.type
