@@ -1,0 +1,156 @@
+openedx/core/djangoapps/user_authn/views/login.py
+  s_36ffe2f7109ad6::t_774c6af3a7d48d 479,481,483-485,487-490,492-515,517
+  s_36ffe2f7109ad6::t_b3d7debe9dbf02 56
+  s_36ffe2f7109ad6::t_afd97fe538a021 662-663
+  s_36ffe2f7109ad6::t_fc750a13dfa57c 30,59
+openedx/core/djangoapps/user_authn/views/tests/test_filters.py
+  s_36ffe2f7109ad6::t_acc5ec06aa3f24 283-285,290,298-300,305,311-313,318,325-327,329,331,333,337-349,351-353,361,369,376,421,428,473,481,561,567,672,679
+  s_36ffe2f7109ad6::t_6bbf5299d56479 279,294,307,321,334,356,358,364,382-383,385,387-391,393,397,400,407,410,412,415,434-435,437,439-443,445,449,452,459,462,464,467,487-488,490,492-496,498,501,504,511,514,516,519,522-523,525,527-531,533,536,539,542,547,550,552,555,579-586,588-592,594,597,600-604,606,608,611-649,652,655,658-662,664,666-667,685-686,688,690-694,696,700,705,708,715,718,721,724
+  s_36ffe2f7109ad6::t_155ad4a6e53db9 280-282
+  s_36ffe2f7109ad6::t_17844aafc14665 286-289
+  s_36ffe2f7109ad6::t_70cd956aad5c31 291-293
+  s_36ffe2f7109ad6::t_c754af6420410f 295-297
+  s_36ffe2f7109ad6::t_3cfc1de753a01b 301-304
+  s_36ffe2f7109ad6::t_cb547d3d676c8d 306
+  s_36ffe2f7109ad6::t_87a65bafd7e862 308-310
+  s_36ffe2f7109ad6::t_c99cccc2b684bb 314-317
+  s_36ffe2f7109ad6::t_1a3768fbbf5295 319-320
+  s_36ffe2f7109ad6::t_e2afa941c0883d 322-324
+  s_36ffe2f7109ad6::t_f947ef30e497a7 328
+  s_36ffe2f7109ad6::t_8705ad86c7fa28 330
+  s_36ffe2f7109ad6::t_bb7b883d3c304d 332
+  s_36ffe2f7109ad6::t_1c5ad47d67eb94 335-336
+  s_36ffe2f7109ad6::t_e7bced501c7f65 350
+  s_36ffe2f7109ad6::t_f0480f442cb26e 354-355
+  s_36ffe2f7109ad6::t_a6abd2c54bc1c4 357
+  s_36ffe2f7109ad6::t_991e3bb4f0f451 359-360
+  s_36ffe2f7109ad6::t_681997c52f5f41 362-363
+  s_36ffe2f7109ad6::t_660fec7617d22c 365-368
+  s_36ffe2f7109ad6::t_6b891ccd26907f 370-375
+  s_36ffe2f7109ad6::t_0427845ef04d61 377-381
+  s_36ffe2f7109ad6::t_02f4c5aa39b304 384
+  s_36ffe2f7109ad6::t_948952eb70e523 386
+  s_36ffe2f7109ad6::t_f231aff00d5138 392
+  s_36ffe2f7109ad6::t_36d76d87c9969a 394-396
+  s_36ffe2f7109ad6::t_0c806259e91d2c 398-399
+  s_36ffe2f7109ad6::t_c81dff6586b892 401-406
+  s_36ffe2f7109ad6::t_59605bc943c091 408-409
+  s_36ffe2f7109ad6::t_7e763398f3ce65 411
+  s_36ffe2f7109ad6::t_efa9c7a9a35122 413-414
+  s_36ffe2f7109ad6::t_90036386f93294 416-420
+  s_36ffe2f7109ad6::t_c06347343ca2da 422-427
+  s_36ffe2f7109ad6::t_f58d7ae25c184c 429-433
+  s_36ffe2f7109ad6::t_07399bbc4ef2ed 436
+  s_36ffe2f7109ad6::t_f31c78fd08dd34 438
+  s_36ffe2f7109ad6::t_cb7d7d065124dc 444
+  s_36ffe2f7109ad6::t_cfd3b934989ca5 446-448
+  s_36ffe2f7109ad6::t_f14c16ab76a872 450-451
+  s_36ffe2f7109ad6::t_f3c59d67d4e44c 453-458
+  s_36ffe2f7109ad6::t_3de1575439f9e3 460-461
+  s_36ffe2f7109ad6::t_cafe64430db810 463
+  s_36ffe2f7109ad6::t_3a0a3ea8ea7de9 465-466
+  s_36ffe2f7109ad6::t_d43785849684a9 468-472
+  s_36ffe2f7109ad6::t_85a1ca723bbee3 474-476,478-480
+  s_36ffe2f7109ad6::t_5585a32a64cf6f 482-486
+  s_36ffe2f7109ad6::t_dca42b598d0bac 489
+  s_36ffe2f7109ad6::t_cc0a20dc91e373 491
+  s_36ffe2f7109ad6::t_52f18bbbb747b7 497
+  s_36ffe2f7109ad6::t_bf14d34b1ec475 499-500
+  s_36ffe2f7109ad6::t_914cd38d5b0da0 502-503
+  s_36ffe2f7109ad6::t_472cb739d44e7d 505-510
+  s_36ffe2f7109ad6::t_597e02054d3eec 512-513
+  s_36ffe2f7109ad6::t_bd726343d78e13 515
+  s_36ffe2f7109ad6::t_c27a8a84505bcc 517-518
+  s_36ffe2f7109ad6::t_9f276968ac6cb2 520-521
+  s_36ffe2f7109ad6::t_ffa705822383d2 524
+  s_36ffe2f7109ad6::t_fd44edcf66579b 526
+  s_36ffe2f7109ad6::t_d769fa2b31c759 532
+  s_36ffe2f7109ad6::t_5dfcda5754149d 534-535
+  s_36ffe2f7109ad6::t_ad620f89e36b22 537-538
+  s_36ffe2f7109ad6::t_b0a9c4a4711a15 540-541
+  s_36ffe2f7109ad6::t_b178bf3fdf9b51 543-546
+  s_36ffe2f7109ad6::t_af97ad54430e1a 548-549
+  s_36ffe2f7109ad6::t_8ee633e0f5bf42 551
+  s_36ffe2f7109ad6::t_c450cbc121750a 553-554
+  s_36ffe2f7109ad6::t_f02e769112e42d 556-560
+  s_36ffe2f7109ad6::t_a38ef44565c46f 562-566
+  s_36ffe2f7109ad6::t_634c2f225deea8 568-570,576-578
+  s_36ffe2f7109ad6::t_8137c5383d61c4 587
+  s_36ffe2f7109ad6::t_b4885635d0ee4f 593
+  s_36ffe2f7109ad6::t_290389f6cbf65a 595-596
+  s_36ffe2f7109ad6::t_0bbd78e5d62264 598-599
+  s_36ffe2f7109ad6::t_e6bb5f76e4655e 605
+  s_36ffe2f7109ad6::t_4c9b6d8c80e455 607
+  s_36ffe2f7109ad6::t_5eceb90befeb5e 609-610
+  s_36ffe2f7109ad6::t_6c74a4e7367950 650-651
+  s_36ffe2f7109ad6::t_55e1444247e73b 653-654
+  s_36ffe2f7109ad6::t_56289b954bc9e3 656-657
+  s_36ffe2f7109ad6::t_14e294f8c2b877 663
+  s_36ffe2f7109ad6::t_84d3653da33263 665
+  s_36ffe2f7109ad6::t_ed11a7887d9cf2 668-671
+  s_36ffe2f7109ad6::t_358366d7eab307 673-678
+  s_36ffe2f7109ad6::t_4e8863b8a03563 680-684
+  s_36ffe2f7109ad6::t_e407f8785ad009 687
+  s_36ffe2f7109ad6::t_4e793259b1bf4f 689
+  s_36ffe2f7109ad6::t_7c145b787fb455 695
+  s_36ffe2f7109ad6::t_fe75c91b3d7819 697-699
+  s_36ffe2f7109ad6::t_2188ece5778f9e 701-704
+  s_36ffe2f7109ad6::t_0277aaec2f1542 706-707
+  s_36ffe2f7109ad6::t_1b2963a62123d0 709-714
+  s_36ffe2f7109ad6::t_e8cba4bf069402 716-717
+  s_36ffe2f7109ad6::t_01c1f08d2316f6 719-720
+  s_36ffe2f7109ad6::t_384b66af62aa03 722-723
+  s_36ffe2f7109ad6::t_47cf73becc10d6 725-727
+common/djangoapps/third_party_auth/pipeline.py
+  s_74b78dc9b2068e::t_5f093286811206 218-226
+  s_74b78dc9b2068e::t_22c7001626f669 235
+  s_74b78dc9b2068e::t_2eec53c2db437b 82
+openedx/core/djangoapps/user_authn/views/utils.py
+  s_74b78dc9b2068e::t_f233ffeba86686 119-133
+  s_74b78dc9b2068e::t_33e54674721d1b 14
+  s_74b78dc9b2068e::t_e45548631dfed5 13
+  s_74b78dc9b2068e::t_e68d035f0b8cc7 117-118
+  s_74b78dc9b2068e::t_1248a9200a03ad 134-136
+  s_6f4dce27b2ce31::t_5a76bc3ad97cf0 10,19,138-146,154-162
+mypy.ini
+  s_74b78dc9b2068e::t_27066444ad83f2 75-76
+  s_74b78dc9b2068e::t_da937a64b4496e 9-18
+common/djangoapps/third_party_auth/models.py
+  s_74b78dc9b2068e::t_8585babd4df9ae 18
+  s_74b78dc9b2068e::t_004293864bb121 321,329-333
+openedx/core/djangoapps/user_authn/views/registration_form.py
+  s_74b78dc9b2068e::t_d002895ce071e2 13-14
+  s_6f4dce27b2ce31::t_d5ae6189fc13e9 20,37-40,479-493,1201,1212-1217,1219-1223,1225,1227-1229,1231-1238,1240-1243,1246-1248,1250,1252-1256,1259-1271,1273-1303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3687447520d0e9a0499228c487b3e18754f0c939",
+  "prompts": {},
+  "sessions": {
+    "s_36ffe2f7109ad6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a37d08a6-99bd-422e-bf12-daa8d1671caf",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Troy Sankey <tsankey@2u.com>"
+    },
+    "s_6f4dce27b2ce31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6e017b9835bf9c35",
+        "model": "unknown"
+      },
+      "human_author": "Troy Sankey <tsankey@2u.com>"
+    },
+    "s_74b78dc9b2068e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "77e884c1-0be7-4c7b-9b03-0e8499c011b2",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Troy Sankey <tsankey@2u.com>"
+    }
+  }
+}
