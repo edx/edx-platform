@@ -291,6 +291,13 @@ ORA_MICROFRONTEND_URL = 'http://localhost:1992'
 ############################ AI_TRANSLATIONS ##################################
 AI_TRANSLATIONS_API_URL = 'http://localhost:18760/api/v1'
 
+############################ COURSE OPTIMIZER EXTENDED REPORT ##################
+# xpert-ai-workflows running on the host machine (not in the devstack docker
+# network), reached via Docker's host-gateway alias. Shared secret must match
+# that service's own EDX_STUDIO_API_KEY.
+COURSE_ANALYSIS_WORKFLOW_URL = 'http://host.docker.internal:19090'
+COURSE_ANALYSIS_WORKFLOW_API_KEY = 'this_is_a_test_api_key'  # matches xpert-ai-workflows' local .env
+
 ############################ CSRF ##################################
 
 # MFEs that will call this service in devstack
