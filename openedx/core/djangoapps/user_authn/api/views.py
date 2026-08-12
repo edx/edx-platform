@@ -85,7 +85,7 @@ class MFEContextView(APIView):
             if request_params.get('is_welcome_page'):
                 optional_fields = self._get_optional_fields_context()
                 # Update context_data with welcomePageRedirectUrl instead of replacing it
-                # to preserve all fields from get_mfe_context (enterpriseBranding, countryCode, etc.)
+                # to preserve all fields from get_mfe_context (countryCode, extra_context, etc.)
                 context['context_data'].update({
                     'welcomePageRedirectUrl': redirect_to if redirect_to == request_params.get('next') else None,
                 })

@@ -578,7 +578,7 @@ edx-drf-extensions==10.6.0
     #   edxval
     #   enterprise-integrated-channels
     #   openedx-learning
-edx-enterprise==8.7.2
+edx-enterprise==8.9.0
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/base.txt
@@ -1046,7 +1046,7 @@ openedx-events==10.5.0
     #   edx-name-affirmation
     #   event-tracking
     #   ora2
-openedx-filters==3.8.0
+openedx-filters==3.9.0
     # via
     #   -r requirements/edx/base.txt
     #   edx-enterprise

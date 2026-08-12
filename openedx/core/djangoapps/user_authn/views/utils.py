@@ -8,13 +8,16 @@ from typing import Dict
 
 from django.conf import settings
 from django.contrib import messages
+from django.http import HttpRequest
 from django.utils.translation import gettext as _
 from ipware.ip import get_client_ip
+from openedx_filters.authentication.filters import AuthnMFEContextGenerated
+from openedx_filters.authentication.types import RunningPipeline
 from text_unidecode import unidecode
 
 from common.djangoapps import third_party_auth
 from common.djangoapps.third_party_auth import pipeline
-from common.djangoapps.third_party_auth.models import clean_username
+from common.djangoapps.third_party_auth.models import ProviderConfig, clean_username
 from openedx.core.djangoapps.embargo.models import GlobalRestrictedCountry
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.geoinfo.api import country_code_from_ip
@@ -141,23 +144,52 @@ def third_party_auth_context(request, redirect_to, tpa_hint=None):
     return context
 
 
-def get_mfe_context(request, redirect_to, tpa_hint=None):
-    """Return Authn MFE context including enterprise branding and country code."""
-    # Import enterprise functions INSIDE the function to avoid circular import
-    from openedx.features.enterprise_support.api import enterprise_customer_for_request
-    from openedx.features.enterprise_support.utils import build_enterprise_branding_for_authn_mfe
+def get_running_third_party_auth_state(
+    request: HttpRequest,
+) -> tuple[RunningPipeline | None, ProviderConfig | None]:
+    """
+    Return the third-party auth pipeline running for the request, and its provider.
 
+    Arguments:
+        request (HttpRequest): The request to inspect for a running pipeline.
+
+    Returns:
+        tuple[RunningPipeline, ProviderConfig]: the running pipeline and its provider.
+
+        Both are None when third party auth is disabled or when no pipeline is running for
+        the request. When a pipeline *is* running but its provider could not be determined,
+        the pipeline is returned alongside a None provider. The invariant is therefore
+        one-directional: a non-None provider implies a non-None pipeline, but not the
+        reverse.
+    """
+    if not third_party_auth.is_enabled():
+        return None, None
+
+    running_pipeline = pipeline.get(request)
+    if not running_pipeline:
+        return None, None
+
+    return running_pipeline, third_party_auth.provider.Registry.get_from_pipeline(running_pipeline)
+
+
+def get_mfe_context(request, redirect_to, tpa_hint=None):
+    """Return Authn MFE context including country code and any plugin-provided data."""
     ip_address = get_client_ip(request)[0]
     country_code = country_code_from_ip(ip_address)
     context = third_party_auth_context(request, redirect_to, tpa_hint)
 
-    enterprise_customer = enterprise_customer_for_request(request)
-    enterprise_branding = build_enterprise_branding_for_authn_mfe(enterprise_customer)
-
     context.update({
         'countryCode': country_code,
-        'enterpriseBranding': enterprise_branding,
     })
+
+    # .. filter_implemented_name: AuthnMFEContextGenerated
+    # .. filter_type: org.openedx.authentication.mfe.context.generated.v1
+    context, extra_context = AuthnMFEContextGenerated.run_filter(context=context, extra_context={})
+
+    # Entries the pipeline contributed that ContextDataSerializer does not declare fields for.
+    # The serializer merges them into the response alongside the declared fields.
+    context['extra_context'] = extra_context
+
     return context
 
 
