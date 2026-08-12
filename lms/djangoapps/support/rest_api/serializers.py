@@ -8,6 +8,7 @@ import pytz
 from django.conf import settings
 from rest_framework import serializers
 
+from lms.djangoapps.support.models import BulkUnenrollBatch, BulkUnenrollCourseState
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 
 
@@ -56,3 +57,39 @@ class CourseTeamManageSerializer(serializers.ModelSerializer):
             "run": course_key.run,
             "number": course_key.course,
         }
+
+
+class BulkUnenrollCourseStateSerializer(serializers.ModelSerializer):
+    """
+    Per-course row within a bulk-unenroll batch.
+
+    Carries both the dry-run preview (``active_count``, set at upload) and the
+    worker-populated mutation counters, so the polling UI can show real progress
+    for a run that may last hours rather than just a state label.
+    """
+
+    course_id = serializers.CharField()
+
+    class Meta:
+        model = BulkUnenrollCourseState
+        fields = (
+            "course_id", "state", "active_count", "error",
+            "unenrolled", "already_inactive", "failed_count",
+            "chunks_total", "chunks_finished",
+        )
+
+
+class BulkUnenrollBatchSerializer(serializers.ModelSerializer):
+    """Aggregate view of a bulk-unenroll batch (the public ``batch_id`` is the uuid)."""
+
+    batch_id = serializers.UUIDField(source="uuid", read_only=True)
+    # A uuid is not recognizable: who/which-file is how an operator spots their
+    # own run in the list (or a colleague's, for an in-flight batch).
+    requester = serializers.CharField(source="requester.username", read_only=True)
+
+    class Meta:
+        model = BulkUnenrollBatch
+        fields = (
+            "batch_id", "state", "reason", "total_courses",
+            "requester", "csv_filename", "created", "modified",
+        )
