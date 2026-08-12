@@ -145,7 +145,7 @@ def _validate_login_identifier(identifier):
     try:
         validate_username(identifier)
     except ValidationError as exc:
-        raise AuthFailedError(LOGIN_INFO_ERROR)
+        raise AuthFailedError(LOGIN_INFO_ERROR) from exc
 
 
 def _get_user_by_email_or_username(request, api_version):
