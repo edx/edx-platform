@@ -1782,6 +1782,19 @@ MEILISEARCH_PUBLIC_URL = "http://meilisearch.example.com"
 MEILISEARCH_INDEX_PREFIX = ""
 MEILISEARCH_API_KEY = "devkey"
 
+# .. setting_name: COURSE_ANALYSIS_WORKFLOW_URL
+# .. setting_default: ''
+# .. setting_description: Base URL of the Course Optimizer extended-report
+# .. backend (xpert-ai-workflows). Studio calls this server-side and
+# .. proxies the response to the browser; the browser never calls it
+# .. directly.
+COURSE_ANALYSIS_WORKFLOW_URL = ''
+# .. setting_name: COURSE_ANALYSIS_WORKFLOW_API_KEY
+# .. setting_default: ''
+# .. setting_description: Shared secret sent as the X-Api-Key header on
+# .. every request to COURSE_ANALYSIS_WORKFLOW_URL.
+COURSE_ANALYSIS_WORKFLOW_API_KEY = ''
+
 # .. setting_name: LIBRARY_ENABLED_BLOCKS
 # .. setting_default: ['problem', 'video', 'html', 'drag-and-drop-v2']
 # .. setting_description: List of block types that are ready/enabled to be created/used

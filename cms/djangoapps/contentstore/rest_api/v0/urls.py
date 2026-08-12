@@ -9,6 +9,8 @@ from .views import (
     AdvancedCourseSettingsView,
     APIHeartBeatView,
     AuthoringGradingView,
+    CourseAnalysisReportStatusView,
+    CourseAnalysisReportView,
     CourseTabListView,
     CourseTabReorderView,
     CourseTabSettingsView,
@@ -124,5 +126,13 @@ urlpatterns = [
     re_path(
         fr'^rerun_link_update_status/{settings.COURSE_ID_PATTERN}$',
         RerunLinkUpdateStatusView.as_view(), name='rerun_link_update_status'
+    ),
+    re_path(
+        fr'^course_analysis_report/{settings.COURSE_ID_PATTERN}$',
+        CourseAnalysisReportView.as_view(), name='course_analysis_report'
+    ),
+    re_path(
+        fr'^course_analysis_report_status/{settings.COURSE_ID_PATTERN}$',
+        CourseAnalysisReportStatusView.as_view(), name='course_analysis_report_status'
     ),
 ]
