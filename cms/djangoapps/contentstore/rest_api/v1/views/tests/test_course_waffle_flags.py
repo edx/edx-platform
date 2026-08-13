@@ -39,6 +39,7 @@ class CourseWaffleFlagsViewTest(CourseTestCase):
         "use_react_markdown_editor": False,
         "use_video_gallery_flow": False,
         "enable_course_optimizer_check_prev_run_links": False,
+        "enable_course_optimizer_extended_report": False,
         "enable_unit_expanded_view": False,
         "enable_outline_component_creation": False,
         "enable_audio_description": False,
