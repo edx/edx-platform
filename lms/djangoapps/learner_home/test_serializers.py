@@ -203,7 +203,10 @@ class TestCourseRunSerializer(LearnerDashboardBaseTest):
             },
         }
 
-    def test_with_data(self):
+    @mock.patch("lms.djangoapps.learner_home.serializers.get_course_uuid_for_course")
+    def test_with_data(self, mock_get_course_uuid_for_course):
+        # Mocked so courseUuid is populated, same as every other field
+        mock_get_course_uuid_for_course.return_value = uuid4()
         input_data = self.create_test_enrollment()
         input_context = self.create_test_context(input_data.course.id)
 
