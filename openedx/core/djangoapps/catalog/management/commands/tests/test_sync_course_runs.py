@@ -52,8 +52,9 @@ class TestSyncCourseRunsCommand(ModuleStoreTestCase):
             previous_course_overview_value = getattr(self.course_overview, course_overview_field_name)
             updated_course_overview_value = getattr(updated_course_overview, course_overview_field_name)
 
-            # course overview value matches catalog value
-            assert updated_course_overview_value == self.catalog_course_run.get(catalog_field_name)  # pylint: disable=no-member, line-too-long
+            # course overview value matches catalog value (compared as strings, since e.g.
+            # variant_id round-trips as a uuid.UUID, not the raw string the catalog returned)
+            assert str(updated_course_overview_value) == str(self.catalog_course_run.get(catalog_field_name))  # pylint: disable=no-member, line-too-long
             # new value doesn't match old value
             assert updated_course_overview_value != previous_course_overview_value
 

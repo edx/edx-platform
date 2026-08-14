@@ -93,6 +93,7 @@ class CourseRunSerializer(serializers.Serializer):
     isStarted = serializers.SerializerMethodField()
     isArchived = serializers.SerializerMethodField()
     courseId = serializers.CharField(source="course_id")
+    courseUuid = serializers.UUIDField(source="course_overview.variant_id", allow_null=True)
     minPassingGrade = serializers.DecimalField(
         max_digits=5, decimal_places=2, source="course_overview.lowest_passing_grade"
     )

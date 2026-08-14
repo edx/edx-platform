@@ -89,6 +89,7 @@ class LearnerDashboardBaseTest(SharedModuleStoreTestCase):
         test_enrollment.course_overview.marketing_url = random_url()
         test_enrollment.course_overview.end = random_date()
         test_enrollment.course_overview.certificate_available_date = random_date()
+        test_enrollment.course_overview.variant_id = uuid4()
 
         return test_enrollment
 
@@ -212,6 +213,20 @@ class TestCourseRunSerializer(LearnerDashboardBaseTest):
         # Serialization set up so all fields will have values to make testing easy
         for key in output_data:
             assert output_data[key] is not None
+
+    def test_missing_course_uuid(self):
+        # Given a course run
+        input_data = self.create_test_enrollment()
+        input_context = self.create_test_context(input_data.course.id)
+
+        # ... where the catalog had nothing for this course
+        input_data.course_overview.variant_id = None
+
+        # When I serialize
+        output_data = CourseRunSerializer(input_data, context=input_context).data
+
+        # Then courseUuid is None, which is allowed
+        self.assertIsNone(output_data["courseUuid"])
 
     def test_missing_resume_url(self):
         # Given a course run
