@@ -431,10 +431,6 @@ class RerunLinkUpdateStatusView(DeveloperErrorViewMixin, APIView):
         return Response(serializer.data)
 
 
-# A slow/unreachable backend shouldn't tie up a Studio request thread waiting on it.
-_COURSE_ANALYSIS_REPORT_REQUEST_TIMEOUT_SECONDS = 5
-
-
 @view_auth_classes(is_authenticated=True)
 class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
     """
@@ -485,7 +481,7 @@ class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
                     f'{settings.COURSE_ANALYSIS_WORKFLOW_URL}/courses/{course_id}/runs',
                     files={'file': (os.path.basename(tarball.name), tarball, 'application/gzip')},
                     headers={'X-Api-Key': settings.COURSE_ANALYSIS_WORKFLOW_API_KEY},
-                    timeout=_COURSE_ANALYSIS_REPORT_REQUEST_TIMEOUT_SECONDS,
+                    timeout=settings.COURSE_ANALYSIS_WORKFLOW_REQUEST_TIMEOUT_SECONDS,
                 )
             except requests.RequestException:
                 return Response(status=status.HTTP_502_BAD_GATEWAY)

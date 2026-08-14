@@ -1794,6 +1794,12 @@ COURSE_ANALYSIS_WORKFLOW_URL = ''
 # .. setting_description: Shared secret sent as the X-Api-Key header on
 # .. every request to COURSE_ANALYSIS_WORKFLOW_URL.
 COURSE_ANALYSIS_WORKFLOW_API_KEY = ''
+# .. setting_name: COURSE_ANALYSIS_WORKFLOW_REQUEST_TIMEOUT_SECONDS
+# .. setting_default: 5
+# .. setting_description: How long to wait on a request to
+# .. COURSE_ANALYSIS_WORKFLOW_URL before giving up. A slow/unreachable
+# .. backend shouldn't tie up a Studio request thread waiting on it.
+COURSE_ANALYSIS_WORKFLOW_REQUEST_TIMEOUT_SECONDS = 5
 
 # .. setting_name: LIBRARY_ENABLED_BLOCKS
 # .. setting_default: ['problem', 'video', 'html', 'drag-and-drop-v2']
