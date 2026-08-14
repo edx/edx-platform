@@ -7,7 +7,6 @@ import ast
 import re
 import json
 from collections import OrderedDict
-from datetime import timedelta
 from unittest.mock import Mock
 
 from django.contrib import messages
