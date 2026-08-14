@@ -33,6 +33,7 @@ from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disa
 from xmodule.modulestore.tests.django_utils import TEST_DATA_SPLIT_MODULESTORE, ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.tests import get_test_descriptor_system, get_test_system, prepare_block_runtime  # lint-amnesty, pylint: disable=wrong-import-order
+from openedx.core.djangoapps.course_date_signals.utils import get_expected_duration
 
 
 class BaseTestXmodule(ModuleStoreTestCase):
@@ -417,7 +418,7 @@ def get_expiration_banner_text(user, course, language='en'):  # lint-amnesty, py
     """
     upgrade_link = verified_upgrade_deadline_link(user=user, course=course)
     enrollment = CourseEnrollment.get_enrollment(user, course.id)
-    expiration_date = enrollment.created + timedelta(weeks=4)
+    expiration_date = enrollment.created + get_expected_duration(course.id)
     upgrade_deadline = enrollment.upgrade_deadline
     if upgrade_deadline is None or now() < upgrade_deadline:
         upgrade_deadline = enrollment.course_upgrade_deadline
