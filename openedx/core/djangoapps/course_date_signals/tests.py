@@ -260,7 +260,8 @@ class SelfPacedCustomDueDateTests(ModuleStoreTestCase):
                 (sequential.location, {'due': timedelta(days=21)})
             ]
         course = self.store.get_item(self.course.location)
-        self.assertCountEqual(extract_dates_from_course(course), expected_dates)
+        with patch.object(utils, 'get_expected_duration', return_value=timedelta(weeks=4)):
+            self.assertCountEqual(extract_dates_from_course(course), expected_dates)  # noqa: PT009
 
     @override_waffle_flag(CUSTOM_RELATIVE_DATES, active=True)
     def test_extract_dates_from_course_custom_and_default_pls_one_subsection_graded(self):
