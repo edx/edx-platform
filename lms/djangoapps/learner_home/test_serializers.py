@@ -203,7 +203,10 @@ class TestCourseRunSerializer(LearnerDashboardBaseTest):
             },
         }
 
-    def test_with_data(self):
+    @mock.patch("lms.djangoapps.learner_home.serializers.get_course_uuid_for_course")
+    def test_with_data(self, mock_get_course_uuid_for_course):
+        # Mocked so courseUuid is populated, same as every other field
+        mock_get_course_uuid_for_course.return_value = uuid4()
         input_data = self.create_test_enrollment()
         input_context = self.create_test_context(input_data.course.id)
 
@@ -226,6 +229,34 @@ class TestCourseRunSerializer(LearnerDashboardBaseTest):
 
         # Then the resumeUrl is None, which is allowed
         self.assertIsNone(output_data["resumeUrl"])
+
+    @mock.patch("lms.djangoapps.learner_home.serializers.get_course_uuid_for_course")
+    def test_course_uuid(self, mock_get_course_uuid_for_course):
+        # Given the catalog has a UUID for this course
+        course_uuid = uuid4()
+        mock_get_course_uuid_for_course.return_value = course_uuid
+        input_data = self.create_test_enrollment()
+        input_context = self.create_test_context(input_data.course.id)
+
+        # When I serialize
+        output_data = CourseRunSerializer(input_data, context=input_context).data
+
+        # Then courseUuid is the stringified catalog UUID, looked up by course_id
+        self.assertEqual(output_data["courseUuid"], str(course_uuid))
+        mock_get_course_uuid_for_course.assert_called_once_with(input_data.course_id)
+
+    @mock.patch("lms.djangoapps.learner_home.serializers.get_course_uuid_for_course")
+    def test_missing_course_uuid(self, mock_get_course_uuid_for_course):
+        # Given the catalog has no UUID for this course (e.g. no catalog integration configured)
+        mock_get_course_uuid_for_course.return_value = None
+        input_data = self.create_test_enrollment()
+        input_context = self.create_test_context(input_data.course.id)
+
+        # When I serialize
+        output_data = CourseRunSerializer(input_data, context=input_context).data
+
+        # Then courseUuid is None, which is allowed
+        self.assertIsNone(output_data["courseUuid"])
 
     def is_progress_url_matching_course_home_mfe_progress_tab_is_active(self):
         """
