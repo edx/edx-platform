@@ -6,11 +6,13 @@ get_expected_duration: return the expected duration of a course (absent any user
 
 from datetime import timedelta
 
+from django.conf import settings
+
 from openedx.core.djangoapps.catalog.utils import get_course_run_details
 
 
-MIN_DURATION = timedelta(weeks=4)
-MAX_DURATION = timedelta(weeks=18)
+MIN_DURATION = timedelta(weeks=settings.COURSE_ACCESS_DURATION_MIN_WEEKS)
+MAX_DURATION = timedelta(weeks=settings.COURSE_ACCESS_DURATION_MAX_WEEKS)
 
 
 def get_expected_duration(course_id):
