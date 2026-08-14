@@ -25,6 +25,7 @@ from lms.djangoapps.courseware.masquerade import MasqueradeView
 from lms.djangoapps.courseware.masquerade import setup_masquerade
 from lms.djangoapps.lms_xblock.field_data import LmsFieldData
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from openedx.core.djangoapps.course_date_signals.utils import get_expected_duration
 from openedx.core.lib.url_utils import quote_slashes
 from common.djangoapps.student.models import CourseEnrollment, Registration
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
@@ -33,7 +34,6 @@ from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disa
 from xmodule.modulestore.tests.django_utils import TEST_DATA_SPLIT_MODULESTORE, ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.tests import get_test_descriptor_system, get_test_system, prepare_block_runtime  # lint-amnesty, pylint: disable=wrong-import-order
-from openedx.core.djangoapps.course_date_signals.utils import get_expected_duration
 
 
 class BaseTestXmodule(ModuleStoreTestCase):
