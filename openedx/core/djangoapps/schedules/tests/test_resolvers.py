@@ -228,7 +228,7 @@ class TestCourseUpdateResolver(SchedulesResolverTestMixin, ModuleStoreTestCase):
         assert schedules.count() == 0
 
 
-@patch('openedx.core.djangoapps.course_date_signals.utils.MIN_DURATION',datetime.timedelta(weeks=4),)
+@patch('openedx.core.djangoapps.course_date_signals.utils.MIN_DURATION',datetime.timedelta(weeks=4))
 @skip_unless_lms
 class TestCourseNextSectionUpdateResolver(SchedulesResolverTestMixin, ModuleStoreTestCase):
     """
