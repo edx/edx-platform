@@ -13,6 +13,7 @@ from rest_framework import serializers
 from openedx_filters.learning.filters import CourseEnrollmentAPIRenderStarted, CourseRunAPIRenderStarted
 
 from common.djangoapps.course_modes.models import CourseMode
+from openedx.core.djangoapps.catalog.utils import get_course_uuid_for_course
 from openedx.features.course_experience import course_home_url
 from xmodule.data import CertificatesDisplayBehaviors
 from lms.djangoapps.learner_home.utils import course_progress_url
@@ -93,6 +94,7 @@ class CourseRunSerializer(serializers.Serializer):
     isStarted = serializers.SerializerMethodField()
     isArchived = serializers.SerializerMethodField()
     courseId = serializers.CharField(source="course_id")
+    courseUuid = serializers.SerializerMethodField()
     minPassingGrade = serializers.DecimalField(
         max_digits=5, decimal_places=2, source="course_overview.lowest_passing_grade"
     )
@@ -113,6 +115,10 @@ class CourseRunSerializer(serializers.Serializer):
 
     def get_isArchived(self, instance):
         return instance.course_overview.has_ended()
+
+    def get_courseUuid(self, instance):
+        course_uuid = get_course_uuid_for_course(instance.course_id)
+        return str(course_uuid) if course_uuid else None
 
     def get_homeUrl(self, instance):
         return course_home_url(instance.course_id)
