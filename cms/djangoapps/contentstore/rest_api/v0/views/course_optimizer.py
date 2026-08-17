@@ -472,6 +472,12 @@ class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
         if not has_course_author_access(request.user, course_key):
             self.permission_denied(request)
 
+        if not enable_course_optimizer_extended_report(course_key):
+            return JsonResponse(
+                {"error": "Course optimizer extended report is not enabled."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         course_block = modulestore().get_course(course_key)
         tarball = create_export_tarball(course_block, course_key, {})
         try:
