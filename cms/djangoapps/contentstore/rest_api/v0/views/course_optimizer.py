@@ -28,7 +28,10 @@ from cms.djangoapps.contentstore.tasks import (
     create_export_tarball,
     update_course_rerun_links,
 )
-from cms.djangoapps.contentstore.toggles import enable_course_optimizer_check_prev_run_links
+from cms.djangoapps.contentstore.toggles import (
+    enable_course_optimizer_check_prev_run_links,
+    enable_course_optimizer_extended_report,
+)
 from common.djangoapps.student.auth import has_course_author_access, has_studio_read_access
 from common.djangoapps.util.json_request import JsonResponse
 from openedx.core.lib.api.view_utils import (
@@ -519,6 +522,7 @@ class CourseAnalysisReportStatusView(DeveloperErrorViewMixin, APIView):
             502: "The Course Optimizer extended-report backend is unreachable.",
         },
     )
+    @verify_course_exists()
     def get(self, request: Request, course_id: str):
         """
         Proxy the status of a course's most recent Course Optimizer
@@ -538,11 +542,17 @@ class CourseAnalysisReportStatusView(DeveloperErrorViewMixin, APIView):
         if not has_course_author_access(request.user, course_key):
             self.permission_denied(request)
 
+        if not enable_course_optimizer_extended_report(course_key):
+            return JsonResponse(
+                {"error": "Course optimizer extended report is not enabled."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             response = requests.get(
                 f'{settings.COURSE_ANALYSIS_WORKFLOW_URL}/courses/{course_id}/runs/latest',
                 headers={'X-Api-Key': settings.COURSE_ANALYSIS_WORKFLOW_API_KEY},
-                timeout=_COURSE_ANALYSIS_REPORT_REQUEST_TIMEOUT_SECONDS,
+                timeout=settings.COURSE_ANALYSIS_WORKFLOW_REQUEST_TIMEOUT_SECONDS,
             )
         except requests.RequestException:
             return Response(status=status.HTTP_502_BAD_GATEWAY)
