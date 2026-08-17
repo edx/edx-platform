@@ -817,7 +817,8 @@ ZENDESK_CUSTOM_FIELDS:
   referrer: 0
 ZENDESK_GROUP_ID_MAPPING:
   Financial Assistance: fin_assistance
-ZENDESK_OAUTH_ACCESS_TOKEN: test_zendesk_access
+ZENDESK_OAUTH_CLIENT_ID: test_zendesk_client_id
+ZENDESK_OAUTH_CLIENT_SECRET: test_zendesk_client_secret
 ZENDESK_URL: https://zendesk.com
 ZENDESK_USER: daemon@example.com
 
