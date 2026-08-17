@@ -7,7 +7,6 @@ import ast
 import re
 import json
 from collections import OrderedDict
-from datetime import timedelta
 from unittest.mock import Mock
 
 from django.contrib import messages
@@ -25,6 +24,7 @@ from lms.djangoapps.courseware.masquerade import MasqueradeView
 from lms.djangoapps.courseware.masquerade import setup_masquerade
 from lms.djangoapps.lms_xblock.field_data import LmsFieldData
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from openedx.core.djangoapps.course_date_signals.utils import get_expected_duration
 from openedx.core.lib.url_utils import quote_slashes
 from common.djangoapps.student.models import CourseEnrollment, Registration
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
@@ -417,7 +417,7 @@ def get_expiration_banner_text(user, course, language='en'):  # lint-amnesty, py
     """
     upgrade_link = verified_upgrade_deadline_link(user=user, course=course)
     enrollment = CourseEnrollment.get_enrollment(user, course.id)
-    expiration_date = enrollment.created + timedelta(weeks=4)
+    expiration_date = enrollment.created + get_expected_duration(course.id)
     upgrade_deadline = enrollment.upgrade_deadline
     if upgrade_deadline is None or now() < upgrade_deadline:
         upgrade_deadline = enrollment.course_upgrade_deadline
