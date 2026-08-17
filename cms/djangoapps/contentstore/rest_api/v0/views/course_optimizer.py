@@ -30,7 +30,7 @@ from cms.djangoapps.contentstore.tasks import (
 )
 from cms.djangoapps.contentstore.toggles import (
     enable_course_optimizer_check_prev_run_links,
-    enable_course_optimizer_extended_report,
+    enable_course_optimizer_extended_checks,
 )
 from common.djangoapps.student.auth import has_course_author_access, has_studio_read_access
 from common.djangoapps.util.json_request import JsonResponse
@@ -475,9 +475,9 @@ class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
         if not has_course_author_access(request.user, course_key):
             self.permission_denied(request)
 
-        if not enable_course_optimizer_extended_report(course_key):
+        if not enable_course_optimizer_extended_checks(course_key):
             return JsonResponse(
-                {"error": "Course optimizer extended report is not enabled."},
+                {"error": "Course optimizer extended checks are not enabled."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -542,9 +542,9 @@ class CourseAnalysisReportStatusView(DeveloperErrorViewMixin, APIView):
         if not has_course_author_access(request.user, course_key):
             self.permission_denied(request)
 
-        if not enable_course_optimizer_extended_report(course_key):
+        if not enable_course_optimizer_extended_checks(course_key):
             return JsonResponse(
-                {"error": "Course optimizer extended report is not enabled."},
+                {"error": "Course optimizer extended checks are not enabled."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

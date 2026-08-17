@@ -708,28 +708,28 @@ def enable_course_optimizer_check_prev_run_links(course_key):
     return ENABLE_COURSE_OPTIMIZER_CHECK_PREV_RUN_LINKS.is_enabled(course_key)
 
 
-# .. toggle_name: contentstore.enable_course_optimizer_extended_report
+# .. toggle_name: contentstore.enable_course_optimizer_extended_checks
 # .. toggle_implementation: CourseWaffleFlag
 # .. toggle_default: False
-# .. toggle_description: When enabled, shows the Course Optimizer's extended
-#   analysis report (time-on-task, learning balance, and LLM-driven
-#   accessibility/content-quality/pacing findings) alongside the existing
-#   link-check scan results in the authoring MFE.
+# .. toggle_description: When enabled, replaces the Course Optimizer page
+#   with its extended analysis report (time-on-task, learning balance, and
+#   LLM-driven accessibility/content-quality/pacing findings) in the
+#   authoring MFE.
 # .. toggle_use_cases: temporary
 # .. toggle_creation_date: 2026-08-13
 # .. toggle_target_removal_date: 2027-02-13
-ENABLE_COURSE_OPTIMIZER_EXTENDED_REPORT = CourseWaffleFlag(
-    f'{CONTENTSTORE_NAMESPACE}.enable_course_optimizer_extended_report',
+ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS = CourseWaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.enable_course_optimizer_extended_checks',
     __name__,
     CONTENTSTORE_LOG_PREFIX,
 )
 
 
-def enable_course_optimizer_extended_report(course_key):
+def enable_course_optimizer_extended_checks(course_key):
     """
-    Returns a boolean if the Course Optimizer extended report is enabled for the given course.
+    Returns a boolean if the Course Optimizer extended checks page is enabled for the given course.
     """
-    return ENABLE_COURSE_OPTIMIZER_EXTENDED_REPORT.is_enabled(course_key)
+    return ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS.is_enabled(course_key)
 
 
 # .. toggle_name: contentstore.enable_unit_expanded_view
