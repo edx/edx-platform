@@ -32,8 +32,7 @@ EXPERIMENT_KEY = 'audit_expiry_urgency_v1'
 VARIANT_CONTROL = 'control_5_7_weeks'
 VARIANT_EXPIRY_7_DAYS = 'expiry_7_days'
 VARIANT_EXPIRY_14_DAYS = 'expiry_14_days'
-VARIANT_EXPIRY_21_DAYS = 'expiry_21_days'
-VALID_VARIANTS = {VARIANT_CONTROL, VARIANT_EXPIRY_7_DAYS, VARIANT_EXPIRY_14_DAYS, VARIANT_EXPIRY_21_DAYS}
+VALID_VARIANTS = {VARIANT_CONTROL, VARIANT_EXPIRY_7_DAYS, VARIANT_EXPIRY_14_DAYS}
 
 ATTRIBUTE_NAMESPACE = 'audit_expiry_experiment'
 ATTRIBUTE_NAME_EXPERIMENT_KEY = 'experiment_key'
@@ -209,9 +208,6 @@ def compute_audit_expiry_at(enrollment, variant, access_duration):
     elif variant == VARIANT_EXPIRY_14_DAYS:
         expiry_at = content_availability_date + timedelta(days=14)
         return expiry_at, 14
-    elif variant == VARIANT_EXPIRY_21_DAYS:
-        expiry_at = content_availability_date + timedelta(days=21)
-        return expiry_at, 21
     expiry_at = content_availability_date + access_duration
     return expiry_at, access_duration.days
 
