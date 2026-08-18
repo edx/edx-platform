@@ -2447,7 +2447,7 @@ BEAMER_PRODUCT_ID = ""
 # .. setting_description: Minimum course duration in weeks when Discovery service data is unavailable or course has no
 # .. weeks_to_complete value. Used as fallback for course access duration calculations (e.g., audit access expiration
 # .. and discussion notification filtering).
-COURSE_ACCESS_DURATION_MIN_WEEKS = 1
+COURSE_ACCESS_DURATION_MIN_WEEKS = 4
 
 # .. setting_name: COURSE_ACCESS_DURATION_MAX_WEEKS
 # .. setting_default: 18

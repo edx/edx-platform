@@ -9,8 +9,6 @@ from unittest.mock import Mock
 import crum
 import ddt
 import pytz
-
-from unittest.mock import patch  # lint-amnesty, pylint: disable=wrong-import-order
 from django.test import TestCase
 from django.test.client import RequestFactory
 from django.test.utils import override_settings
@@ -228,7 +226,6 @@ class TestCourseUpdateResolver(SchedulesResolverTestMixin, ModuleStoreTestCase):
         assert schedules.count() == 0
 
 
-@patch('openedx.core.djangoapps.course_date_signals.utils.MIN_DURATION', datetime.timedelta(weeks=4))
 @skip_unless_lms
 class TestCourseNextSectionUpdateResolver(SchedulesResolverTestMixin, ModuleStoreTestCase):
     """
