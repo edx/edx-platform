@@ -564,6 +564,7 @@ class FinancialAssistanceConfiguration(ConfigurationModel):
         help_text=_('Financial Assistance Backend API Base URL.')
     )
 
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # fixed service-account username, not a user's PII
     service_username = models.CharField(
         max_length=100,
         default='financial_assistance_service_user',

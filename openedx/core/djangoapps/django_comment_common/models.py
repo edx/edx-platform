@@ -239,6 +239,7 @@ class CourseDiscussionSettings(models.Model):
         help_text="Key/value store mapping discussion IDs to discussion XBlock usage keys.",
     )
     always_divide_inline_discussions = models.BooleanField(default=False)
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # boolean toggle, not an email address
     reported_content_email_notifications = models.BooleanField(default=False)
     _divided_discussions = models.TextField(db_column='divided_discussions', null=True, blank=True)  # JSON list
 
