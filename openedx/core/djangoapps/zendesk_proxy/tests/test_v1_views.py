@@ -6,6 +6,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import ddt
+from django.core.cache import cache
 from django.urls import reverse
 from django.test.utils import override_settings
 
@@ -38,6 +39,12 @@ def _post_side_effect(ticket_response):
     ZENDESK_URL=ZENDESK_URL,
     ZENDESK_OAUTH_CLIENT_ID="test_client_id",
     ZENDESK_OAUTH_CLIENT_SECRET="test_client_secret",
+    CACHES={
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'zendesk_proxy',
+        }
+    }
 )
 class ZendeskProxyTestCase(ApiTestCase):
     """Tests for zendesk_proxy views."""
@@ -67,6 +74,7 @@ class ZendeskProxyTestCase(ApiTestCase):
                 }
             ],
         }
+        cache.clear()
         return super().setUp()
 
     @ddt.data(
@@ -87,7 +95,8 @@ class ZendeskProxyTestCase(ApiTestCase):
                 content_type='application/json'
             )
             self.assertHttpCreated(response)
-            (mock_args, mock_kwargs) = mock_post.call_args
+            ticket_call = next(call for call in mock_post.call_args_list if call.args[0] == TICKET_URL)
+            (mock_args, mock_kwargs) = ticket_call
             assert mock_args == (TICKET_URL,)
             self.assertCountEqual(mock_kwargs.keys(), ['headers', 'data'])
             assert mock_kwargs['headers'] == {

@@ -70,6 +70,7 @@ def _post_side_effect(token_response, ticket_response):
     ZENDESK_OAUTH_SCOPE="tickets:write",
     ZENDESK_OAUTH_TOKEN_EXPIRES_IN=3600,
     ZENDESK_GROUP_ID_MAPPING={"Financial Assistance": 123},
+    CACHES=LOCMEM_CACHES,
 )
 class TestUtils(ApiTestCase):  # lint-amnesty, pylint: disable=missing-class-docstring
     def setUp(self):
@@ -402,6 +403,7 @@ class TestUtils(ApiTestCase):  # lint-amnesty, pylint: disable=missing-class-doc
     ZENDESK_OAUTH_CLIENT_SECRET="test_client_secret",
     ZENDESK_OAUTH_SCOPE="tickets:write",
     ZENDESK_OAUTH_TOKEN_EXPIRES_IN=3600,
+    CACHES=LOCMEM_CACHES,
 )
 class TestPostAdditionalInfoAsComment(ApiTestCase):
     """Tests for `post_additional_info_as_comment` in isolation."""
