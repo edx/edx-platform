@@ -135,9 +135,10 @@ def _is_invalid_token_response(response):
     if response.status_code != status.HTTP_401_UNAUTHORIZED:
         return False
     try:
-        return response.json().get('error') == 'invalid_token'
+        data = response.json()
     except ValueError:
-        return True
+        return False
+    return isinstance(data, dict) and data.get('error') == 'invalid_token'
 
 
 def _zendesk_request(method, url, payload):
@@ -276,7 +277,7 @@ def post_additional_info_as_comment(ticket_id, additional_info):
         }
     }
 
-    url = urljoin(settings.ZENDESK_URL, f'api/v2/tickets/{ticket_id}.json')
+    url = urljoin(settings.ZENDESK_URL, f'/api/v2/tickets/{ticket_id}.json')
     payload = json.dumps(data)
 
     try:

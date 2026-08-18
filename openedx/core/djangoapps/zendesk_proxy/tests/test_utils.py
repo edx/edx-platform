@@ -126,6 +126,29 @@ class TestUtils(ApiTestCase):  # lint-amnesty, pylint: disable=missing-class-doc
         assert status_code == 401
         assert mock_post.call_count == 2  # one token request, one ticket request
 
+    def test_401_with_non_json_body_does_not_retry(self):
+        """A 401 with a non-JSON body can't be positively identified as invalid_token, so no retry."""
+        token_response = _mock_token_response()
+        ticket_response = _mock_response(401, raise_on_json=True)
+        with patch(
+            'requests.post', side_effect=_post_side_effect(token_response, ticket_response)
+        ) as mock_post:
+            status_code = self._create_ticket()
+        assert status_code == 401
+        assert mock_post.call_count == 2  # one token request, one ticket request
+
+    def test_401_with_non_dict_json_body_does_not_retry(self):
+        """A 401 with a non-dict JSON body (e.g. a list) must not raise and must not retry."""
+        token_response = _mock_token_response()
+        ticket_response = _mock_response(401)
+        ticket_response.json.return_value = ['unexpected', 'array']
+        with patch(
+            'requests.post', side_effect=_post_side_effect(token_response, ticket_response)
+        ) as mock_post:
+            status_code = self._create_ticket()
+        assert status_code == 401
+        assert mock_post.call_count == 2  # one token request, one ticket request
+
     def test_unexpected_error_pinging_zendesk(self):
         with patch('requests.post', side_effect=Exception("WHAMMY")):
             status_code = self._create_ticket()
