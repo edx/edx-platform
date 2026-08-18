@@ -1815,7 +1815,10 @@ OPTIMIZELY_FULLSTACK_SDK_KEY = None
 ################################# Zendesk ##################################
 ZENDESK_URL = ''
 ZENDESK_CUSTOM_FIELDS = {}
-ZENDESK_OAUTH_ACCESS_TOKEN = ''
+ZENDESK_OAUTH_CLIENT_ID = ''
+ZENDESK_OAUTH_CLIENT_SECRET = ''
+ZENDESK_OAUTH_SCOPE = 'tickets:write'
+ZENDESK_OAUTH_TOKEN_EXPIRES_IN = 86400
 # A mapping of string names to Zendesk Group IDs
 # To get the IDs of your groups you can go to
 # {zendesk_url}/api/v2/groups.json

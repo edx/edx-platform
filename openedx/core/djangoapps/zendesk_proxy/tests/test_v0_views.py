@@ -6,17 +6,44 @@ import json
 
 from unittest.mock import MagicMock, patch
 import ddt
+from django.core.cache import cache
 from django.urls import reverse
 from django.test.utils import override_settings
 
 from openedx.core.djangoapps.zendesk_proxy.v0.views import ZENDESK_REQUESTS_PER_HOUR
 from openedx.core.lib.api.test_utils import ApiTestCase
 
+ZENDESK_URL = "https://www.superrealurlsthataredefinitelynotfake.com"
+TOKEN_URL = ZENDESK_URL + "/oauth/tokens"
+TICKET_URL = ZENDESK_URL + "/api/v2/tickets.json"
+ACCESS_TOKEN = "abcdefghijklmnopqrstuvwxyz1234567890"
+
+
+def _post_side_effect(ticket_response):
+    """Route requests.post to a fake OAuth token response, or the given ticket response."""
+    def _side_effect(url, data=None, headers=None):  # pylint: disable=unused-argument
+        if url == TOKEN_URL:
+            token_response = MagicMock(status_code=200)
+            token_response.json.return_value = {
+                'access_token': ACCESS_TOKEN, 'token_type': 'bearer',
+                'expires_in': 3600, 'scope': 'tickets:write',
+            }
+            return token_response
+        return ticket_response
+    return _side_effect
+
 
 @ddt.ddt
 @override_settings(
-    ZENDESK_URL="https://www.superrealurlsthataredefinitelynotfake.com",
-    ZENDESK_OAUTH_ACCESS_TOKEN="abcdefghijklmnopqrstuvwxyz1234567890"
+    ZENDESK_URL=ZENDESK_URL,
+    ZENDESK_OAUTH_CLIENT_ID="test_client_id",
+    ZENDESK_OAUTH_CLIENT_SECRET="test_client_secret",
+    CACHES={
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'zendesk_proxy',
+        }
+    }
 )
 class ZendeskProxyTestCase(ApiTestCase):
     """Tests for zendesk_proxy views."""
@@ -32,10 +59,11 @@ class ZendeskProxyTestCase(ApiTestCase):
                 'message': "Help! I'm trapped in a unit test factory and I can't get out!",
             }
         }
+        cache.clear()
         return super().setUp()
 
     def test_post(self):
-        with patch('requests.post', return_value=MagicMock(status_code=201)) as mock_post:
+        with patch('requests.post', side_effect=_post_side_effect(MagicMock(status_code=201))) as mock_post:
             response = self.request_without_auth(
                 'post',
                 self.url,
@@ -43,11 +71,12 @@ class ZendeskProxyTestCase(ApiTestCase):
                 content_type='application/json'
             )
             self.assertHttpCreated(response)
-            (mock_args, mock_kwargs) = mock_post.call_args
-            assert mock_args == ('https://www.superrealurlsthataredefinitelynotfake.com/api/v2/tickets.json',)
+            ticket_call = next(call for call in mock_post.call_args_list if call.args[0] == TICKET_URL)
+            (mock_args, mock_kwargs) = ticket_call
+            assert mock_args == (TICKET_URL,)
             self.assertCountEqual(mock_kwargs.keys(), ['headers', 'data'])
             assert mock_kwargs['headers'] == {
-                'content-type': 'application/json', 'Authorization': 'Bearer abcdefghijklmnopqrstuvwxyz1234567890'
+                'content-type': 'application/json', 'Authorization': f'Bearer {ACCESS_TOKEN}'
             }
             assert json.loads(mock_kwargs['data']) == {
                 'ticket':
