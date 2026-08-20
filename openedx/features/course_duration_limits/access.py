@@ -20,7 +20,6 @@ from lms.djangoapps.courseware.masquerade import get_course_masquerade, is_masqu
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.course_date_signals.utils import get_expected_duration
 from openedx.core.djangolib.markup import HTML
-from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
 
 
 class AuditExpiredError(AccessError):
