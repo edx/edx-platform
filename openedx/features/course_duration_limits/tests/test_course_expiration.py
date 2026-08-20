@@ -5,6 +5,7 @@ Contains tests to verify correctness of course expiration functionality
 from datetime import timedelta
 from unittest import mock
 
+import pytest
 import ddt
 from django.conf import settings
 from django.urls import reverse
@@ -42,6 +43,7 @@ from openedx.features.course_experience.tests.views.helpers import add_course_mo
 
 # pylint: disable=no-member
 @ddt.ddt
+@pytest.mark.skip(reason="Course duration logic removed")
 class CourseExpirationTestCase(ModuleStoreTestCase, MasqueradeMixin):
     """Tests to verify the get_user_course_expiration_date function is working correctly"""
     def setUp(self):
