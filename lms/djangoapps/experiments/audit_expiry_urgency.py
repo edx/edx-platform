@@ -27,11 +27,12 @@ from .flags import audit_expiry_urgency_v1_enabled_for_course
 
 log = logging.getLogger(__name__)
 
-EXPERIMENT_KEY = 'audit_expiry_urgency_v1'
+EXPERIMENT_KEY = 'audit_duration_a_b_c_test'
 
 VARIANT_CONTROL = 'control_5_7_weeks'
-VARIANT_EXPIRY_7_DAYS = 'expiry_7_days'
-VALID_VARIANTS = {VARIANT_CONTROL, VARIANT_EXPIRY_7_DAYS}
+VARIANT_EXPIRY_7_DAYS = '7_day_limit'
+VARIANT_EXPIRY_14_DAYS = '14_day_limit'
+VALID_VARIANTS = {VARIANT_CONTROL, VARIANT_EXPIRY_7_DAYS, VARIANT_EXPIRY_14_DAYS}
 
 ATTRIBUTE_NAMESPACE = 'audit_expiry_experiment'
 ATTRIBUTE_NAME_EXPERIMENT_KEY = 'experiment_key'
@@ -204,6 +205,9 @@ def compute_audit_expiry_at(enrollment, variant, access_duration):
     if variant == VARIANT_EXPIRY_7_DAYS:
         expiry_at = content_availability_date + timedelta(days=7)
         return expiry_at, 7
+    elif variant == VARIANT_EXPIRY_14_DAYS:
+        expiry_at = content_availability_date + timedelta(days=14)
+        return expiry_at, 14
     expiry_at = content_availability_date + access_duration
     return expiry_at, access_duration.days
 
