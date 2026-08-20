@@ -970,7 +970,7 @@ class StudentDashboardTests(SharedModuleStoreTestCase, MilestonesTestCaseMixin, 
     @ddt.data(
         # gated_content_on, course_duration_limits_on, upgrade_message
         (True, True, 'Upgrade to get full access to the course material'),
-        (True, False, 'Upgrade to get full access to the course material'),
+        (True, False, 'Upgrade to earn'),
         (False, True, 'Upgrade to earn'),
         (False, False, 'Upgrade to earn'),
     )

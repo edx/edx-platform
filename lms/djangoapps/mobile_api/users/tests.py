@@ -9,7 +9,6 @@ from urllib.parse import parse_qs
 
 import ddt
 import pytz
-import pytest
 from completion.models import BlockCompletion
 from completion.test_utils import CompletionWaffleTestMixin, submit_completions_for_testing
 from django.conf import settings
@@ -371,7 +370,6 @@ class TestUserEnrollmentApi(UrlResetMixin, MobileAPITestCase, MobileAuthUserTest
         (API_V2, False, 1),
     )
     @ddt.unpack
-    @pytest.mark.skip(reason="Course duration logic removed")
     def test_enrollment_with_gating(self, api_version, expired, num_courses_returned):
         """
         Test that expired courses are only returned in v1 of API
@@ -390,7 +388,6 @@ class TestUserEnrollmentApi(UrlResetMixin, MobileAPITestCase, MobileAuthUserTest
         (API_V2, False, 1),
     )
     @ddt.unpack
-    @pytest.mark.skip(reason="Course duration logic removed")
     def test_enrollment_no_gating(self, api_version, expired, num_courses_returned):
         """
         Test that expired and non-expired courses are returned if the waffle flag is disabled,
