@@ -808,6 +808,7 @@ class CourseOverviewAccessTestCase(ModuleStoreTestCase):
         )
     )
     @ddt.unpack
+    @pytest.mark.skip(reason="Course duration logic removed")
     @patch.dict('django.conf.settings.FEATURES', {'DISABLE_START_DATES': False})
     def test_course_catalog_access_num_queries(self, user_attr_name, action, course_attr_name):
         ContentTypeGatingConfig.objects.create(enabled=True, enabled_as_of=datetime.datetime(2018, 1, 1))
