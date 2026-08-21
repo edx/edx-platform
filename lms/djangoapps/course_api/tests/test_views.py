@@ -414,7 +414,6 @@ class CourseListSearchViewTest(CourseApiTestViewMixin, ModuleStoreTestCase, Sear
         assert len(res.data['results']) == 1
         # Should return a single course
 
-    @pytest.mark.skip(reason="Course duration logic removed")
     def test_too_many_courses(self):
         """
         Test that search results are limited to 100 courses, and that they don't

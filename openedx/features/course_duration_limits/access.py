@@ -20,6 +20,7 @@ from lms.djangoapps.courseware.masquerade import get_course_masquerade, is_masqu
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.course_date_signals.utils import get_expected_duration
 from openedx.core.djangolib.markup import HTML
+from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
 
 
 class AuditExpiredError(AccessError):
@@ -55,6 +56,8 @@ def get_user_course_duration(user, course):
       - Course access duration is bounded by the min and max duration.
       - If course fields are missing, default course access duration to MIN_DURATION.
     """
+    if not CourseDurationLimitConfig.enabled_for_enrollment(user, course):
+            return None
     enrollment = CourseEnrollment.get_enrollment(user, course.id)
     if enrollment is None or enrollment.mode != CourseMode.AUDIT:
         return None
