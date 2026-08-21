@@ -57,7 +57,7 @@ def get_user_course_duration(user, course):
       - If course fields are missing, default course access duration to MIN_DURATION.
     """
     if not CourseDurationLimitConfig.enabled_for_enrollment(user, course):
-            return None
+        return None
     enrollment = CourseEnrollment.get_enrollment(user, course.id)
     if enrollment is None or enrollment.mode != CourseMode.AUDIT:
         return None
