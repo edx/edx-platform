@@ -2105,6 +2105,37 @@ BULK_EMAIL_JOB_SIZE_THRESHOLD = 100
 # parallel, and what the SES rate is.
 BULK_EMAIL_RETRY_DELAY_BETWEEN_SENDS = 0.02
 
+############################# Bulk Unenroll ###################################
+
+# Upload guardrails (lms/djangoapps/support/rest_api). The row limit counts every
+# data row, duplicates included: it guards the file, not the de-duped course list.
+BULK_UNENROLL_MAX_FILE_BYTES = 5 * 1024 * 1024   # 5 MB
+BULK_UNENROLL_MAX_ROWS = 2000
+
+# --- Async engine (lms/djangoapps/support/tasks.py) ---
+# Worst case is ~10M unenrollments from one upload; these knobs throttle a real
+# run without a code deploy.
+
+# Learners deactivated per chunk task. Smaller = finer-grained progress/retry;
+# larger = fewer task round-trips.
+BULK_UNENROLL_CHUNK_SIZE = 500
+
+# Celery ``rate_limit`` for the chunk task, per worker process. ``None`` leaves
+# throughput to the queue's worker concurrency; "10/s" adds a per-worker cap.
+BULK_UNENROLL_CHUNK_RATE_LIMIT = None
+
+# Per-chunk soft time limit (seconds). On overrun the chunk records what it got
+# through and queues the untouched tail as a fresh chunk.
+BULK_UNENROLL_SOFT_TIME_LIMIT = 300
+
+# A running chunk re-checks for revocation every N learners, bounding the
+# overrun after a cancel to ~N without a DB check per learner.
+BULK_UNENROLL_CANCEL_CHECK_EVERY = 50
+
+# Queue the engine's tasks run on. In production, point this at a DEDICATED queue
+# whose worker concurrency bounds the run, so it never starves interactive tasks.
+BULK_UNENROLL_ROUTING_KEY = Derived(lambda settings: settings.DEFAULT_PRIORITY_QUEUE)
+
 ############################# Email Opt In ####################################
 
 # Minimum age for organization-wide email opt in
