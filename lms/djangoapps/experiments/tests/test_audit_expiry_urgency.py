@@ -394,4 +394,3 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
         assert variant == '14_day_limit'
         assert expiry_days == '14'
         assert decision_source == 'optimizely'
-        
