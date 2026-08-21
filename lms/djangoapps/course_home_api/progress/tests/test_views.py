@@ -4,8 +4,6 @@ Tests for Progress Tab API in the Course Home API
 
 from datetime import datetime, timedelta
 from unittest.mock import patch
-import unittest
-import pytest
 
 import dateutil
 import ddt
@@ -288,8 +286,6 @@ class ProgressTabTestViews(BaseCourseHomeTests):
         (False, 0.32),  # Only lab and midterm is visible to learners
     )
     @ddt.unpack
-    @unittest.skipIf(True, "Skipping until duration logic removal is finalized")
-    @pytest.mark.skip(reason="Course duration logic removed, pending test update — TICKET-1234")
     def test_course_grade_considers_subsection_grade_visibility(self, is_staff, expected_percent):
         """
         Verify that the grade & is_passing info we send out is for visible grades only.

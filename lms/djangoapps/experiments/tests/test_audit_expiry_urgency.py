@@ -3,7 +3,6 @@
 from datetime import timedelta
 from unittest import mock
 
-import pytest
 from django.test.utils import override_settings
 from django.utils import timezone
 from edx_django_utils.cache import RequestCache
@@ -168,7 +167,6 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
         assert assigned_at
         assert decision_source == 'fallback_control'
 
-    @pytest.mark.skip(reason="Course duration logic removed")
     def test_reuses_variant_across_targeted_courses(self):
         user = None
         enrollment_1 = CourseEnrollmentFactory.create(
@@ -353,3 +351,44 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
                 )
 
         assert conversion_client.track.call_count == 0
+
+    def test_assigns_14_day_expiry_variant_from_optimizely(self):
+        enrollment = CourseEnrollmentFactory.create(
+            course=self.course_1,
+            mode=CourseMode.AUDIT,
+            is_active=True,
+        )
+        self._enable_course_flag(self.course_1.id)
+
+        with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
+            client = mock.Mock()
+            client.activate.return_value = '14_day_limit'
+
+            with mock.patch(
+                'lms.djangoapps.experiments.audit_expiry_urgency.'
+                'OptimizelyClient.get_optimizely_client',
+                return_value=client,
+            ):
+                enrollment.save()
+
+        variant = CourseEnrollmentAttribute.objects.get(
+            enrollment=enrollment,
+            namespace='audit_expiry_experiment',
+            name='variant',
+        ).value
+
+        expiry_days = CourseEnrollmentAttribute.objects.get(
+            enrollment=enrollment,
+            namespace='audit_expiry_experiment',
+            name='expiry_days',
+        ).value
+
+        decision_source = CourseEnrollmentAttribute.objects.get(
+            enrollment=enrollment,
+            namespace='audit_expiry_experiment',
+            name='decision_source',
+        ).value
+
+        assert variant == '14_day_limit'
+        assert expiry_days == '14'
+        assert decision_source == 'optimizely'
