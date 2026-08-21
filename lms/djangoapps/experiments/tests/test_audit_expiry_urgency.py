@@ -3,7 +3,6 @@
 from datetime import timedelta
 from unittest import mock
 
-import pytest
 from django.test.utils import override_settings
 from django.utils import timezone
 from edx_django_utils.cache import RequestCache
@@ -168,7 +167,6 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
         assert assigned_at
         assert decision_source == 'fallback_control'
 
-    @pytest.mark.skip(reason="Course duration logic removed")
     def test_reuses_variant_across_targeted_courses(self):
         user = None
         enrollment_1 = CourseEnrollmentFactory.create(
