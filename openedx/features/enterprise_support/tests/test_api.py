@@ -1088,6 +1088,7 @@ class TestEnterpriseApi(EnterpriseServiceMockMixin, CacheIsolationTestCase):
         assert pipeline == \
                [
                    'abc', 'enterprise.tpa_pipeline.handle_enterprise_logistration',
+                   'channel_integrations.integrated_channel.pipeline.sync_tpa_budget_group',
                    'social_core.pipeline.social_auth.load_extra_data', 'def'
                ]
 
