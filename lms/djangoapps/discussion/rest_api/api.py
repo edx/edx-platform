@@ -1725,8 +1725,7 @@ def get_comment_list(
     if not responses and page != 1:
         raise PageNotFoundError("Page not found (No results on this page).")
     num_pages = (resp_total + page_size - 1) // page_size if resp_total else 1
-
-    if not show_deleted:
+    if not show_deleted and responses:
         responses = [
             response for response in responses if not response.get("is_deleted", False)
         ]
