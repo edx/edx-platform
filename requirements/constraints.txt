@@ -13,10 +13,6 @@
 # This file contains all common constraints for edx-repos
 -c common_constraints.txt
 
-# Date: 2025-10-07
-# Stay on LTS version, remove once this is added to common constraint
-Django<6.0
-
 # Date: 2020-02-26
 # As it is not clarified what exact breaking changes will be introduced as per
 # the next major release, ensure the installed version is within boundaries.
@@ -130,9 +126,11 @@ django-debug-toolbar<6.0.0
 # Cryptography 46.0.0 conflicts with system dependencies needed for snowflake-connector-python
 # snowflake-connector-python comes as a dependency of edx-enterprise so it can not be directly pinned here.
 # See issue https://github.com/openedx/edx-platform/issues/37417 for details on this.
-# This can be unpinned once snowflake-connector-python==4.0.0 is available (contains the fix).
-# pact-python==3.0.0 also removes cffi dependency and is causing the upgrade build to fail
-# This should also be removed together with cryptography constraint.
+# Update 2026-08-24: snowflake-connector-python is now upgraded to 4.x, which dropped its cffi
+# dependency and no longer conflicts with cryptography>=46.0.0 on its own. This constraint remains
+# in place only because of the coupled pact-python issue below - pact-python==3.0.0 also removes
+# its cffi dependency and causes the upgrade build to fail, so cryptography and pact-python need to
+# be unpinned together once pact-python 3.0.0 compatibility is verified.
 # Issue: https://github.com/openedx/edx-platform/issues/37435
 cryptography<46.0.0
 pact-python<3.0.0
