@@ -1725,16 +1725,15 @@ def get_comment_list(
     if not responses and page != 1:
         raise PageNotFoundError("Page not found (No results on this page).")
     num_pages = (resp_total + page_size - 1) // page_size if resp_total else 1
-
-    if not show_deleted:
-        responses = [
-            response for response in responses if not response.get("is_deleted", False)
-        ]
-    else:
+    if show_deleted:
         if not context["has_moderation_privilege"]:
             raise PermissionDenied(
                 "`show_deleted` can only be set by users with moderation roles."
             )
+    elif responses:
+        responses = [
+            response for response in responses if not response.get("is_deleted", False)
+        ]
 
     # Always filter muted content for All Posts tab
     if include_muted:
