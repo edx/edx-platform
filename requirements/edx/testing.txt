@@ -590,8 +590,7 @@ edx-i18n-tools==1.9.0
     # via
     #   -r requirements/edx/base.txt
     #   ora2
-    #   xblocks-contrib
-edx-lint==5.6.0
+git+https://github.com/Akanshu-2u/edx-lint.git@master#egg=edx-lint                  # pylint extensions for Open edX repositories
     # via -r requirements/edx/testing.in
 edx-milestones==1.1.0
     # via -r requirements/edx/base.txt

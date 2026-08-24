@@ -433,6 +433,7 @@ class CourseAuthorization(models.Model):
     course_id = CourseKeyField(max_length=255, db_index=True, unique=True)
 
     # Whether or not to enable instructor email
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # boolean toggle, not an email address
     email_enabled = models.BooleanField(default=False)
 
     @classmethod
@@ -495,6 +496,7 @@ class BulkEmailFlag(ConfigurationModel):
     .. toggle_creation_date: 2016-05-05
     """
     # boolean field 'enabled' inherited from parent ConfigurationModel
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # boolean toggle, not an email address
     require_course_email_auth = models.BooleanField(default=True)
 
     @classmethod

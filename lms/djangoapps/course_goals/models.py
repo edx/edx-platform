@@ -86,6 +86,7 @@ class CourseGoalReminderStatus(TimeStampedModel):
         verbose_name_plural = "Course goal reminder statuses"
 
     goal = models.OneToOneField(CourseGoal, on_delete=models.CASCADE, related_name='reminder_status')
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # boolean toggle, not an email address
     email_reminder_sent = models.BooleanField(
         default=False, help_text='Tracks if the email reminder to complete the Course Goal has been sent this week.'
     )

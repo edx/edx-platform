@@ -44,6 +44,7 @@ class CatalogIntegration(ConfigurationModel):
         )
     )
 
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # fixed service-account username, not a user's PII
     service_username = models.CharField(
         max_length=100,
         default='lms_catalog_service_user',
