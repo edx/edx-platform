@@ -1,0 +1,27 @@
+openedx/core/djangoapps/programs/rest_api/v1/tests/test_views.py
+  s_36ffe2f7109ad6::t_d5b5a134ab2a5a 222-223,230-235,254-257,259,264,266-268,270-274
+  s_36ffe2f7109ad6::t_7f11320fd79610 142-163,165-179,194-195
+  s_36ffe2f7109ad6::t_c96352cab6c62a 164
+  s_36ffe2f7109ad6::t_72594ba6ec4ec0 30
+  s_36ffe2f7109ad6::t_1f18ecf5eec949 9
+openedx/core/djangoapps/programs/rest_api/v1/views.py
+  s_36ffe2f7109ad6::t_7cbb77d540e6f8 102-103,105
+  s_36ffe2f7109ad6::t_97bd8c78f2a6aa 6,28-36
+  s_36ffe2f7109ad6::t_5d4d4a1a932bda 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "34f29b3210f3f3326222254e35d9e31fc3b94056",
+  "prompts": {},
+  "sessions": {
+    "s_36ffe2f7109ad6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a37d08a6-99bd-422e-bf12-daa8d1671caf",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
