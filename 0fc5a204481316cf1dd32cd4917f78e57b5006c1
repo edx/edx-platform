@@ -1,0 +1,41 @@
+openedx/core/djangoapps/user_authn/views/login.py
+  s_36ffe2f7109ad6::t_fc750a13dfa57c 57
+openedx/core/djangoapps/user_authn/views/utils.py
+  s_74b78dc9b2068e::t_f233ffeba86686 117
+  s_74b78dc9b2068e::t_1248a9200a03ad 119
+  s_6f4dce27b2ce31::t_5a76bc3ad97cf0 120
+openedx/core/djangoapps/user_authn/views/registration_form.py
+  s_6f4dce27b2ce31::t_d5ae6189fc13e9 585,1327,1365,1376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0fc5a204481316cf1dd32cd4917f78e57b5006c1",
+  "prompts": {},
+  "sessions": {
+    "s_36ffe2f7109ad6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a37d08a6-99bd-422e-bf12-daa8d1671caf",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    },
+    "s_6f4dce27b2ce31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6e017b9835bf9c35",
+        "model": "unknown"
+      },
+      "human_author": "Troy Sankey <tsankey@2u.com>"
+    },
+    "s_74b78dc9b2068e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "77e884c1-0be7-4c7b-9b03-0e8499c011b2",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Troy Sankey <tsankey@2u.com>"
+    }
+  }
+}
