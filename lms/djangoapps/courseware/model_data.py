@@ -28,6 +28,7 @@ from abc import ABCMeta, abstractmethod
 from collections import defaultdict, namedtuple
 
 from django.db import DatabaseError, IntegrityError, transaction
+from opaque_keys import InvalidKeyError
 from opaque_keys.edx.asides import AsideUsageKeyV1, AsideUsageKeyV2
 from opaque_keys.edx.block_types import BlockTypeKeyV1
 from opaque_keys.edx.keys import LearningContextKey
@@ -832,7 +833,14 @@ class FieldDataCache:
             return None
 
         course_key = block.location.course_key
-        return [course_key.make_usage_key(block_type, block_id) for block_type, block_id in selected]
+        try:
+            return [course_key.make_usage_key(block_type, block_id) for block_type, block_id in selected]
+        except (TypeError, ValueError, InvalidKeyError):
+            log.warning(
+                "Malformed 'selected' state for %s / %s while narrowing FieldDataCache prefetch",
+                self.user.id, block.location,
+            )
+            return None
 
     @classmethod
     def cache_for_block_descendents(cls, course_id, user, block, depth=None,

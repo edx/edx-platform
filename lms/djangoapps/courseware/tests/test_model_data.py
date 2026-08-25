@@ -543,3 +543,24 @@ class TestFieldDataCacheDynamicChildren(TestCase):
 
         parent.get_children.assert_called_once()
         parent.get_child.assert_not_called()
+
+    def test_falls_back_on_malformed_selection(self):
+        """
+        A saved `selected` value that isn't a list of (block_type, block_id)
+        pairs shouldn't blow up the render -- fall back to the full pool, same
+        as any other case where we can't make sense of what's saved.
+        """
+        StudentModule.objects.create(
+            student=self.user,
+            course_id=COURSE_KEY,
+            module_state_key=self.parent_location,
+            module_type='library_content',
+            state=json.dumps({'selected': ['not-a-pair', 'also-not-a-pair']}),
+        )
+        parent = self._make_parent_block()
+
+        cache = FieldDataCache([], COURSE_KEY, self.user)
+        cache.add_block_descendents(parent)
+
+        parent.get_children.assert_called_once()
+        parent.get_child.assert_not_called()
