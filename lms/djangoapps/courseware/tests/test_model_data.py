@@ -444,3 +444,123 @@ class TestStudentInfoStorage(OtherUserFailureTestMixin, StorageTestBase, TestCas
     storage_class = XModuleStudentInfoField
     other_key_factory = partial(DjangoKeyValueStore.Key, Scope.user_info, 2, 'mock_problem')  # user_id=2, not 1
     existing_field_name = "existing_field"
+
+
+class TestFieldDataCacheDynamicChildren(TestCase):
+    """
+    Tests that prefetch narrows to a question bank's saved per-learner picks
+    (read straight from the database) rather than its whole problem pool.
+
+    Note the fake "block" objects below never need to claim they know who the
+    learner is -- the fix doesn't ask the block at all, which is the point.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.user = UserFactory()
+        self.parent_location = COURSE_KEY.make_usage_key('library_content', 'pool')
+        self.pool_locations = [
+            COURSE_KEY.make_usage_key('problem', f'p{i}') for i in range(6)
+        ]
+
+    def _make_parent_block(self):
+        """
+        Fake stand-in for a question-bank block that has 6 possible problems in
+        its pool (self.pool_locations), any of which might get picked for a
+        given learner.
+        """
+        pool_blocks = {}
+        for loc in self.pool_locations:
+            child = mock_block()
+            child.location = loc
+            child.has_dynamic_children.return_value = False
+            child.get_children.return_value = []
+            child.get_required_block_descriptors.return_value = []
+            pool_blocks[loc] = child
+
+        parent = mock_block()
+        parent.location = self.parent_location
+        parent.has_dynamic_children.return_value = True
+        parent.get_children.return_value = list(pool_blocks.values())
+        parent.get_required_block_descriptors.return_value = []
+        parent.get_child.side_effect = pool_blocks.get
+        return parent
+
+    def test_narrows_prefetch_to_persisted_selection(self):
+        """
+        With 3 saved picks out of a 6-problem pool, prefetch loads only those 3
+        (via get_child()) and never calls get_children().
+        """
+        StudentModule.objects.create(
+            student=self.user,
+            course_id=COURSE_KEY,
+            module_state_key=self.parent_location,
+            module_type='library_content',
+            state=json.dumps({'selected': [['problem', 'p0'], ['problem', 'p2'], ['problem', 'p4']]}),
+        )
+        parent = self._make_parent_block()
+
+        cache = FieldDataCache([], COURSE_KEY, self.user)
+        cache.add_block_descendents(parent)
+
+        called_keys = {call.args[0] for call in parent.get_child.call_args_list}
+        assert called_keys == {
+            COURSE_KEY.make_usage_key('problem', 'p0'),
+            COURSE_KEY.make_usage_key('problem', 'p2'),
+            COURSE_KEY.make_usage_key('problem', 'p4'),
+        }
+        parent.get_children.assert_not_called()
+
+    def test_falls_back_to_full_pool_when_no_selection_saved(self):
+        """
+        With no saved picks (no StudentModule row for this block/user), prefetch
+        falls back to loading the whole pool, same as before this fix.
+        """
+        parent = self._make_parent_block()
+
+        cache = FieldDataCache([], COURSE_KEY, self.user)
+        cache.add_block_descendents(parent)
+
+        parent.get_children.assert_called_once()
+        parent.get_child.assert_not_called()
+
+    def test_ignores_empty_selection(self):
+        """
+        A saved row with an empty pick list is treated the same as no row at
+        all -- falls back to the full pool, not down to zero problems.
+        """
+        StudentModule.objects.create(
+            student=self.user,
+            course_id=COURSE_KEY,
+            module_state_key=self.parent_location,
+            module_type='library_content',
+            state=json.dumps({'selected': []}),
+        )
+        parent = self._make_parent_block()
+
+        cache = FieldDataCache([], COURSE_KEY, self.user)
+        cache.add_block_descendents(parent)
+
+        parent.get_children.assert_called_once()
+        parent.get_child.assert_not_called()
+
+    def test_falls_back_on_malformed_selection(self):
+        """
+        A saved `selected` value that isn't a list of (block_type, block_id)
+        pairs shouldn't blow up the render -- fall back to the full pool, same
+        as any other case where we can't make sense of what's saved.
+        """
+        StudentModule.objects.create(
+            student=self.user,
+            course_id=COURSE_KEY,
+            module_state_key=self.parent_location,
+            module_type='library_content',
+            state=json.dumps({'selected': ['not-a-pair', 'also-not-a-pair']}),
+        )
+        parent = self._make_parent_block()
+
+        cache = FieldDataCache([], COURSE_KEY, self.user)
+        cache.add_block_descendents(parent)
+
+        parent.get_children.assert_called_once()
+        parent.get_child.assert_not_called()
