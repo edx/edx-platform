@@ -238,7 +238,7 @@ class ItemBankMixin(
                 added=format_block_keys(block_keys['added'])
             )
 
-    def selected_children(self):
+    def selected_children(self, read_only=False):
         """
         Returns a [] of block_ids indicating which of the possible children
         have been selected to display to the current user.
@@ -254,19 +254,20 @@ class ItemBankMixin(
             max_count = len(self.children)
 
         block_keys = self.make_selection(self.selected, self.children, max_count)  # pylint: disable=no-member
+        selected = block_keys['selected']
 
-        self.publish_selected_children_events(
-            block_keys,
-            self.format_block_keys_for_analytics,
-            self._publish_event,
-        )
+        if not read_only:
+            self.publish_selected_children_events(
+                block_keys,
+                self.format_block_keys_for_analytics,
+                self._publish_event,
+            )
 
-        if any(block_keys[changed] for changed in ('invalid', 'overlimit', 'added')):
+        if not read_only and any(block_keys[changed] for changed in ('invalid', 'overlimit', 'added')):
             # Save our selections to the user state, to ensure consistency:
-            selected = block_keys['selected']
             self.selected = selected  # TODO: this doesn't save from the LMS "Progress" page.
 
-        return self.selected
+        return selected if read_only else self.selected
 
     def format_block_keys_for_analytics(self, block_keys: list[tuple[str, str]]) -> list[dict]:
         """
@@ -303,13 +304,19 @@ class ItemBankMixin(
         self.selected = []
         return Response(json.dumps(self.student_view({}).content))
 
-    def _get_selected_child_blocks(self):
+    def _get_selected_child_blocks(self, read_only=False):
         """
         Generator returning XBlock instances of the children selected for the
         current user.
         """
-        for block_type, block_id in self.selected_children():
+        for block_type, block_id in self.selected_children(read_only=read_only):
             yield self.runtime.get_block(self.context_key.make_usage_key(block_type, block_id))
+
+    def get_child_blocks_for_prefetch(self):
+        """
+        Return the learner-selected child blocks without publishing analytics or mutating user state.
+        """
+        return list(self._get_selected_child_blocks(read_only=True))
 
     def student_view(self, context):  # lint-amnesty, pylint: disable=missing-function-docstring
         fragment = Fragment()
