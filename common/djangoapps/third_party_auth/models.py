@@ -766,6 +766,7 @@ class SAMLProviderConfig(ProviderConfig):
             "are skipped, their values are inferred as False (opted out)."
         ),
     )
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # field does not store user PII data, safe under OEP-30
     disable_email_editing = models.BooleanField(
         default=False,
         help_text=_(
