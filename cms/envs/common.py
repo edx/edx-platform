@@ -1652,17 +1652,6 @@ OPTIONAL_FIELD_API_RATELIMIT = '10/h'
 ######################## Setting for content libraries ########################
 MAX_BLOCKS_PER_CONTENT_LIBRARY = 100_000
 
-# Studio warning when Randomized Content / Item Bank "Count" (max_count) exceeds this.
-# Default 25; publish remains allowed (WARNING). Optional course waffle escalates to ERROR:
-# contentstore.hard_cap_library_content_max_count
-# .. setting_name: LIBRARY_CONTENT_MAX_COUNT_WARNING_THRESHOLD
-# .. setting_default: 25
-# .. setting_description: Threshold for Studio validation when library_content / itembank
-#   max_count is high enough to risk slow learner loads.
-LIBRARY_CONTENT_MAX_COUNT_WARNING_THRESHOLD = 25
-# Optional URL appended to the Studio warning (internal runbook). Empty = omit link text.
-LIBRARY_CONTENT_LARGE_MAX_COUNT_HELP_URL = ''
-
 ######################## Organizations ########################
 
 # .. toggle_name: ORGANIZATIONS_AUTOCREATE

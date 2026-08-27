@@ -49,9 +49,5 @@ def add_webpack_js_to_fragment(fragment, bundle_name):
     # We are not quite sure why.
     from webpack_loader.utils import get_files
     for chunk in get_files(bundle_name, None, 'DEFAULT'):
-        # django-webpack-loader 1.x reports the file name ("XModuleShim.js"); 2.x/3.x
-        # report the chunk key, which has no extension. Match the URL too, or every JS
-        # chunk is silently dropped and no built-in XBlock JS loads at all.
-        url = chunk['url']
-        if url.split('?')[0].endswith(('.js', '.js.gz')) or chunk['name'].endswith(('.js', '.js.gz')):
-            fragment.add_javascript_url(url)
+        if chunk['name'].endswith(('.js', '.js.gz')):
+            fragment.add_javascript_url(chunk['url'])

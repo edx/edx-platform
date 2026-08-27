@@ -4,26 +4,18 @@ defined in edx_user_state_client.
 """
 
 import pytz
-from opaque_keys.edx.locator import (
-    BlockUsageLocator,
-    CourseLocator,
-    LibraryLocatorV2,
-    LibraryUsageLocatorV2,
-)
+from opaque_keys.edx.locator import BlockUsageLocator, CourseLocator
 from xblock.fields import Scope
 from datetime import datetime
 from unittest import TestCase
-from unittest.mock import patch
 from collections import defaultdict
 from django.db import connections
 
 from common.djangoapps.student.tests.factories import UserFactory
 from lms.djangoapps.courseware.user_state_client import (
     DjangoXBlockUserStateClient,
-    LazyUserState,
     XBlockUserStateClient,
-    XBlockUserState,
-    loads_user_state,
+    XBlockUserState
 )
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
 
@@ -765,200 +757,3 @@ class TestDjangoUserStateClient(UserStateClientTestBase, ModuleStoreTestCase):
             2. Update the test in the other repo to align with the new functionality
             3. Remove this override to re-enable the working test
         """
-
-
-class TestDjangoUserStateClientQueryShape(ModuleStoreTestCase):
-    """
-    Tests for A2 get_many query shaping: single-query vs chunk fallback and field projection.
-    """
-    # Tell Django to clean out all databases, not just default
-    databases = set(connections)
-
-    def setUp(self):
-        super().setUp()
-        self.user = UserFactory.create()
-        self.client = DjangoXBlockUserStateClient(user=self.user)
-        self.course_key = CourseLocator('orgQ', 'courseQ', 'runQ')
-
-    def _usage_key(self, index):
-        return BlockUsageLocator(self.course_key, 'problem', f'block{index}')
-
-    def test_get_many_accepts_keys_without_a_version_concept(self):
-        """
-        V2 library blocks reach this client too, and LibraryLocatorV2 has no
-        for_version(): grouping must strip only what a key type actually supports.
-        """
-        library_key = LibraryLocatorV2(org='orgQ', slug='libQ')
-        keys = [
-            LibraryUsageLocatorV2(lib_key=library_key, block_type='problem', usage_id='libblock'),
-            self._usage_key(0),
-        ]
-
-        # No state stored: this asserts the grouping does not raise, which is where
-        # version stripping happens.
-        assert not list(self.client.get_many(self.user.username, keys))
-
-    def test_get_many_uses_single_query_under_threshold(self):
-        """Moderate key counts should use one StudentModule query, not chunked_filter."""
-        keys = [self._usage_key(i) for i in range(3)]
-        for index, key in enumerate(keys):
-            self.client.set(self.user.username, key, {'a': index})
-
-        with self.assertNumQueries(1):
-            results = list(self.client.get_many(self.user.username, keys))
-
-        assert len(results) == 3
-        by_key = {entry.block_key: entry.state for entry in results}
-        for index, key in enumerate(keys):
-            assert by_key[key] == {'a': index}
-
-    def test_get_many_chunks_when_over_threshold(self):
-        """Large key counts should fall back to multiple chunked queries."""
-        threshold = 3
-        keys = [self._usage_key(i) for i in range(threshold + 2)]
-        for key in keys:
-            self.client.set(self.user.username, key, {'v': 1})
-
-        with self.settings(STUDENTMODULE_BULK_QUERY_THRESHOLD=threshold):
-            # Two chunks: [0,1,2] and [3,4] → two SELECT queries
-            with self.assertNumQueries(2):
-                results = list(self.client.get_many(self.user.username, keys))
-
-        assert len(results) == len(keys)
-
-    def test_get_many_field_projection_parity(self):
-        """Projected .only() query must still return full state and modified."""
-        key = self._usage_key(0)
-        self.client.set(self.user.username, key, {'answer': 42, 'attempts': 1})
-
-        results = list(self.client.get_many(self.user.username, [key]))
-        assert len(results) == 1
-        assert results[0].state == {'answer': 42, 'attempts': 1}
-        assert results[0].updated is not None
-        assert results[0].block_key == key
-
-    def test_get_many_fields_filter_still_works(self):
-        """API fields= filter remains unchanged with the optimized read path."""
-        key = self._usage_key(1)
-        self.client.set(self.user.username, key, {'keep': True, 'drop': False})
-
-        results = list(self.client.get_many(self.user.username, [key], fields=['keep']))
-        assert len(results) == 1
-        assert results[0].state == {'keep': True}
-
-    def test_delete_many_still_persists_with_full_model_load(self):
-        """
-        delete_many must not use the read_only projection path, so saves remain safe.
-        """
-        key = self._usage_key(2)
-        self.client.set(self.user.username, key, {'x': 1})
-        self.client.delete_many(self.user.username, [key])
-        assert not list(self.client.get_many(self.user.username, [key]))
-
-    def test_get_many_uses_read_only_student_module_path(self):
-        """get_many should request the read_only projection; delete_many should not."""
-        key = self._usage_key(0)
-        self.client.set(self.user.username, key, {'x': 1})
-
-        with patch.object(
-            self.client,
-            '_student_module_query',
-            wraps=self.client._student_module_query,  # pylint: disable=protected-access
-        ) as wrapped:
-            list(self.client.get_many(self.user.username, [key]))
-            wrapped.assert_called()
-            assert wrapped.call_args.kwargs.get('read_only') is True
-
-            wrapped.reset_mock()
-            self.client.delete_many(self.user.username, [key])
-            wrapped.assert_called()
-            assert not wrapped.call_args.kwargs.get('read_only', False)
-
-    def test_student_module_query_only_projects_get_many_fields(self):
-        """read_only querysets should SELECT the projected columns, not the full row."""
-        keys = [self._usage_key(0)]
-        read_qs = self.client._student_module_query(  # pylint: disable=protected-access
-            self.user.username, self.course_key, keys, read_only=True,
-        )
-        write_qs = self.client._student_module_query(  # pylint: disable=protected-access
-            self.user.username, self.course_key, keys, read_only=False,
-        )
-        read_sql = str(read_qs.query)
-        write_sql = str(write_qs.query)
-        # Projected columns (module_state_key is stored as module_id).
-        assert 'state' in read_sql
-        assert 'modified' in read_sql
-        assert 'module_id' in read_sql
-        assert 'course_id' in read_sql
-        # Full-row path should still include columns omitted from the projection.
-        assert 'grade' in write_sql
-        assert 'module_type' in write_sql
-        # read_only path should not pull unused score columns.
-        assert 'grade' not in read_sql
-        assert 'module_type' not in read_sql
-
-
-class TestLazyUserState(TestCase):
-    """Unit tests for LazyUserState and loads_user_state helpers."""
-
-    def test_loads_user_state_parses_object(self):
-        assert loads_user_state('{"a": 1, "b": "x"}') == {'a': 1, 'b': 'x'}
-
-    def test_lazy_state_defers_parse_until_field_access(self):
-        lazy = LazyUserState('{"answer": 42, "attempts": 2}')
-        assert not lazy.is_parsed
-        assert lazy['answer'] == 42
-        assert lazy.is_parsed
-        assert lazy['attempts'] == 2
-        assert lazy == {'answer': 42, 'attempts': 2}
-
-    def test_lazy_state_has_and_delete_force_parse(self):
-        lazy = LazyUserState('{"keep": true, "drop": false}')
-        assert 'keep' in lazy
-        assert lazy.is_parsed
-        del lazy['drop']
-        assert lazy == {'keep': True}
-
-
-class TestDjangoUserStateClientLazyParse(ModuleStoreTestCase):
-    """Integration tests for lazy JSON parse on the Django get_many path."""
-    databases = set(connections)
-
-    def setUp(self):
-        super().setUp()
-        self.user = UserFactory.create()
-        self.client = DjangoXBlockUserStateClient(user=self.user)
-        self.course_key = CourseLocator('orgL', 'courseL', 'runL')
-
-    def _usage_key(self, index):
-        return BlockUsageLocator(self.course_key, 'problem', f'lazy{index}')
-
-    def test_get_many_yields_lazy_state_until_read(self):
-        key = self._usage_key(0)
-        self.client.set(self.user.username, key, {'student_answers': {'1': 'A'}, 'score': 1})
-
-        results = list(self.client.get_many(self.user.username, [key]))
-        assert len(results) == 1
-        state = results[0].state
-        assert isinstance(state, LazyUserState)
-        assert not state.is_parsed
-        assert state['score'] == 1
-        assert state.is_parsed
-        assert state['student_answers'] == {'1': 'A'}
-
-    def test_get_many_with_fields_parses_eagerly(self):
-        key = self._usage_key(1)
-        self.client.set(self.user.username, key, {'keep': 1, 'drop': 2})
-
-        results = list(self.client.get_many(self.user.username, [key], fields=['keep']))
-        assert len(results) == 1
-        assert results[0].state == {'keep': 1}
-        assert not isinstance(results[0].state, LazyUserState)
-
-    def test_get_many_skips_empty_deleted_state_without_lazy_wrap(self):
-        """Deleted state should yield no rows and must not wrap as LazyUserState."""
-        key = self._usage_key(2)
-        self.client.set(self.user.username, key, {'x': 1})
-        self.client.delete_many(self.user.username, [key])
-
-        assert not list(self.client.get_many(self.user.username, [key]))

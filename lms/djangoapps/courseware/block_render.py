@@ -51,7 +51,6 @@ from xmodule.modulestore.exceptions import ItemNotFoundError
 from xmodule.partitions.partitions_service import PartitionService
 from xmodule.util.sandboxing import SandboxService
 from xmodule.services import EventPublishingService, RebindUserService, SettingsService, TeamsConfigurationService
-from xmodule.x_module import STUDENT_VIEW
 from common.djangoapps.static_replace.services import ReplaceURLService
 from common.djangoapps.static_replace.wrapper import replace_urls_wrapper
 from lms.djangoapps.courseware.access import get_user_role, has_access
@@ -856,14 +855,9 @@ def _get_block_by_usage_key(usage_key):
 
 
 def get_block_by_usage_id(request, course_id, usage_id, disable_staff_debug_info=False, course=None,
-                          will_recheck_access=False, field_data_cache_depth=None):
+                          will_recheck_access=False):
     """
     Gets a block instance based on its `usage_id` in a course, for a given request/user
-
-    Arguments:
-        field_data_cache_depth: Optional depth for FieldDataCache descendant prefetch.
-            ``None`` prefetches all descendants (default). ``0`` caches only the block
-            itself. Used by shell-mode render and per-child batch loads.
 
     Returns (instance, tracking_context)
     """
@@ -876,7 +870,6 @@ def get_block_by_usage_id(request, course_id, usage_id, disable_staff_debug_info
         course_key,
         user,
         block,
-        depth=field_data_cache_depth,
         read_only=CrawlersConfig.is_crawler(request),
     )
     instance = get_block_for_descriptor(
@@ -1082,186 +1075,3 @@ def append_data_to_webob_response(response, data):
         response_data.update(data)
         response.body = json.dumps(response_data).encode('utf-8')
     return response
-
-
-def estimate_problem_descendant_count(block, depth=4):
-    """
-    Estimate how many problem blocks a learner may see under ``block``.
-
-    For dynamic blocks (library_content / item_bank), prefer ``max_count`` when set.
-    Otherwise walk static children up to ``depth`` levels. Used to decide whether
-    shell-mode render is eligible for a vertical.
-    """
-    if depth < 0 or block is None:
-        return 0
-
-    has_dynamic = getattr(block, 'has_dynamic_children', None)
-    if callable(has_dynamic) and has_dynamic():
-        max_count = getattr(block, 'max_count', None)
-        if isinstance(max_count, int) and max_count > 0:
-            return max_count
-        if max_count == -1:
-            return len(getattr(block, 'children', []) or [])
-        return len(getattr(block, 'children', []) or [])
-
-    block_type = getattr(getattr(block, 'location', None), 'block_type', None) or getattr(
-        block, 'category', None
-    )
-    if block_type == 'problem':
-        return 1
-
-    total = 0
-    get_children = getattr(block, 'get_children', None)
-    if not callable(get_children):
-        return total
-    for child in get_children():
-        total += estimate_problem_descendant_count(child, depth=depth - 1)
-    return total
-
-
-def should_use_shell_render(course_key, requested_mode, block):
-    """
-    Return True when render_xblock should use shell mode for ``block``.
-
-    Requires an explicit ``render_mode=shell`` request, the lazy-library waffle
-    flag, and an estimated problem count above LARGE_VERTICAL_PROBLEM_THRESHOLD.
-    """
-    from lms.djangoapps.courseware.toggles import courseware_lazy_library_content_is_enabled
-
-    if requested_mode != 'shell':
-        return False
-    if not courseware_lazy_library_content_is_enabled(course_key):
-        return False
-    threshold = getattr(settings, 'LARGE_VERTICAL_PROBLEM_THRESHOLD', 20)
-    return estimate_problem_descendant_count(block) > threshold
-
-
-def field_data_cache_depth_for_shell(block):
-    """
-    Prefetch depth for shell-mode FieldDataCache.
-
-    Vertical → depth 1 (vertical + library_content, not CAPA children).
-    Dynamic / leaf parents → depth 0 (parent only).
-    """
-    block_type = getattr(getattr(block, 'location', None), 'block_type', None)
-    if block_type in ('vertical', 'unit'):
-        return 1
-    return 0
-
-
-def render_xblock_children(request, parent_usage_key, child_usage_keys, course=None):
-    """
-    Render a bounded list of child XBlocks for the batch children API.
-
-    Validates that each child is in the learner-selected set for dynamic parents
-    (or in ``get_children()`` for static parents). Each child is loaded with
-    FieldDataCache depth=0.
-
-    Returns:
-        dict with keys:
-            parent_usage_key (str)
-            results (list of {usage_key, html, resources})
-            errors (list of {usage_key, error})
-
-    Raises:
-        Http404 / PermissionDenied-style errors via get_course_with_access paths
-        ValueError for invalid input (caller maps to 400)
-    """
-    from lms.djangoapps.courseware.courses import get_course_with_access
-
-    if not child_usage_keys:
-        raise ValueError('child_usage_keys is required')
-
-    max_batch = getattr(settings, 'XBLOCK_CHILDREN_BATCH_MAX', 10)
-    if len(child_usage_keys) > max_batch:
-        raise ValueError(f'At most {max_batch} child_usage_keys are allowed per request')
-
-    course_key = parent_usage_key.course_key
-    staff_access = bool(has_access(request.user, 'staff', course_key))
-
-    if course is None:
-        course = get_course_with_access(request.user, 'load', course_key, check_if_enrolled=True)
-
-    _, request.user = setup_masquerade(request, course_key, staff_access)
-
-    parent, _ = get_block_by_usage_id(
-        request,
-        str(course_key),
-        str(parent_usage_key),
-        course=course,
-        field_data_cache_depth=0,
-        will_recheck_access=True,
-    )
-
-    allowed_keys = _allowed_child_usage_keys(parent)
-    allowed_key_strs = {str(k) for k in allowed_keys}
-    results = []
-    errors = []
-
-    for child_key in child_usage_keys:
-        child_key_str = str(child_key)
-        if child_key not in allowed_keys and child_key_str not in allowed_key_strs:
-            errors.append({
-                'usage_key': child_key_str,
-                'error': 'forbidden',
-                'message': 'Child is not in the learner-selected set for this parent.',
-            })
-            continue
-
-        try:
-            child, _ = get_block_by_usage_id(
-                request,
-                str(course_key),
-                child_key_str,
-                course=course,
-                field_data_cache_depth=0,
-                will_recheck_access=True,
-            )
-            fragment = child.render(STUDENT_VIEW, context={})
-            results.append({
-                'usage_key': child_key_str,
-                'html': fragment.content,
-                'resources': [
-                    {
-                        'kind': getattr(res, 'kind', None),
-                        'data': getattr(res, 'data', None),
-                        # The shell page never rendered these children, so the client
-                        # loads their assets and needs the mimetype to pick the tag.
-                        'mimetype': getattr(res, 'mimetype', None),
-                        'placement': getattr(res, 'placement', None),
-                    }
-                    for res in (fragment.resources or [])
-                ],
-            })
-        except Http404:
-            errors.append({
-                'usage_key': child_key_str,
-                'error': 'not_found',
-                'message': 'Child block not found or access denied.',
-            })
-        except Exception as exc:  # pylint: disable=broad-except
-            log.exception('Failed to render child %s under %s', child_key_str, parent_usage_key)
-            errors.append({
-                'usage_key': child_key_str,
-                'error': 'render_failed',
-                'message': str(exc),
-            })
-
-    return {
-        'parent_usage_key': str(parent_usage_key),
-        'results': results,
-        'errors': errors,
-    }
-
-
-def _allowed_child_usage_keys(parent):
-    """
-    Return the set of UsageKeys the current learner may load under ``parent``.
-    """
-    get_child_blocks = getattr(parent, 'get_child_blocks', None)
-    has_dynamic = getattr(parent, 'has_dynamic_children', None)
-    if callable(has_dynamic) and has_dynamic() and callable(get_child_blocks):
-        children = get_child_blocks()
-    else:
-        children = parent.get_children()
-    return {child.location for child in children if child is not None}

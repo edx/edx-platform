@@ -773,26 +773,3 @@ def enable_outline_component_creation(course_key):
     Returns a boolean if the Add Component in Outline feature is enabled for the given course.
     """
     return ENABLE_OUTLINE_COMPONENT_CREATION.is_enabled(course_key)
-
-
-# .. toggle_name: contentstore.hard_cap_library_content_max_count
-# .. toggle_implementation: CourseWaffleFlag
-# .. toggle_default: False
-# .. toggle_description: When enabled for a course (or org), Studio treats library_content /
-#   itembank max_count values above LIBRARY_CONTENT_MAX_COUNT_WARNING_THRESHOLD as a
-#   validation ERROR instead of a WARNING. Publish is still not blocked by the platform
-#   by default; this strengthens author-facing messaging for orgs that want a hard stance.
-# .. toggle_use_cases: open_edx
-# .. toggle_creation_date: 2026-08-06
-HARD_CAP_LIBRARY_CONTENT_MAX_COUNT = CourseWaffleFlag(
-    f'{CONTENTSTORE_NAMESPACE}.hard_cap_library_content_max_count',
-    __name__,
-    CONTENTSTORE_LOG_PREFIX,
-)
-
-
-def hard_cap_library_content_max_count(course_key):
-    """
-    Return True if large library/item-bank max_count should surface as an ERROR in Studio.
-    """
-    return HARD_CAP_LIBRARY_CONTENT_MAX_COUNT.is_enabled(course_key)

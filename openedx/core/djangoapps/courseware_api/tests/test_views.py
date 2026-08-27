@@ -865,37 +865,3 @@ class CoursewareMetaIntegrationTestViews(BaseCoursewareTests):
         response = self.client.get(self.url)
         assert response.status_code == 200
         assert response.data['allow_anonymous'] is True
-
-
-@skip_unless_lms
-class XBlockChildrenApiTests(BaseCoursewareTests):
-    """Validation tests for the Phase B1 batch children API."""
-
-    def setUp(self):
-        super().setUp()
-        CourseEnrollment.enroll(self.user, self.course.id, 'audit')
-        self.children_url = '/api/courseware/v1/xblock_children/'
-
-    def test_requires_parent_usage_key(self):
-        response = self.client.get(self.children_url)
-        assert response.status_code == 400
-        assert 'parent_usage_key' in response.data.get('developer_message', '')
-
-    def test_rejects_invalid_parent_key(self):
-        response = self.client.get(self.children_url, {'parent_usage_key': 'not-a-key'})
-        assert response.status_code == 400
-
-    @override_settings(XBLOCK_CHILDREN_BATCH_MAX=2)
-    @mock.patch('lms.djangoapps.courseware.block_render.render_xblock_children')
-    def test_oversized_batch_returns_400(self, mock_render):
-        mock_render.side_effect = ValueError('At most 2 child_usage_keys are allowed per request')
-        parent = str(self.course.id.make_usage_key('vertical', 'v1'))
-        children = ','.join([
-            str(self.course.id.make_usage_key('problem', f'p{i}'))
-            for i in range(3)
-        ])
-        response = self.client.get(self.children_url, {
-            'parent_usage_key': parent,
-            'child_usage_keys': children,
-        })
-        assert response.status_code == 400
