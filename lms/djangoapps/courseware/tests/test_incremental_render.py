@@ -85,6 +85,9 @@ class ShouldUseIncrementalLoadTests(TestCase):
         self.large_vertical = _block('vertical', children=[_block('problem') for _ in range(30)])
 
     def _check(self, block, flag_enabled=True, mobile=False):
+        """
+        Call should_use_incremental_load with the flag and mobile-app checks mocked.
+        """
         with patch(
             'lms.djangoapps.courseware.block_render.incremental_assessment_load_is_enabled',
             return_value=flag_enabled,
