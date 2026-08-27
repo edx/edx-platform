@@ -1001,7 +1001,7 @@ INCREMENTAL_LOAD_PROBLEM_THRESHOLD = 20
 # rendering them also pulls in the CSS/JS the batch-loaded children will need.
 INCREMENTAL_LOAD_EAGER_COUNT = 5
 
-# Maximum children accepted by a single request to /api/courseware/v1/xblock_children/.
+# Maximum children accepted by a single request to /api/courseware/xblock_children/.
 # Requests above this are rejected with a 400.
 XBLOCK_CHILDREN_BATCH_MAX = 10
 

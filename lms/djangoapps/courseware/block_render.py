@@ -1278,10 +1278,42 @@ def render_xblock_children(request, parent_usage_key, child_usage_keys, course=N
                 continue
             field_data_cache.add_block_descendents(child, depth=1)
 
+        # Both computed once for the whole batch, not per child, matching how
+        # VerticalBlock computes them once for its own eager-rendered children.
+        block_has_access_error = getattr(parent, 'block_has_access_error', None)
+        completion_service = parent.runtime.service(parent, 'completion')
+        child_blocks_to_complete_on_view = set()
+        complete_on_view_delay = None
+        if completion_service and completion_service.completion_tracking_enabled():
+            requested_children = [
+                children_by_key[child_key] for child_key in requested if child_key in children_by_key
+            ]
+            child_blocks_to_complete_on_view = completion_service.blocks_to_mark_complete_on_view(
+                requested_children
+            )
+            complete_on_view_delay = completion_service.get_complete_on_view_delay_ms()
+
         for child_key in requested:
             child = children_by_key.get(child_key)
             if child is None:
                 continue
+
+            child_context = _lazy_child_student_view_context(request)
+            if (
+                child_context.get('hide_access_error_blocks')
+                and callable(block_has_access_error)
+                and block_has_access_error(child)
+            ):
+                # Matches VerticalBlock's own eager-render skip (block_has_access_error):
+                # a block gated for this learner must stay hidden whether it renders
+                # inline or gets lazy-loaded later.
+                results.append({'usage_key': str(child_key), 'html': ''})
+                continue
+            if child in child_blocks_to_complete_on_view:
+                child_context['wrap_xblock_data'] = {
+                    'mark-completed-on-view-after-delay': complete_on_view_delay
+                }
+
             try:
                 instance = get_block_for_descriptor(
                     user,
@@ -1299,7 +1331,6 @@ def render_xblock_children(request, parent_usage_key, child_usage_keys, course=N
                         'message': 'Learner does not have access to this block.',
                     })
                     continue
-                child_context = _lazy_child_student_view_context(request)
                 instance, child_context = VerticalBlockChildRenderStarted.run_filter(
                     block=instance,
                     context=child_context

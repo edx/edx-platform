@@ -143,7 +143,7 @@ COURSEWARE_OPTIMIZED_RENDER_XBLOCK = CourseWaffleFlag(
 # .. toggle_default: False
 # .. toggle_description: Render large assessment units as a shell -- the first few problems
 #   plus placeholders -- and load the remaining problems in batches from
-#   /api/courseware/v1/xblock_children/. Units at or below
+#   /api/courseware/xblock_children/. Units at or below
 #   settings.INCREMENTAL_LOAD_PROBLEM_THRESHOLD are unaffected even when this is on. Intended
 #   for assessments large enough that rendering every problem in one response risks exceeding
 #   the upstream request timeout.
