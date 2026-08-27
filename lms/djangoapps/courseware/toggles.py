@@ -181,24 +181,6 @@ ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE = WaffleFlag(
     f'{WAFFLE_FLAG_NAMESPACE}.unify_site_and_translation_language', __name__
 )
 
-# .. toggle_name: courseware.render_xblock.lazy_library_content
-# .. toggle_implementation: CourseWaffleFlag
-# .. toggle_default: False
-# .. toggle_description: Enable shell-mode render_xblock for large library_content / item_bank
-#   verticals. When enabled (and problem count exceeds LARGE_VERTICAL_PROBLEM_THRESHOLD),
-#   render_mode=shell returns placeholders instead of synchronously rendering every CAPA child.
-#   Children are then loaded via /api/courseware/v1/xblock_children/.
-# .. toggle_use_cases: temporary, open_edx
-# .. toggle_creation_date: 2026-08-06
-# .. toggle_target_removal_date: None
-# .. toggle_warning: Requires Learning MFE (or curl client) support for xblock.lazy.ready /
-#   batch child loading (Phase B2). Full render_mode=full remains the default when this flag
-#   is off.
-# .. toggle_tickets: assessments-not-loading
-COURSEWARE_LAZY_LIBRARY_CONTENT = CourseWaffleFlag(
-    f'{WAFFLE_FLAG_NAMESPACE}.render_xblock.lazy_library_content', __name__
-)
-
 
 def course_exit_page_is_active(course_key):
     return COURSEWARE_MICROFRONTEND_COURSE_EXIT_PAGE.is_enabled(course_key)
@@ -226,13 +208,6 @@ def courseware_mfe_search_is_enabled(course_key=None):
     Return whether the courseware.mfe_courseware_search flag is on.
     """
     return COURSEWARE_MICROFRONTEND_SEARCH_ENABLED.is_enabled(course_key)
-
-
-def courseware_lazy_library_content_is_enabled(course_key=None):
-    """
-    Return whether shell/batch lazy loading for large library content is enabled.
-    """
-    return COURSEWARE_LAZY_LIBRARY_CONTENT.is_enabled(course_key)
 
 
 def courseware_disable_navigation_sidebar_blocks_caching(course_key=None):

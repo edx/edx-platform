@@ -3425,17 +3425,6 @@ FACEBOOK_API_VERSION = None
 # Maximum number of rows to fetch in XBlockUserStateClient calls. Adjust for performance
 USER_STATE_BATCH_SIZE = 5000
 
-############### Settings for large vertical / library_content lazy render (B1) #####
-# When courseware.render_xblock.lazy_library_content is on and estimated problem
-# count exceeds this threshold, render_mode=shell is honored.
-LARGE_VERTICAL_PROBLEM_THRESHOLD = 20
-# Max child usage keys accepted by /api/courseware/v1/xblock_children/
-XBLOCK_CHILDREN_BATCH_MAX = 10
-
-# Studio authoring guardrail (Phase C); also defined in cms/envs/common.py.
-LIBRARY_CONTENT_MAX_COUNT_WARNING_THRESHOLD = 25
-LIBRARY_CONTENT_LARGE_MAX_COUNT_HELP_URL = ''
-
 ############## Plugin Django Apps #########################
 
 from edx_django_utils.plugins import get_plugin_apps, add_plugins  # pylint: disable=wrong-import-position,wrong-import-order

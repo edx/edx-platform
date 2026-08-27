@@ -13,15 +13,7 @@ from xblock.exceptions import KeyValueMultiSaveError
 from xblock.fields import BlockScope, Scope, ScopeIds
 
 from common.djangoapps.student.tests.factories import UserFactory
-from lms.djangoapps.courseware.model_data import (
-    DjangoKeyValueStore,
-    FieldDataCache,
-    InvalidScopeError,
-    UserStateCache,
-    _children_for_field_data_cache,
-    _discard_staged_user_state,
-)
-from lms.djangoapps.courseware.user_state_client import LazyUserState
+from lms.djangoapps.courseware.model_data import DjangoKeyValueStore, FieldDataCache, InvalidScopeError
 from lms.djangoapps.courseware.models import (
     StudentModule,
     XModuleStudentInfoField,
@@ -455,236 +447,12 @@ class TestStudentInfoStorage(OtherUserFailureTestMixin, StorageTestBase, TestCas
 
 
 class TestFieldDataCacheDynamicChildren(TestCase):
-    """Tests for dynamic-child handling in FieldDataCache descendant prefetch."""
-
-    def test_children_for_field_data_cache_uses_get_child_blocks(self):
-        """
-        Dynamic blocks that are already bound to a learner should only expose
-        that learner's selected children for prefetch.
-        """
-        selected_child = Mock(name='selected_child')
-        dynamic_block = Mock(name='dynamic_block')
-        dynamic_block.has_dynamic_children.return_value = True
-        dynamic_block.get_child_blocks.return_value = [selected_child]
-        dynamic_block.get_children.side_effect = AssertionError(
-            'get_children should not be called for dynamic blocks'
-        )
-
-        assert _children_for_field_data_cache(dynamic_block, Mock(is_authenticated=False)) == [selected_child]
-        dynamic_block.get_child_blocks.assert_called_once_with()
-        dynamic_block.get_children.assert_not_called()
-
-    def test_children_for_field_data_cache_uses_get_children_for_static_blocks(self):
-        """
-        Static blocks should continue to prefetch all modulestore children.
-        """
-        static_child = Mock(name='static_child')
-        required_child = Mock(name='required_child')
-        static_block = Mock(name='static_block')
-        static_block.has_dynamic_children.return_value = False
-        static_block.get_children.return_value = [static_child]
-        static_block.get_required_block_descriptors.return_value = [required_child]
-
-        assert _children_for_field_data_cache(static_block, Mock(is_authenticated=False)) == \
-            [static_child, required_child]
-        static_block.get_children.assert_called_once_with()
-        static_block.get_required_block_descriptors.assert_called_once_with()
-
-    def test_children_for_field_data_cache_ignores_unbound_dynamic_children_without_persisted_selection(self):
-        """
-        An unbound block cannot see the learner's ``selected`` via get_child_blocks() (it would
-        invent a fresh selection instead), so we don't call it. We fall back to a persisted-
-        selection database read instead; with no saved selection either (this test), we fall
-        back further to the full pool.
-        """
-        static_child = Mock(name='static_child')
-        dynamic_block = Mock(name='dynamic_block')
-        dynamic_block.has_dynamic_children.return_value = True
-        dynamic_block.scope_ids.user_id = None
-        dynamic_block.get_children.return_value = [static_child]
-        dynamic_block.get_required_block_descriptors.return_value = []
-
-        assert _children_for_field_data_cache(dynamic_block, Mock(is_authenticated=False)) == [static_child]
-        dynamic_block.get_child_blocks.assert_not_called()
-
-    def test_children_for_field_data_cache_falls_back_and_clears_staged_state(self):
-        """
-        A selection that cannot be saved during prefetch should fall back to all
-        children *and* leave no dirty user-scoped field behind: whatever it staged
-        would otherwise make the next block.save() raise the same error, far from here
-        (see bind_for_student).
-        """
-        # pylint: disable=protected-access
-        staged_field = Mock(name='selected_field')
-        staged_field.name = 'selected'
-        staged_field.scope = Scope.user_state
-        settings_field = Mock(name='display_name_field')
-        settings_field.name = 'display_name'
-        settings_field.scope = Scope.settings
-
-        static_child = Mock(name='static_child')
-        dynamic_block = Mock(name='dynamic_block')
-        dynamic_block.has_dynamic_children.return_value = True
-        dynamic_block.get_child_blocks.side_effect = InvalidScopeError('user_state not supported')
-        dynamic_block.get_children.return_value = [static_child]
-        dynamic_block.get_required_block_descriptors.return_value = []
-        dynamic_block._dirty_fields = {staged_field: ['a', 'b'], settings_field: 'Quiz'}
-
-        assert _children_for_field_data_cache(dynamic_block, Mock(is_authenticated=False)) == [static_child]
-
-        # The doomed user-scoped value is gone; the settings value is untouched.
-        assert list(dynamic_block._dirty_fields) == [settings_field]
-        staged_field._del_cached_value.assert_called_once_with(dynamic_block)
-        settings_field._del_cached_value.assert_not_called()
-
-    def test_discard_staged_user_state_without_dirty_fields(self):
-        """
-        Blocks with nothing staged are left alone and report nothing discarded.
-        """
-        # pylint: disable=protected-access
-        block = Mock(name='block')
-        block._dirty_fields = {}
-        assert _discard_staged_user_state(block) == []
-
-    def _configure_leaf_block(self, block, user_state_field):
-        """Configure a non-dynamic leaf mock used in descendant-walk tests."""
-        block.get_children.return_value = []
-        block.get_required_block_descriptors.return_value = []
-        block.has_dynamic_children.return_value = False
-        block.fields.values.return_value = [user_state_field]
-        block.has_score = False
-        block.location = LOCATION('usage_id')
-
-    @patch('lms.djangoapps.courseware.model_data.modulestore')
-    def test_add_block_descendents_prefetches_only_selected_dynamic_children(self, mock_modulestore):
-        """
-        add_block_descendents should not walk unselected modulestore children.
-        """
-        mock_modulestore.return_value.bulk_operations.return_value.__enter__ = Mock(return_value=None)
-        mock_modulestore.return_value.bulk_operations.return_value.__exit__ = Mock(return_value=False)
-
-        user_state_field = mock_field(Scope.user_state, 'state')
-
-        unselected_children = [Mock(name=f'unselected_{index}') for index in range(3)]
-        selected_children = [Mock(name='selected_0'), Mock(name='selected_1')]
-        for child in selected_children + unselected_children:
-            self._configure_leaf_block(child, user_state_field)
-
-        library_content = Mock(name='library_content')
-        library_content.has_dynamic_children.return_value = True
-        library_content.get_child_blocks.return_value = selected_children
-        library_content.get_children.return_value = unselected_children + selected_children
-        library_content.get_required_block_descriptors.return_value = []
-        library_content.fields.values.return_value = [user_state_field]
-        library_content.has_score = False
-        library_content.location = LOCATION('library_content')
-
-        vertical = Mock(name='vertical')
-        vertical.has_dynamic_children.return_value = False
-        vertical.get_children.return_value = [library_content]
-        vertical.get_required_block_descriptors.return_value = []
-        vertical.fields.values.return_value = [user_state_field]
-        vertical.has_score = False
-        vertical.location = LOCATION('vertical')
-
-        user = UserFactory.create(username='dynamic_children_user')
-        field_data_cache = FieldDataCache([], COURSE_KEY, user)
-
-        cached_blocks = []
-
-        def capture_cache_fields(fields, blocks, aside_types):  # lint-amnesty, pylint: disable=unused-argument
-            cached_blocks.extend(blocks)
-
-        with patch.object(UserStateCache, 'cache_fields', side_effect=capture_cache_fields):
-            field_data_cache.add_block_descendents(vertical)
-
-        cached_block_names = {block._mock_name for block in cached_blocks}  # pylint: disable=protected-access
-        assert 'vertical' in cached_block_names
-        assert 'library_content' in cached_block_names
-        assert 'selected_0' in cached_block_names
-        assert 'selected_1' in cached_block_names
-        assert 'unselected_0' not in cached_block_names
-        assert 'unselected_1' not in cached_block_names
-        assert 'unselected_2' not in cached_block_names
-        library_content.get_child_blocks.assert_called_once_with()
-
-    @patch('lms.djangoapps.courseware.model_data.modulestore')
-    def test_add_block_descendents_recurses_nested_dynamic_and_static(self, mock_modulestore):
-        """
-        Nested static containers under selected dynamic children should still be walked.
-        """
-        mock_modulestore.return_value.bulk_operations.return_value.__enter__ = Mock(return_value=None)
-        mock_modulestore.return_value.bulk_operations.return_value.__exit__ = Mock(return_value=False)
-
-        user_state_field = mock_field(Scope.user_state, 'state')
-
-        nested_problem = Mock(name='nested_problem')
-        self._configure_leaf_block(nested_problem, user_state_field)
-
-        nested_vertical = Mock(name='nested_vertical')
-        nested_vertical.has_dynamic_children.return_value = False
-        nested_vertical.get_children.return_value = [nested_problem]
-        nested_vertical.get_required_block_descriptors.return_value = []
-        nested_vertical.fields.values.return_value = [user_state_field]
-        nested_vertical.has_score = False
-        nested_vertical.location = LOCATION('nested_vertical')
-
-        unselected_nested = Mock(name='unselected_nested')
-        self._configure_leaf_block(unselected_nested, user_state_field)
-
-        library_content = Mock(name='library_content')
-        library_content.has_dynamic_children.return_value = True
-        library_content.get_child_blocks.return_value = [nested_vertical]
-        library_content.get_children.return_value = [nested_vertical, unselected_nested]
-        library_content.get_required_block_descriptors.return_value = []
-        library_content.fields.values.return_value = [user_state_field]
-        library_content.has_score = False
-        library_content.location = LOCATION('library_content')
-
-        vertical = Mock(name='vertical')
-        vertical.has_dynamic_children.return_value = False
-        vertical.get_children.return_value = [library_content]
-        vertical.get_required_block_descriptors.return_value = []
-        vertical.fields.values.return_value = [user_state_field]
-        vertical.has_score = False
-        vertical.location = LOCATION('vertical')
-
-        user = UserFactory.create(username='nested_dynamic_children_user')
-        field_data_cache = FieldDataCache([], COURSE_KEY, user)
-        cached_blocks = []
-
-        def capture_cache_fields(fields, blocks, aside_types):  # lint-amnesty, pylint: disable=unused-argument
-            cached_blocks.extend(blocks)
-
-        with patch.object(UserStateCache, 'cache_fields', side_effect=capture_cache_fields):
-            field_data_cache.add_block_descendents(vertical)
-
-        cached_block_names = {block._mock_name for block in cached_blocks}  # pylint: disable=protected-access
-        assert cached_block_names == {
-            'vertical',
-            'library_content',
-            'nested_vertical',
-            'nested_problem',
-        }
-        library_content.get_child_blocks.assert_called_once_with()
-        nested_vertical.get_children.assert_called_once_with()
-
-
-class TestFieldDataCachePersistedSelectionFallback(TestCase):
     """
     Tests that prefetch narrows to a question bank's saved per-learner picks
-    (read straight from the database) when the block *isn't* bound to the
-    learner yet -- the common case, since FieldDataCache prefetch normally
-    runs before any block in the tree gets bound. This is the fallback layer
-    underneath TestFieldDataCacheDynamicChildren's bound-block path above:
-    that path only helps once a block is bound (e.g. a shell-mode render of
-    just that block); this path helps everywhere else, as long as the
-    learner has visited before and a selection was already persisted.
+    (read straight from the database) rather than its whole problem pool.
 
-    Note the fake "block" objects below are explicitly marked unbound
-    (mock_block() sets a real scope_ids.user_id by default, so we clear it)
-    and never need to claim they know who the learner is -- the DB read
-    doesn't ask the block at all, which is the point.
+    Note the fake "block" objects below never need to claim they know who the
+    learner is -- the fix doesn't ask the block at all, which is the point.
     """
 
     def setUp(self):
@@ -699,9 +467,7 @@ class TestFieldDataCachePersistedSelectionFallback(TestCase):
         """
         Fake stand-in for a question-bank block that has 6 possible problems in
         its pool (self.pool_locations), any of which might get picked for a
-        given learner. Unbound, so add_block_descendents can't just ask it via
-        get_child_blocks() -- it has to fall back to the persisted-selection
-        database read.
+        given learner.
         """
         pool_blocks = {}
         for loc in self.pool_locations:
@@ -714,7 +480,6 @@ class TestFieldDataCachePersistedSelectionFallback(TestCase):
 
         parent = mock_block()
         parent.location = self.parent_location
-        parent.scope_ids.user_id = None
         parent.has_dynamic_children.return_value = True
         parent.get_children.return_value = list(pool_blocks.values())
         parent.get_required_block_descriptors.return_value = []
@@ -799,63 +564,3 @@ class TestFieldDataCachePersistedSelectionFallback(TestCase):
 
         parent.get_children.assert_called_once()
         parent.get_child.assert_not_called()
-
-
-class TestUserStateCacheLazyParse(TestCase):
-    """Tests for lazy JSON handling inside UserStateCache."""
-    databases = set(connections)
-
-    def setUp(self):
-        super().setUp()
-        self.user = UserFactory.create(username='lazy_cache_user')
-        assert self.user.id  # ensure persisted
-        self.usage_key = LOCATION('usage_id')
-        StudentModuleFactory(
-            student=self.user,
-            module_state_key=self.usage_key,
-            state=json.dumps({'a_field': 'a_value', 'b_field': 'b_value'}),
-        )
-        self.block = mock_block([
-            mock_field(Scope.user_state, 'a_field'),
-            mock_field(Scope.user_state, 'b_field'),
-        ])
-        self.cache = UserStateCache(self.user, COURSE_KEY)
-
-    def test_cache_fields_stores_lazy_state(self):
-        self.cache.cache_fields(
-            [mock_field(Scope.user_state, 'a_field')],
-            [self.block],
-            [],
-        )
-        stored = self.cache._cache[self.usage_key]  # pylint: disable=protected-access
-        assert isinstance(stored, LazyUserState)
-        assert not stored.is_parsed
-
-    def test_get_parses_on_field_read(self):
-        self.cache.cache_fields([], [self.block], [])
-        stored = self.cache._cache[self.usage_key]  # pylint: disable=protected-access
-        assert not stored.is_parsed
-
-        value = self.cache.get(user_state_key('a_field'))
-        assert value == 'a_value'
-        assert stored.is_parsed
-        assert self.cache.get(user_state_key('b_field')) == 'b_value'
-
-    def test_has_parses_for_membership(self):
-        self.cache.cache_fields([], [self.block], [])
-        assert self.cache.has(user_state_key('a_field'))
-        assert not self.cache.has(user_state_key('missing_field'))
-
-    def test_set_many_overlays_without_dropping_sibling_fields(self):
-        self.cache.cache_fields([], [self.block], [])
-        self.cache.set(user_state_key('a_field'), 'new_value')
-
-        assert self.cache.get(user_state_key('a_field')) == 'new_value'
-        # Sibling field must remain readable after partial write overlay.
-        assert self.cache.get(user_state_key('b_field')) == 'b_value'
-
-    def test_delete_after_lazy_load(self):
-        self.cache.cache_fields([], [self.block], [])
-        self.cache.delete(user_state_key('b_field'))
-        assert not self.cache.has(user_state_key('b_field'))
-        assert self.cache.get(user_state_key('a_field')) == 'a_value'

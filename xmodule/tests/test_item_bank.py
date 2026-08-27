@@ -167,39 +167,6 @@ class TestItemBankForCms(ItemBankTestBase):
         assert len(self.item_bank.selected_children()) == 4
         assert self.item_bank.validate()
 
-    def test_large_max_count_performance_warning(self):
-        """
-        Phase C: warn when Count exceeds the configurable performance threshold.
-        Existing published content is unchanged until the block is edited/saved and validated.
-        """
-        from django.test import override_settings
-        from edx_toggles.toggles.testutils import override_waffle_flag
-        from cms.djangoapps.contentstore.toggles import HARD_CAP_LIBRARY_CONTENT_MAX_COUNT
-
-        # Threshold 2 with max_count=3 and 4 children → performance warning only
-        with override_settings(LIBRARY_CONTENT_MAX_COUNT_WARNING_THRESHOLD=2):
-            self.item_bank.max_count = 3
-            assert len(self.item_bank.children) >= 3
-            assert not (result := self.item_bank.validate())
-            assert StudioValidationMessage.WARNING == result.summary.type
-            assert 'configured to show 3 problems' in result.summary.text
-            assert 'Split the quiz' in result.summary.text
-
-            # Below threshold → clean
-            self.item_bank.max_count = 2
-            assert self.item_bank.validate()
-
-            # Hard-cap waffle escalates to ERROR
-            with override_waffle_flag(HARD_CAP_LIBRARY_CONTENT_MAX_COUNT, active=True):
-                self.item_bank.max_count = 3
-                assert not (result := self.item_bank.validate())
-                assert StudioValidationMessage.ERROR == result.summary.type
-                assert 'organization requires' in result.summary.text
-
-            # -1 (show all) does not trigger the large-count guardrail
-            self.item_bank.max_count = -1
-            assert self.item_bank.validate()
-
     @patch(
         'xmodule.modulestore.split_mongo.caching_descriptor_system.CachingDescriptorSystem.render',
         VanillaRuntime.render,

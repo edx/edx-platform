@@ -21,10 +21,6 @@ urlpatterns = [
     re_path(fr'^celebration/{settings.COURSE_KEY_PATTERN}',
             views.Celebration.as_view(),
             name="celebration-api"),
-    # Phase B1: batch child render for large library_content / item_bank verticals
-    path('v1/xblock_children/',
-         views.XBlockChildren.as_view(),
-         name="courseware-xblock-children"),
 ]
 
 if getattr(settings, 'PROVIDER_STATES_URL', None):

@@ -18,7 +18,6 @@ from web_fragments.fragment import Fragment
 from webob import Response
 from webob.multidict import MultiDict
 from xblock.core import XBlock, XBlockAside
-from xblock.exceptions import InvalidScopeError
 from xblock.fields import (
     Dict,
     Float,
@@ -202,28 +201,6 @@ class AsideKeyGenerator(IdGenerator):
 
         """
         raise NotImplementedError("Specific Modulestores must provide implementations of create_definition")
-
-
-def dirty_fields_are_safe_to_discard(dirty_fields):
-    """
-    Return True if this dirty set holds only values a rebind may safely throw away.
-
-    Tolerating InvalidScopeError in ``bind_for_student`` is only safe for per-user
-    values, which the rebind discards anyway; losing any other scope would be a silent
-    data loss. Scope.parent / Scope.children are structural, save fine against any field
-    data, and survive the rebind, so they are ignored -- note they are Sentinels rather
-    than Scope instances and so have no ``user`` attribute.
-    """
-    saw_per_user_field = False
-    for field in dirty_fields:
-        scope = field.scope
-        if scope in (Scope.parent, Scope.children):
-            continue
-        if getattr(scope, 'user', None) == UserScope.ONE:
-            saw_per_user_field = True
-            continue
-        return False
-    return saw_per_user_field
 
 
 def shim_xmodule_js(fragment, js_module_name):
@@ -611,21 +588,7 @@ class XModuleMixin(XModuleFields, XBlock):
             return
 
         # If we are switching users mid-request, save the data from the old user.
-        # Resolving dynamic children before binding can leave `selected` staged against
-        # field data with no user scope. The loop below discards per-user values anyway,
-        # so tolerate that one case and let every other scope error surface.
-        try:
-            self.save()
-        except InvalidScopeError:
-            dirty_fields = list(self._dirty_fields)
-            if not dirty_fields_are_safe_to_discard(dirty_fields):
-                raise
-            log.warning(
-                'Discarding staged user-scoped fields (%s) for %s: save failed while'
-                ' switching to user %s',
-                ', '.join(sorted(field.name for field in dirty_fields)),
-                self.location, user_id,
-            )
+        self.save()
 
         # Update scope_ids to point to the new user.
         self.scope_ids = self.scope_ids._replace(user_id=user_id)
