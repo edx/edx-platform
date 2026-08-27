@@ -295,8 +295,9 @@ AI_TRANSLATIONS_API_URL = 'http://localhost:18760/api/v1'
 # xpert-ai-workflows running on the host machine (not in the devstack docker
 # network), reached via Docker's host-gateway alias. Shared secret must match
 # that service's own EDX_STUDIO_API_KEY.
-COURSE_ANALYSIS_WORKFLOW_URL = 'http://host.docker.internal:19090'
-COURSE_ANALYSIS_WORKFLOW_API_KEY = 'this_is_a_test_api_key'  # matches xpert-ai-workflows' local .env
+COURSE_ANALYSIS_WORKFLOW_URL = ENV_TOKENS.get('COURSE_ANALYSIS_WORKFLOW_URL', 'http://host.docker.internal:19090')
+# matches xpert-ai-workflows' local .env by default
+COURSE_ANALYSIS_WORKFLOW_API_KEY = ENV_TOKENS.get('COURSE_ANALYSIS_WORKFLOW_API_KEY', 'this_is_a_test_api_key')
 
 ############################ CSRF ##################################
 

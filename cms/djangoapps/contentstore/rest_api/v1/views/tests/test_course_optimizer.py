@@ -78,6 +78,18 @@ class CourseAnalysisReportViewTest(CourseTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
 
+    @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
+    def test_backend_returns_invalid_json_returns_502(self):
+        with patch(self.export_patch) as mock_export, patch(self.backend_post_patch) as mock_post:
+            mock_export.return_value = self._mock_tarball()
+            mock_post.return_value = Mock(
+                status_code=202,
+                json=Mock(side_effect=ValueError()),
+            )
+            response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
 
 class CourseAnalysisReportStatusViewTest(CourseTestCase):
     """
@@ -141,6 +153,17 @@ class CourseAnalysisReportStatusViewTest(CourseTestCase):
     def test_backend_unreachable_returns_502(self):
         with patch(self.backend_get_patch) as mock_get:
             mock_get.side_effect = requests.ConnectionError()
+            response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
+    @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
+    def test_backend_returns_invalid_json_returns_502(self):
+        with patch(self.backend_get_patch) as mock_get:
+            mock_get.return_value = Mock(
+                status_code=200,
+                json=Mock(side_effect=ValueError()),
+            )
             response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)

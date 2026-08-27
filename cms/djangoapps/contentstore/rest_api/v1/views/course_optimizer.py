@@ -86,7 +86,12 @@ class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
         finally:
             tarball.close()
 
-        return Response(response.json(), status=response.status_code)
+        try:
+            response_data = response.json()
+        except ValueError:
+            return Response(status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response(response_data, status=response.status_code)
 
 
 @view_auth_classes()
@@ -146,4 +151,9 @@ class CourseAnalysisReportStatusView(DeveloperErrorViewMixin, APIView):
         except requests.RequestException:
             return Response(status=status.HTTP_502_BAD_GATEWAY)
 
-        return Response(response.json(), status=response.status_code)
+        try:
+            response_data = response.json()
+        except ValueError:
+            return Response(status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response(response_data, status=response.status_code)
