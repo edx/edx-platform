@@ -553,9 +553,12 @@ class XBlockChildrenApiTestViews(BaseCoursewareTests):
     def test_child_not_under_this_parent_is_forbidden(self):
         # A learner must not be able to pull HTML for a block that isn't among this
         # parent's own children -- this is the batch endpoint's security boundary.
-        other_sequence = BlockFactory(parent=self.chapter, category='sequential')
-        other_unit = BlockFactory(parent=other_sequence, category='vertical')
-        stray_child = BlockFactory(parent=other_unit, category='html', display_name='stray')
+        # Use parent_location=... (not parent=...) for these scaffolding blocks: passing
+        # the live object would mutate self.chapter's in-memory .children, leaking into
+        # other tests -- see SequenceApiTestViews.test_hidden_after_due for the same note.
+        other_sequence = BlockFactory(parent_location=self.chapter.location, category='sequential')
+        other_unit = BlockFactory(parent_location=other_sequence.location, category='vertical')
+        stray_child = BlockFactory(parent_location=other_unit.location, category='html', display_name='stray')
 
         response = self.client.get(self.url, {'child_usage_keys': str(stray_child.location)})
         assert response.status_code == 200
@@ -566,10 +569,11 @@ class XBlockChildrenApiTestViews(BaseCoursewareTests):
 
     def test_partial_failure_still_returns_the_rest(self):
         # One bad key in the batch shouldn't cost the learner the other, valid ones.
-        stray_child = BlockFactory(
-            parent=BlockFactory(parent=BlockFactory(parent=self.chapter, category='sequential'), category='vertical'),
-            category='html',
-        )
+        # parent_location=... (not parent=...) for the same reason as
+        # test_child_not_under_this_parent_is_forbidden above.
+        other_sequence = BlockFactory(parent_location=self.chapter.location, category='sequential')
+        other_unit = BlockFactory(parent_location=other_sequence.location, category='vertical')
+        stray_child = BlockFactory(parent_location=other_unit.location, category='html')
         response = self.client.get(
             self.url,
             {'child_usage_keys': self._child_keys_param(self.children) + ',' + str(stray_child.location)},
