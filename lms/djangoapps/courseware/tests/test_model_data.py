@@ -714,7 +714,7 @@ class TestFieldDataCachePersistedSelectionFallback(TestCase):
 
         parent = mock_block()
         parent.location = self.parent_location
-        parent.scope_ids = parent.scope_ids._replace(user_id=None)
+        parent.scope_ids.user_id = None
         parent.has_dynamic_children.return_value = True
         parent.get_children.return_value = list(pool_blocks.values())
         parent.get_required_block_descriptors.return_value = []
