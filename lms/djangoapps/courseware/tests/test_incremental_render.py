@@ -199,7 +199,9 @@ class VerticalEagerWindowRenderTests(TestCase):
             child.render.return_value = rendered
             children.append(child)
 
-        block = Mock(spec=VerticalBlock)
+        # Not Mock(spec=VerticalBlock): `runtime` is set dynamically per-instance by the
+        # XBlock runtime binding, not declared on the class, so spec= would reject it.
+        block = Mock()
         block.get_children.return_value = children
         block.is_block_complete_for_assignments.return_value = None
         block.due = None
