@@ -5,8 +5,6 @@ from .advanced_settings import AdvancedCourseSettingsView
 from .api_heartbeat import APIHeartBeatView
 from .authoring_grading import AuthoringGradingView
 from .course_optimizer import (
-    CourseAnalysisReportStatusView,
-    CourseAnalysisReportView,
     LinkCheckStatusView,
     LinkCheckView,
     RerunLinkUpdateStatusView,

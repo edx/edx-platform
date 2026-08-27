@@ -4,6 +4,7 @@ Views for v1 contentstore API.
 from .certificates import CourseCertificatesView
 from .course_details import CourseDetailsView
 from .course_index import ContainerChildrenView, CourseIndexView
+from .course_optimizer import CourseAnalysisReportStatusView, CourseAnalysisReportView
 from .course_rerun import CourseRerunView
 from .course_team import CourseTeamView
 from .course_waffle_flags import CourseWaffleFlagsView
