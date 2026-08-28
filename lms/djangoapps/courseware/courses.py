@@ -850,7 +850,7 @@ def get_assignments_grades(user, course_id, cache_timeout):
         subsection_grades = list(course_grade.subsection_grades.values())
     except Exception as err:  # pylint: disable=broad-except
         log.warning(f'Could not get grades for the course: {course_id}, error: {err}')
-        return []
+        return [], []
 
     return subsection_grades, course_grade.grader_result()['section_breakdown']
 
