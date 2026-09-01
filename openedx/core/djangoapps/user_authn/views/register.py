@@ -63,7 +63,10 @@ from openedx.core.djangoapps.user_authn.views.registration_form import (
     RegistrationFormFactory,
     get_registration_extension_form
 )
-from openedx.core.djangoapps.user_authn.views.utils import get_auto_generated_username
+from openedx.core.djangoapps.user_authn.views.utils import (
+    get_auto_generated_username,
+    get_total_registration_time_validation_error,
+)
 from openedx.core.djangoapps.user_authn.tasks import check_pwned_password_and_send_track_event
 from openedx.core.djangoapps.user_authn.toggles import (
     is_require_third_party_auth_enabled,
@@ -587,6 +590,20 @@ class RegistrationView(APIView):
             )
 
         data = request.POST.copy()
+
+        validation_error = get_total_registration_time_validation_error(data)
+        if validation_error:
+            AUDIT_LOG.warning(
+                "Registration rejected due to invalid total_registration_time payload digest=%s",
+                validation_error["value_digest"],
+            )
+            return self._create_response(
+                request,
+                {validation_error["field"]: [{"user_message": validation_error["user_message"]}]},
+                status_code=400,
+                error_code=validation_error["error_code"],
+            )
+
         self._handle_terms_of_service(data)
 
         if is_auto_generated_username_enabled() and 'username' not in data:

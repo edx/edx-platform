@@ -245,6 +245,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
         self._assert_response(
             response, success=False, value=self.LOGIN_FAILED_WARNING, status_code=400
         )
+        self._assert_response(response, success=False, email_value="[invalid input]")
         self._assert_audit_log(mock_audit_log, 'warning', ['Login failed', 'Unknown user email', email_hash])
 
     @patch.dict("django.conf.settings.FEATURES", {'SQUELCH_PII_IN_LOGS': True})
@@ -255,6 +256,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
             self.password,
         )
         self._assert_response(response, success=False, value=self.LOGIN_FAILED_WARNING)
+        self._assert_response(response, success=False, email_value="[invalid input]")
         self._assert_audit_log(mock_audit_log, 'warning', ['Login failed', 'Unknown user email'])
         self._assert_not_in_audit_log(mock_audit_log, 'warning', [nonexistent_email])
 
@@ -264,6 +266,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
             'wrong_password',
         )
         self._assert_response(response, success=False, value=self.LOGIN_FAILED_WARNING)
+        self._assert_response(response, success=False, email_value=self.user_email)
         self._assert_audit_log(mock_audit_log, 'warning',
                                ['Login failed', 'password for', str(self.user.id), 'invalid'])
 
@@ -271,6 +274,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
     def test_login_fail_wrong_password_no_pii(self):
         response, mock_audit_log = self._login_response(self.user_email, 'wrong_password')
         self._assert_response(response, success=False, value=self.LOGIN_FAILED_WARNING)
+        self._assert_response(response, success=False, email_value=self.user_email)
         self._assert_audit_log(
             mock_audit_log, 'warning', ['Login failed', 'password for', str(self.user.id), 'invalid']
         )
@@ -324,6 +328,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
             self.password
         )
         self._assert_response(response, success=False, error_code="inactive-user")
+        self._assert_response(response, success=False, email_value=self.user_email)
         self._assert_audit_log(mock_audit_log, 'warning', ['Login failed', 'Account not active for user'])
         self._assert_not_in_audit_log(mock_audit_log, 'warning', ['test'])
 
@@ -711,7 +716,16 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
             result = self.client.post(self.url, post_params, **extra)
         return result, mock_audit_log
 
-    def _assert_response(self, response, success=None, value=None, status_code=None, error_code=None):
+    def _assert_response(
+        self,
+        response,
+        success=None,
+        value=None,
+        status_code=None,
+        error_code=None,
+        email_value=None,
+        absent_keys=None,
+    ):
         """
         Assert that the response has the expected status code and returned a valid
         JSON-parseable dict.
@@ -741,6 +755,13 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
             msg = ("'%s' did not contain '%s'" %
                    (str(response_dict['value']), str(value)))
             assert value in response_dict['value'], msg
+
+        if email_value is not None:
+            assert response_dict['email'] == email_value
+
+        if absent_keys is not None:
+            for key in absent_keys:
+                assert key not in response_dict
 
     def _assert_redirect_url(self, response, expected_redirect_url):
         """
@@ -1081,6 +1102,7 @@ class LoginSessionViewTest(ApiTestCase, OpenEdxEventsTestMixin):
             "password": "invalid"
         })
         self.assertHttpBadRequest(response)
+        self._assert_response(response, success=False, email_value=self.EMAIL)
 
         # Invalid email address
         response = self.client.post(self.url, {
@@ -1088,6 +1110,24 @@ class LoginSessionViewTest(ApiTestCase, OpenEdxEventsTestMixin):
             "password": self.PASSWORD,
         })
         self.assertHttpBadRequest(response)
+        self._assert_response(response, success=False, email_value="[invalid input]")
+
+    @ddt.data(
+        "bad input!",
+        "ab",
+        "not-an-email@",
+        "",
+    )
+    @patch('openedx.core.djangoapps.user_authn.views.login._get_user_by_email_or_username')
+    def test_login_rejects_invalid_login_identifier(self, invalid_identifier, mock_user_lookup):
+        response = self.client.post(self.url_v2, {
+            "email_or_username": invalid_identifier,
+            "password": self.PASSWORD,
+        })
+
+        self.assertHttpBadRequest(response)
+        self._assert_response(response, success=False, email_value="[invalid input]")
+        assert not mock_user_lookup.called
 
     @ddt.data(True, False)
     def test_missing_login_params(self, is_api_v1):
