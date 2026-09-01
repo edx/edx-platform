@@ -5,7 +5,6 @@ Discussion API internal interface
 
 from __future__ import annotations
 
-import itertools
 import logging
 import re
 from collections import defaultdict
@@ -22,6 +21,7 @@ from django.http import Http404
 from django.urls import reverse
 from django.utils.html import strip_tags
 from edx_django_utils.monitoring import function_trace, set_custom_attribute
+from forum.backend import get_backend
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.locator import CourseKey
 from pytz import UTC
@@ -1671,7 +1671,7 @@ def get_comment_list(
         discussion.rest_api.views.CommentViewSet for more detail.
     """
     response_skip = page_size * (page - 1)
-    reverse_order = request.GET.get("reverse_order", False)
+    reverse_order = request.GET.get("reverse_order", "").lower() in ("true", "1")
     from_mfe_sidebar = request.GET.get("enable_in_context_sidebar", False)
     cc_thread, context = _get_thread_and_context(
         request,
@@ -2291,74 +2291,107 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
     """
     try:
         cc_comment = Comment(id=comment_id).retrieve()
-        reverse_order = request.GET.get("reverse_order", False)
+        reverse_order = request.GET.get("reverse_order", "").lower() in ("true", "1")
         show_deleted = request.GET.get("show_deleted", False)
         show_deleted = show_deleted in ["true", "True", True]
 
+        # Only fetch thread for context/permissions — NOT the full response tree
         cc_thread, context = _get_thread_and_context(
             request,
             cc_comment["thread_id"],
             retrieve_kwargs={
-                "with_responses": True,
-                "recursive": True,
-                "reverse_order": reverse_order,
-                "show_deleted": show_deleted,
+                "with_responses": False,
+                "recursive": False,
             },
         )
-        if cc_thread["thread_type"] == "question":
-            thread_responses = itertools.chain(
-                cc_thread["endorsed_responses"], cc_thread["non_endorsed_responses"]
-            )
-        else:
-            thread_responses = cc_thread["children"]
-        response_comments = []
-        for response in thread_responses:
-            if response["id"] == comment_id:
-                response_comments = response["children"]
-                break
 
-        # Filter deleted content from the FULL list first
+        if show_deleted and not context["has_moderation_privilege"]:
+            raise PermissionDenied(
+                "`show_deleted` can only be set by users with moderation roles."
+            )
+
+        # Determine sort order
+        sorting_order = -1 if reverse_order else 1
+
+        # Get the course_id from the thread for backend initialization
+        course_id = cc_thread["course_id"]
+        backend = get_backend(course_id)()
+
+        # Fetch ONLY this comment's children directly from the backend
+        # This avoids loading the entire thread tree (the main performance fix)
+        response_comments = backend.get_comments(
+            parent_id=str(comment_id),
+            depth=1,
+            sort=sorting_order,
+        )
+
+        # Filter deleted content
         if not show_deleted:
             response_comments = [
-                response
-                for response in response_comments
-                if not response.get("is_deleted", False)
+                comment for comment in response_comments
+                if not comment.get("is_deleted", False)
             ]
-        else:
-            if not context["has_moderation_privilege"]:
-                raise PermissionDenied(
-                    "`show_deleted` can only be set by users with moderation roles."
-                )
 
-        # Filter muted content from the FULL list
-        include_muted = request.GET.get("include_muted", False)
-        include_muted = include_muted in ["true", "True", True]
-        if not include_muted:
+        # Filter muted content
+        include_muted_param = request.GET.get("include_muted", False)
+        include_muted_param = include_muted_param in ["true", "True", True]
+        if not include_muted_param:
             response_comments = filter_muted_content(
                 request.user,
                 context["course"].id,
                 response_comments
             )
 
-        # NOW calculate pagination based on FILTERED total
+        # Calculate pagination based on FILTERED total
         total_comments_count = len(response_comments)
         num_pages = (
             (total_comments_count + page_size - 1) // page_size
             if total_comments_count else 1
         )
 
-        # Then paginate the filtered list
+        # Paginate the filtered list
         response_skip = page_size * (page - 1)
         paged_response_comments = response_comments[
             response_skip: (response_skip + page_size)
         ]
+
         if not paged_response_comments and page != 1:
             raise PageNotFoundError("Page not found (No results on this page).")
+
+        # Normalize comment data for serialization (backend returns raw dict format)
+        normalized_comments = []
+        for comment in paged_response_comments:
+            normalized = {
+                "id": str(comment.get("_id", comment.get("id", ""))),
+                "body": comment.get("body", ""),
+                "course_id": comment.get("course_id", course_id),
+                "user_id": comment.get("author_id", comment.get("user_id")),
+                "username": comment.get("author_username", comment.get("username", "")),
+                "thread_id": str(comment.get("comment_thread_id", comment.get("thread_id", ""))),
+                "parent_id": str(comment.get("parent_id", "")) if comment.get("parent_id") else None,
+                "created_at": comment.get("created_at"),
+                "updated_at": comment.get("updated_at"),
+                "depth": comment.get("depth", 1),
+                "type": "comment",
+                "anonymous": comment.get("anonymous", False),
+                "anonymous_to_peers": comment.get("anonymous_to_peers", False),
+                "endorsed": comment.get("endorsed", False),
+                "abuse_flaggers": comment.get("abuse_flaggers", []),
+                "votes": comment.get("votes", {"up_count": 0}),
+                "child_count": comment.get("child_count", 0),
+                "children": [],
+                "closed": comment.get("closed", False),
+            }
+            # Carry over any additional fields
+            for key in ("endorsement", "edit_history", "is_deleted", "deleted_at", "deleted_by"):
+                if key in comment:
+                    normalized[key] = comment[key]
+            normalized_comments.append(normalized)
 
         results = _serialize_discussion_entities(
             request,
             context,
-            paged_response_comments,
+            normalized_comments,
             requested_fields,
             DiscussionEntity.comment,
         )
