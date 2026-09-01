@@ -85,10 +85,16 @@ def get_logger_config(log_dir,  # lint-amnesty, pylint: disable=unused-argument
                 'facility': SysLogHandler.LOG_LOCAL1,
                 'formatter': 'raw',
             },
+            'tracking_file': {
+                'level': 'DEBUG',
+                'class': 'logging.handlers.WatchedFileHandler',
+                'filename': '/edx/var/log/tracking/tracking_events.log',
+                'formatter': 'raw',
+            },
         },
         'loggers': {
             'tracking': {
-                'handlers': ['tracking'],
+                'handlers': ['tracking', 'tracking_file'],
                 'level': 'DEBUG',
                 'propagate': False,
             },
