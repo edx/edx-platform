@@ -13,19 +13,24 @@ have a Course + User with these properties?" is the responsibility of the
 Where possible, seed data using public API methods (e.g. replace_course_outline
 from this app, edx-when's set_dates_for_course).
 """
+import attr
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import ddt
+from unittest.mock import patch
+from edx_when.api import set_dates_for_course
 from opaque_keys.edx.keys import CourseKey
 from rest_framework.test import APITestCase, APIClient
 
+from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
 from common.djangoapps.student.tests.factories import UserFactory
 from lms.djangoapps.courseware.tests.helpers import MasqueradeMixin
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
-
+from xmodule.partitions.partitions import ENROLLMENT_TRACK_PARTITION_ID
 from ..api import replace_course_outline
 from ..api.tests.test_data import generate_sections
 from ..data import CourseOutlineData, CourseVisibility
@@ -294,6 +299,179 @@ class CourseOutlineViewMasqueradingTest(MasqueradeMixin, CacheIsolationTestCase)
         result = self.client.get(outline_url(self.course_key), {'user': 'student2'})
         assert result.status_code == 200
         assert result.data['username'] == 'student2'
+
+
+@ddt.ddt
+@skip_unless_lms
+class CourseOutlineViewAuditPreviewTest(CacheIsolationTestCase, APITestCase):
+    """
+    Tests for the CourseOutlineView with regards to audit preview feature
+    """
+    @classmethod
+    def setUpTestData(cls):
+        cls.course_key = CourseKey.from_string("course-v1:edX+Audit+Preview")
+        cls.course_url = outline_url(cls.course_key)
+        start_date = datetime(2020, 5, 20, tzinfo=timezone.utc)
+
+        set_dates_for_course(
+            cls.course_key,
+            [
+                (
+                    cls.course_key.make_usage_key('course', 'course'),
+                    {'start': start_date}
+                )
+            ]
+        )
+
+        # Create a course with three sections with 2, 2, and 3 subsections respectively
+        outline = CourseOutlineData(
+            course_key=cls.course_key,
+            title="Views Test Course!",
+            published_at=start_date,
+            published_version="5ebece4b69dd593d82fe2020",
+            entrance_exam_id=None,
+            days_early_for_beta=None,
+            sections=generate_sections(cls.course_key, [2, 2, 3]),
+            self_paced=False,
+            course_visibility=CourseVisibility.PUBLIC
+        )
+
+        # Restrict the first section to verified only
+        verified_section = attr.evolve(
+            outline.sections[0],
+            user_partition_groups={
+                ENROLLMENT_TRACK_PARTITION_ID: [2]
+            }
+        )
+        outline.sections[0] = verified_section
+
+        # Restrict the first subsection of the second section to verified only
+        verified_sequence = attr.evolve(
+            outline.sections[1].sequences[0],
+            user_partition_groups={
+                ENROLLMENT_TRACK_PARTITION_ID: [2]
+            }
+        )
+        outline.sections[1].sequences[0] = verified_sequence
+
+        replace_course_outline(outline)
+        cls.outline = outline
+
+        CourseMode.objects.create(
+            course_id=cls.course_key,
+            mode_slug=CourseMode.AUDIT,
+            mode_display_name='Audit',
+        )
+        CourseMode.objects.create(
+            course_id=cls.course_key,
+            mode_slug=CourseMode.VERIFIED,
+            mode_display_name='Verified',
+            min_price=50
+        )
+
+        cls.verified_student = UserFactory.create(
+            username='verified_student', email='verified_student@example.com', is_staff=False, password='student_pass'
+        )
+        cls.audit_student = UserFactory.create(
+            username='audit_student', email='audit_student@example.com', is_staff=False, password='student_pass'
+        )
+        CourseEnrollment.enroll(cls.audit_student, cls.course_key, CourseMode.AUDIT)
+        CourseEnrollment.enroll(cls.verified_student, cls.course_key, CourseMode.VERIFIED)
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+
+    @contextmanager
+    def set_preview_enabled(self, enabled):
+        """
+        Helper contextmanager to make mocking more legible
+        """
+        with patch(
+            'openedx.core.djangoapps.content.learning_sequences.views.learner_can_preview_verified_content',
+            return_value=enabled
+        ):
+            yield
+
+    @ddt.unpack
+    @ddt.data(
+        (
+            'verified_student',
+            False,
+            {
+                'ch_1': {
+                    'seq_1_0': (True, False),
+                    'seq_1_1': (True, False),
+                },
+                'ch_2': {
+                    'seq_2_0': (True, False),
+                    'seq_2_1': (True, False),
+                },
+                'ch_3': {
+                    'seq_3_0': (True, False),
+                    'seq_3_1': (True, False),
+                    'seq_3_2': (True, False),
+                }
+            }
+        ),
+        (
+            'audit_student',
+            True,
+            {
+                'ch_1': {
+                    'seq_1_0': (True, True),
+                    'seq_1_1': (True, True),
+                },
+                'ch_2': {
+                    'seq_2_0': (True, True),
+                    'seq_2_1': (True, False),
+                },
+                'ch_3': {
+                    'seq_3_0': (True, False),
+                    'seq_3_1': (True, False),
+                    'seq_3_2': (True, False),
+                }
+            }
+        ),
+        (
+            'audit_student',
+            False,
+            {
+                'ch_2': {
+                    'seq_2_1': (True, False),
+                },
+                'ch_3': {
+                    'seq_3_0': (True, False),
+                    'seq_3_1': (True, False),
+                    'seq_3_2': (True, False),
+                }
+            }
+        ),
+    )
+    def test_audit_preview(self, username, preview_enabled, expected_outline):
+        """
+        Call the endpoint with the given username and the given enablement of the
+        audit preview. The outline returned should match what we expect
+        """
+        self.client.login(username=username, password='student_pass')
+        with self.set_preview_enabled(preview_enabled):
+            result = self.client.get(outline_url(self.course_key))
+        outline = result.data['outline']
+        block_template = 'block-v1:edX+Audit+Preview+type@{block_type}+block@{block_id}'
+        self.assertEqual(len(outline['sections']), len(expected_outline))
+        actual_sections = {section['id']: section for section in outline['sections']}
+
+        for section_id, sequences in expected_outline.items():
+            actual_section = actual_sections.get(block_template.format(block_type="chapter", block_id=section_id))
+            self.assertIsNotNone(actual_section, section_id)
+            self.assertEqual(len(actual_section['sequence_ids']), len(sequences), section_id)
+            for sequence_id, access in sequences.items():
+                actual_sequence_id = block_template.format(block_type="sequential", block_id=sequence_id)
+                self.assertIn(actual_sequence_id, actual_section['sequence_ids'], sequence_id)
+                actual_sequence = outline['sequences'].get(actual_sequence_id)
+                self.assertIsNotNone(actual_sequence, sequence_id)
+                self.assertEqual(access[0], actual_sequence['accessible'], sequence_id)
+                self.assertEqual(access[1], actual_sequence['previewable'], sequence_id)
 
 
 def outline_url(course_key):
