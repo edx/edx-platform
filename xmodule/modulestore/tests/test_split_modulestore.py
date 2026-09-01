@@ -1552,6 +1552,66 @@ class TestItemCrud(SplitModuleTest):
                         check_subtree(sub)
         check_subtree(nodes[0])
 
+    def test_delete_item_with_duplicate_children(self):
+        """
+        Test that delete_item removes ALL references to a block from its parent's
+        children list, even when the block appears multiple times (data corruption).
+
+        Regression test for a bug where list.remove() only removed the first
+        occurrence, leaving dangling references that crashed Studio.
+        """
+        store = modulestore()
+        user = self.user_id
+
+        # Create a course with a chapter containing a vertical
+        course = store.create_course('testx', 'dup_children', 'run', user, BRANCH_NAME_DRAFT)
+        course_loc = course.location.version_agnostic()
+        chapter = store.create_child(user, course_loc, 'chapter')
+        chapter_loc = chapter.location.map_into_course(course_loc.course_key)
+        vertical = store.create_child(user, chapter_loc, 'vertical')
+        vertical_loc = vertical.location.map_into_course(course_loc.course_key)
+
+        # Manually corrupt: add the vertical to the chapter's children 3 more times
+        # (simulating the production data corruption)
+        # pylint: disable=protected-access
+        course_key = course_loc.course_key.for_branch(BRANCH_NAME_DRAFT)
+        course_structure = store._lookup_course(course_key)
+        structure = course_structure.structure
+        new_structure = store.version_structure(course_key, structure, user)
+        new_blocks = new_structure['blocks']
+        new_id = new_structure['_id']
+
+        chapter_block_key = BlockKey.from_usage_key(chapter_loc)
+        vertical_block_key = BlockKey.from_usage_key(vertical_loc)
+        chapter_block = new_blocks[chapter_block_key]
+
+        # Verify it starts with 1 child
+        assert chapter_block.fields['children'].count(vertical_block_key) == 1
+
+        # Add 3 more duplicates (total 4, matching the production corruption)
+        for _ in range(3):
+            chapter_block.fields['children'].append(vertical_block_key)
+        assert chapter_block.fields['children'].count(vertical_block_key) == 4
+
+        chapter_block.edit_info.previous_version = chapter_block.edit_info.update_version
+        chapter_block.edit_info.update_version = new_id
+        store.update_structure(course_key, new_structure)
+        index_entry = store._get_index_if_valid(course_key)
+        if index_entry:
+            store._update_head(course_key, index_entry, course_key.branch, new_id)
+
+        # Now delete the vertical - this should remove ALL 4 references
+        store.delete_item(vertical_loc, user)
+
+        # Verify: vertical is gone and chapter has no dangling references
+        assert not store.has_item(vertical_loc.version_agnostic())
+
+        # Re-fetch the chapter and check its children list
+        updated_chapter = store.get_item(chapter_loc.version_agnostic())
+        assert vertical_block_key not in [
+            BlockKey.from_usage_key(c) for c in updated_chapter.children
+        ], "Dangling references to deleted block remain in parent's children list"
+
     def create_course_for_deletion(self):
         """
         Create a course we can delete
