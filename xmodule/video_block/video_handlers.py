@@ -14,14 +14,14 @@ from django.core.files.base import ContentFile
 from django.utils.timezone import now
 from edxval.api import create_external_video, create_or_update_video_transcript, delete_video_transcript
 from opaque_keys.edx.locator import CourseLocator, LibraryLocatorV2
-
 from webob import Response
 from xblock.core import XBlock
 from xblock.exceptions import JsonHandlerError
 
+from openedx.core.djangoapps.content_libraries import api as lib_api
+from openedx.core.djangoapps.video_config.toggles import audio_description_enabled
 from xmodule.exceptions import NotFoundError
 from xmodule.fields import RelativeTime
-from openedx.core.djangoapps.content_libraries import api as lib_api
 
 from .transcripts_utils import (
     Transcript,
@@ -694,9 +694,8 @@ class VideoStudioViewHandlers:
             AudioDescriptionUploadError,
             delete_audio_description,
             get_audio_description_url,
-            upload_audio_description,
+            upload_audio_description
         )
-        from cms.djangoapps.contentstore.toggles import audio_description_enabled  # pylint: disable=import-outside-toplevel
 
         if not audio_description_enabled or not audio_description_enabled(self.course_id):
             return Response(status=404)

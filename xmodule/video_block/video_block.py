@@ -32,17 +32,18 @@ from xblock.runtime import KvsFieldData
 from xblocks_contrib.video import VideoBlock as _ExtractedVideoBlock
 
 from common.djangoapps.xblock_django.constants import ATTR_KEY_REQUEST_COUNTRY_CODE, ATTR_KEY_USER_ID
-from openedx.core.djangoapps.video_config.models import HLSPlaybackEnabledFlag, CourseYoutubeBlockedFlag
-from openedx.core.djangoapps.video_config.toggles import PUBLIC_VIDEO_SHARE, TRANSCRIPT_FEEDBACK
+from openedx.core.djangoapps.video_config.models import CourseYoutubeBlockedFlag, HLSPlaybackEnabledFlag
+from openedx.core.djangoapps.video_config.toggles import (
+    PUBLIC_VIDEO_SHARE,
+    TRANSCRIPT_FEEDBACK,
+    audio_description_enabled
+)
 from openedx.core.djangoapps.video_pipeline.config.waffle import DEPRECATE_YOUTUBE
 from openedx.core.lib.cache_utils import request_cached
 from openedx.core.lib.courses import get_course_by_id
 from openedx.core.lib.license import LicenseMixin
 from xmodule.contentstore.content import StaticContent
-from xmodule.course_block import (
-    COURSE_VIDEO_SHARING_ALL_VIDEOS,
-    COURSE_VIDEO_SHARING_NONE,
-)
+from xmodule.course_block import COURSE_VIDEO_SHARING_ALL_VIDEOS, COURSE_VIDEO_SHARING_NONE
 from xmodule.editing_block import EditingMixin
 from xmodule.exceptions import NotFoundError
 from xmodule.mako_block import MakoTemplateBlockBase
@@ -52,11 +53,15 @@ from xmodule.util.builtin_assets import add_css_to_fragment, add_webpack_js_to_f
 from xmodule.validation import StudioValidation, StudioValidationMessage
 from xmodule.video_block import manage_video_subtitles_save
 from xmodule.x_module import (
-    PUBLIC_VIEW, STUDENT_VIEW,
-    ResourceTemplates, shim_xmodule_js,
-    XModuleMixin, XModuleToXBlockMixin,
+    PUBLIC_VIEW,
+    STUDENT_VIEW,
+    ResourceTemplates,
+    XModuleMixin,
+    XModuleToXBlockMixin,
+    shim_xmodule_js
 )
 from xmodule.xml_block import XmlMixin, deserialize_field, is_pointer_tag, name_to_pathname
+
 from .bumper_utils import bumperize
 from .sharing_sites import sharing_sites_info_for_video
 from .transcripts_utils import (
@@ -476,9 +481,6 @@ class _BuiltInVideoBlock(
             metadata['audioDescriptionUrl'] = audio_description_url
 
         try:
-            from cms.djangoapps.contentstore.toggles import (  # pylint: disable=import-outside-toplevel
-                audio_description_enabled
-            )
             ad_feature_enabled = bool(audio_description_enabled(self.course_id))
         except Exception:  # pylint: disable=broad-except
             ad_feature_enabled = False
@@ -991,7 +993,6 @@ class _BuiltInVideoBlock(
         }
 
         _context.update({'transcripts_basic_tab_metadata': metadata})
-        from cms.djangoapps.contentstore.toggles import audio_description_enabled  # pylint: disable=import-outside-toplevel
 
         # Audio description upload context for studio editor
         ad_upload_enabled = bool(
