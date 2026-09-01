@@ -1300,6 +1300,13 @@ UNIVERSITY_EMAIL = 'university@example.com'
 PRESS_EMAIL = 'press@example.com'
 FINANCE_EMAIL = ''
 
+# .. setting_name: BRAZE_COURSE_ENROLLMENT_CANVAS_ID
+# .. setting_default: None
+# .. setting_description: Canvas ID for course enrollment email in Braze. This is used when sending
+#   course enrollment emails via Braze canvas API. Set to your Braze canvas ID when using Braze for
+#   enrollment emails. Can be None if only using SES (when enable_ses_for_course_enrollment is True).
+# BRAZE_COURSE_ENROLLMENT_CANVAS_ID = None   #uncomment only for local testing
+
 # Platform mailing address
 CONTACT_MAILING_ADDRESS = 'SET-ME-PLEASE'
 

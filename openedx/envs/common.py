@@ -2018,6 +2018,16 @@ COMPREHENSIVE_THEME_DIRS = os.environ.get("COMPREHENSIVE_THEME_DIRS", "").split(
 #   has to be enabled.
 DEFAULT_SITE_THEME = None
 
+# .. setting_name: SES_ENROLLMENT_EMAIL_THEME
+# .. setting_default: None
+# .. setting_description: Optional theme override for SES course enrollment emails.
+#   When set, enrollment emails rendered via SES use this theme instead of DEFAULT_SITE_THEME.
+#   Allows per-email-type theme customization without affecting other emails (e.g., "edx.org-next").
+#   Only effective if ENABLE_COMPREHENSIVE_THEMING is True.
+# .. setting_warning: Must point to a valid theme in COMPREHENSIVE_THEME_DIRS or edx-platform/themes.
+#   If the theme does not exist or template is not found, falls back to DEFAULT_SITE_THEME resolution.
+SES_ENROLLMENT_EMAIL_THEME = None
+
 # .. toggle_name: ENABLE_COMPREHENSIVE_THEMING
 # .. toggle_implementation: DjangoSetting
 # .. toggle_default: False
