@@ -137,6 +137,12 @@ can_unlink = upstream_info.upstream_ref and not upstream_info.has_top_level_pare
                 <p class="xblock-group-visibility-label">${selected_groups_label}</p>
                 % endif
             </div>
+            % if can_edit and not is_root and not selectable:
+            <button type="button" data-tooltip="${_('Edit Title')}" class="btn-default title-edit-button unit-rename-button">
+                <span class="icon fa fa-pencil" aria-hidden="true"></span>
+                <span class="sr">${_("Edit Title")}</span>
+            </button>
+            % endif
         </div>
         <div class="header-actions">
             <ul class="actions-list nav-dd ui-right">
