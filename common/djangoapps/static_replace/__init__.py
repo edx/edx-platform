@@ -2,6 +2,7 @@
 
 import logging
 import re
+import uuid
 
 from django.conf import settings
 from django.contrib.staticfiles import finders
@@ -240,3 +241,51 @@ def replace_static_urls(
         return "".join([quote, url, quote])
 
     return process_static_urls(text, replace_static_url, data_dir=static_asset_path or data_directory)
+
+
+def contract_static_urls(text, course_id):
+    """
+    Reverse of `replace_static_urls` for a course's own assets: rewrite absolute
+    asset URLs referencing ``course_id``'s assets back to the portable
+    ``/static/<name>`` form.
+
+    Handles every form `StaticContent.get_canonicalized_asset_path` can emit:
+    relative (``/asset-v1:...@name`` or ``.../name``), versioned
+    (``/assets/courseware/v1/<digest>/asset-v1:...``), host-qualified
+    (``https://host/asset-v1:...``), and old-style ``/c4x/...`` paths.
+
+    URLs referencing other courses' assets, genuinely external URLs, and
+    already-portable ``/static/`` paths are left untouched.
+
+    text: The source text to do the substitution in
+    course_id: The course whose asset URLs should be made portable
+    """
+    if not course_id or not isinstance(text, str):
+        return text
+
+    # Serialize an asset key with a placeholder name, then split it into the
+    # course-specific prefix and the separator preceding the asset name.
+    placeholder = uuid.uuid4().hex
+    serialized = str(course_id.make_asset_key('asset', placeholder))
+    name_index = serialized.rfind(placeholder)
+    key_prefix, separator = serialized[:name_index - 1], serialized[name_index - 1]
+    # Modern keys serialize with '@' before the name, but canonicalized paths
+    # may separate the name with '/' instead; accept either.
+    separator_pattern = '[@/]' if separator == '@' else re.escape(separator)
+
+    asset_url_pattern = re.compile(
+        r"""(?P<quote>\\?['"])"""                          # the opening quotes
+        r"""(?:(?:https?:)?//[^'"/]+)?"""                  # optional scheme and host
+        r"""(?:/assets/courseware/(?:v\d+/)?[a-f0-9]{32})?"""  # optional versioned-asset prefix
+        r"""/?""" + re.escape(key_prefix) + separator_pattern +
+        r"""(?P<name>[^'"?]*)"""                           # the asset name
+        r"""(?P<query>\?[^'"]*)?"""                        # optional query string
+        r"""(?P=quote)"""                                  # the first matching closing quote
+    )
+
+    def contract(match):
+        quote = match.group('quote')
+        query = match.group('query') or ''
+        return f"{quote}/static/{match.group('name')}{query}{quote}"
+
+    return asset_url_pattern.sub(contract, text)
