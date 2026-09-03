@@ -35,7 +35,6 @@ class CourseWaffleFlagsSerializer(serializers.Serializer):
     enable_unit_expanded_view = serializers.SerializerMethodField()
     enable_outline_component_creation = serializers.SerializerMethodField()
     enable_audio_description = serializers.SerializerMethodField()
-    enable_transcript_editor = serializers.SerializerMethodField()
 
     def get_course_key(self):
         """
@@ -201,10 +200,3 @@ class CourseWaffleFlagsSerializer(serializers.Serializer):
         """
         course_key = self.get_course_key()
         return toggles.audio_description_enabled(course_key)
-
-    def get_enable_transcript_editor(self, obj):
-        """
-        Method to get the contentstore.enable_transcript_editor waffle flag.
-        """
-        course_key = self.get_course_key()
-        return toggles.transcript_editor_enabled(course_key)
