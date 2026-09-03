@@ -36,6 +36,7 @@ from eventtracking import tracker
 # Note that this lives in LMS, so this dependency should be refactored.
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
+from openedx_filters.learning.filters import AccountActivationEmailComposed
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
@@ -98,7 +99,6 @@ from openedx.core.djangolib.markup import HTML, Text
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.features.course_experience.url_helpers import make_learning_mfe_courseware_url
 from openedx.features.discounts.applicability import FIRST_PURCHASE_DISCOUNT_OVERRIDE_FLAG
-from openedx.features.enterprise_support.utils import is_enterprise_learner
 from common.djangoapps.util.db import outer_atomic
 from common.djangoapps.util.json_request import JsonResponse
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
@@ -222,7 +222,6 @@ def compose_activation_email(
     message_context = generate_activation_email_context(user, user_registration)
     message_context.update({
         'confirm_activation_link': _get_activation_confirmation_link(message_context['key'], redirect_url),
-        'is_enterprise_learner': is_enterprise_learner(user),
         'is_first_purchase_discount_overridden': FIRST_PURCHASE_DISCOUNT_OVERRIDE_FLAG.is_enabled(),
         'route_enabled': route_enabled,
         'routed_user': user.username,
@@ -231,6 +230,11 @@ def compose_activation_email(
         'registration_flow': registration_flow,
         'show_auto_generated_username': show_auto_generated_username(user.username),
     })
+    # .. filter_implemented_name: AccountActivationEmailComposed
+    # .. filter_type: org.openedx.learning.account.activation.email.compose.v1
+    __, message_context = AccountActivationEmailComposed.run_filter(
+        user=user, message_context=message_context,
+    )
 
     if route_enabled:
         dest_addr = settings.FEATURES['REROUTE_ACTIVATION_EMAIL']
@@ -678,7 +682,7 @@ def activate_account(request, key):
     if request.GET.get('next'):
         redirect_to, root_login_url = get_next_url_for_login_page(request, include_host=True)
 
-        # Don't automatically redirect authenticated users to the redirect_url
+        # Don't automatically redirect to the redirect_url
         # if the `next` value is either:
         # 1. "/dashboard" or
         # 2. "https://{LMS_ROOT_URL}/dashboard" (which we might provide as a value from the AuthN MFE)
@@ -688,14 +692,25 @@ def activate_account(request, key):
         ):
             redirect_url = get_redirect_url_with_host(root_login_url, redirect_to)
 
-    if should_redirect_to_authn_microfrontend() and not request.user.is_authenticated:
-        params = {'account_activation_status': activation_message_type}
+    # Visitors who are not signed in have to authenticate before they can use their
+    # destination, so hand it to the login page rather than dropping it. Both login
+    # surfaces report the activation outcome to the user: the AuthN MFE reads the
+    # `account_activation_status` parameter, and the legacy login page renders the
+    # messages queued above.
+    if not request.user.is_authenticated:
+        if should_redirect_to_authn_microfrontend():
+            params = {'account_activation_status': activation_message_type}
+            if redirect_url:
+                params['next'] = redirect_url
+            url_path = '/login?{}'.format(urllib.parse.urlencode(params))
+            return redirect(settings.AUTHN_MICROFRONTEND_URL + url_path)
         if redirect_url:
-            params['next'] = redirect_url
-        url_path = '/login?{}'.format(urllib.parse.urlencode(params))
-        return redirect(settings.AUTHN_MICROFRONTEND_URL + url_path)
+            redirect_url = '{login_url}?{params}'.format(
+                login_url=reverse('signin_user'),
+                params=urllib.parse.urlencode({'next': redirect_url}),
+            )
 
-    response = redirect(redirect_url) if redirect_url and is_enterprise_learner(request.user) else redirect('dashboard')
+    response = redirect(redirect_url or 'dashboard')
     if show_account_activation_popup:
         response.delete_cookie(
             settings.SHOW_ACTIVATE_CTA_POPUP_COOKIE_NAME,
