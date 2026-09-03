@@ -90,31 +90,6 @@ def audio_description_enabled(course_key):
     return ENABLE_AUDIO_DESCRIPTION.is_enabled(course_key)
 
 
-# .. toggle_name: contentstore.enable_transcript_editor
-# .. toggle_implementation: CourseWaffleFlag
-# .. toggle_default: False
-# .. toggle_description: Enables the in-platform transcript editor in Studio's
-#   videos page. When enabled, course staff can open an editor modal from the
-#   transcript row action menu and edit transcript cue text directly in the
-#   browser; edits are saved via PATCH to a new v1 transcript endpoint. When
-#   disabled, the "Edit transcript" menu item is hidden and the API endpoint
-#   returns 404. Existing upload, download, and delete flows are unaffected.
-# .. toggle_use_cases: open_edx
-# .. toggle_creation_date: 2026-05-05
-# .. toggle_tickets: TNL2-608
-ENABLE_TRANSCRIPT_EDITOR = CourseWaffleFlag(
-    'contentstore.enable_transcript_editor',
-    __name__,
-)
-
-
-def transcript_editor_enabled(course_key):
-    """
-    Return True if the in-platform transcript editor is enabled for the course.
-    """
-    return ENABLE_TRANSCRIPT_EDITOR.is_enabled(course_key)
-
-
 # .. toggle_name: legacy_studio.exam_settings
 # .. toggle_implementation: WaffleFlag
 # .. toggle_default: False
