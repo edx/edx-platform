@@ -39,7 +39,11 @@ from xmodule.modulestore.tests.factories import (  # pylint: disable=wrong-impor
 )
 
 from ..utils import format_social_link, validate_social_link
-from .retirement_helpers import RetirementTestCase, create_retirement_status
+from .retirement_helpers import (  # pylint: disable=unused-import
+    RetirementTestCase,
+    create_retirement_status,
+    setup_retirement_states
+)
 
 
 # Use a context manager to guarantee signal reconnection between tests.
