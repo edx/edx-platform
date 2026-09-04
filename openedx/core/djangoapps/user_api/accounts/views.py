@@ -82,7 +82,6 @@ from ..models import (
     UserRetirementPartnerReportingStatus,
     UserRetirementStatus,
 )
-from ..toggles import should_free_retired_learner_email_on_completion
 from .api import get_account_settings, update_account_settings
 from .permissions import (
     CanCancelUserRetirement,
@@ -98,11 +97,7 @@ from .serializers import (
     UserSearchEmailSerializer,
 )
 from .signals import USER_RETIRE_LMS_CRITICAL, USER_RETIRE_LMS_MISC, USER_RETIRE_MAILINGS
-from .utils import (
-    create_retirement_request_and_deactivate_account,
-    free_retired_learner_email,
-    username_suffix_generator,
-)
+from .utils import create_retirement_request_and_deactivate_account, username_suffix_generator
 
 log = logging.getLogger(__name__)
 
@@ -1012,15 +1007,7 @@ class AccountRetirementStatusView(ViewSet):
                 if retirement is None:
                     raise UserRetirementStatus.DoesNotExist()
 
-            with transaction.atomic():
-                retirement.update_state(request.data)
-
-                if (
-                    retirement.current_state.state_name == 'COMPLETE' and
-                    should_free_retired_learner_email_on_completion()
-                ):
-                    free_retired_learner_email(retirement.user)
-
+            retirement.update_state(request.data)
             return Response(status=status.HTTP_204_NO_CONTENT)
         except UserRetirementStatus.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
