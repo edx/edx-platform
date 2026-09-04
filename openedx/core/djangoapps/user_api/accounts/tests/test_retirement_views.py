@@ -1318,6 +1318,29 @@ class TestAccountRetirementUpdate(RetirementTestCase):
 
         self.update_and_assert_status(data, expected_response_code)
 
+    def test_reaching_complete_frees_retired_email(self):
+        """
+        Moving a retirement to COMPLETE should free up the learner's retired
+        email address so it can be reused for a new registration.
+        """
+        data = {'new_state': 'COMPLETE', 'response': 'accountretirementcomplete', 'force': True}
+        self.update_and_assert_status(data)
+
+        self.test_user.refresh_from_db()
+        assert self.test_user.email == f'{self.retirement.original_email}.freed.{self.test_user.id}'
+
+    def test_reaching_complete_email_free_failure_fails_request(self):
+        """
+        If freeing the email unexpectedly errors, the request should report
+        the failure rather than silently swallowing it.
+        """
+        data = {'new_state': 'COMPLETE', 'response': 'accountretirementcomplete', 'force': True}
+        with mock.patch(
+            'openedx.core.djangoapps.user_api.accounts.views.free_retired_learner_email',
+            side_effect=Exception('boom'),
+        ):
+            self.update_and_assert_status(data, status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 @skip_unless_lms
 class TestAccountRetirementPost(RetirementTestCase):

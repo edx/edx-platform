@@ -97,7 +97,11 @@ from .serializers import (
     UserSearchEmailSerializer,
 )
 from .signals import USER_RETIRE_LMS_CRITICAL, USER_RETIRE_LMS_MISC, USER_RETIRE_MAILINGS
-from .utils import create_retirement_request_and_deactivate_account, username_suffix_generator
+from .utils import (
+    create_retirement_request_and_deactivate_account,
+    free_retired_learner_email,
+    username_suffix_generator,
+)
 
 log = logging.getLogger(__name__)
 
@@ -1008,6 +1012,10 @@ class AccountRetirementStatusView(ViewSet):
                     raise UserRetirementStatus.DoesNotExist()
 
             retirement.update_state(request.data)
+
+            if retirement.current_state.state_name == 'COMPLETE':
+                free_retired_learner_email(retirement.user)
+
             return Response(status=status.HTTP_204_NO_CONTENT)
         except UserRetirementStatus.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
