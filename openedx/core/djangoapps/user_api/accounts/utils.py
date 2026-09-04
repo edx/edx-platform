@@ -307,11 +307,16 @@ def handle_retirement_cancellation(retirement, email_address=None):
     """
     retirement.user.email = email_address if email_address else retirement.original_email
 
+    retirement.user.set_password(generate_password(length=25))
+    retirement.user.save()
+
+    retirement.delete()
+
 
 def _is_retired_email_format(email):
     """
-    Returns True if the given email address is in the retired-hash format
-    used by settings.RETIRED_EMAIL_FMT.
+    Returns True if the given email address is in the retired-email domain
+    used by settings.RETIRED_EMAIL_DOMAIN.
     """
     return email.endswith(f'@{settings.RETIRED_EMAIL_DOMAIN}')
 
@@ -326,6 +331,11 @@ def free_retired_learner_email(user):
     Raises RetirementStateError if the user's retirement isn't in a state where
     it's safe to free the email (still in progress, or doesn't look retired at all).
     """
+    freed_suffix = f'.freed.{user.id}'
+    if user.email.endswith(freed_suffix):
+        LOGGER.info(f"Email for user {user.id} was already freed, nothing to do.")
+        return
+
     try:
         retirement = UserRetirementStatus.objects.select_related('current_state').get(user=user)
         if retirement.current_state.state_name != 'COMPLETE':
@@ -337,17 +347,7 @@ def free_retired_learner_email(user):
         if not _is_retired_email_format(user.email):
             raise RetirementStateError(f"User {user.id} does not appear to be a retired user.")  # lint-amnesty, pylint: disable=raise-missing-from
 
-    freed_suffix = f'.freed.{user.id}'
-    if user.email.endswith(freed_suffix):
-        LOGGER.info(f"Email for user {user.id} was already freed, nothing to do.")
-        return
-
     old_email = user.email
     user.email = old_email + freed_suffix
     user.save(update_fields=['email'])
     LOGGER.info(f"Freed retired email for user {user.id}: '{old_email}' -> '{user.email}'.")
-
-    retirement.user.set_password(generate_password(length=25))
-    retirement.user.save()
-
-    retirement.delete()
