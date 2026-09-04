@@ -1012,13 +1012,14 @@ class AccountRetirementStatusView(ViewSet):
                 if retirement is None:
                     raise UserRetirementStatus.DoesNotExist()
 
-            retirement.update_state(request.data)
+            with transaction.atomic():
+                retirement.update_state(request.data)
 
-            if (
-                retirement.current_state.state_name == 'COMPLETE' and
-                should_free_retired_learner_email_on_completion()
-            ):
-                free_retired_learner_email(retirement.user)
+                if (
+                    retirement.current_state.state_name == 'COMPLETE' and
+                    should_free_retired_learner_email_on_completion()
+                ):
+                    free_retired_learner_email(retirement.user)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
         except UserRetirementStatus.DoesNotExist:

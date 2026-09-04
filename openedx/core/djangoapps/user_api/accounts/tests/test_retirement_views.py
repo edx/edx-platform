@@ -1347,7 +1347,9 @@ class TestAccountRetirementUpdate(RetirementTestCase):
     def test_reaching_complete_email_free_failure_fails_request(self):
         """
         If freeing the email unexpectedly errors, the request should report
-        the failure rather than silently swallowing it.
+        the failure rather than silently swallowing it, and the state
+        transition to COMPLETE should be rolled back so a retry isn't stuck
+        needing `force`.
         """
         data = {'new_state': 'COMPLETE', 'response': 'accountretirementcomplete', 'force': True}
         with mock.patch(
@@ -1355,6 +1357,9 @@ class TestAccountRetirementUpdate(RetirementTestCase):
             side_effect=Exception('boom'),
         ):
             self.update_and_assert_status(data, status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        retirement = UserRetirementStatus.objects.get(id=self.retirement.id)
+        assert retirement.current_state == self.pending_state
 
 
 @skip_unless_lms
