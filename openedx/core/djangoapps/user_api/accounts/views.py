@@ -82,6 +82,7 @@ from ..models import (
     UserRetirementPartnerReportingStatus,
     UserRetirementStatus,
 )
+from ..toggles import should_free_retired_learner_email_on_completion
 from .api import get_account_settings, update_account_settings
 from .permissions import (
     CanCancelUserRetirement,
@@ -1013,7 +1014,10 @@ class AccountRetirementStatusView(ViewSet):
 
             retirement.update_state(request.data)
 
-            if retirement.current_state.state_name == 'COMPLETE':
+            if (
+                retirement.current_state.state_name == 'COMPLETE' and
+                should_free_retired_learner_email_on_completion()
+            ):
                 free_retired_learner_email(retirement.user)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
