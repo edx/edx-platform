@@ -27,7 +27,7 @@ from openedx.core.djangoapps.theming.helpers import get_config_value_from_site_o
 from openedx.core.djangolib.oauth2_retirement_utils import retire_dot_oauth2_models
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 
-from ..models import UserRetirementStatus
+from ..models import RetirementStateError, UserRetirementStatus
 
 # Prefix and suffix used to build a per-record redacted uid for UserSocialAuth.
 REDACTED_SOCIAL_AUTH_UID_PREFIX = 'redacted-before-delete-'
@@ -311,3 +311,43 @@ def handle_retirement_cancellation(retirement, email_address=None):
     retirement.user.save()
 
     retirement.delete()
+
+
+def _is_retired_email_format(email):
+    """
+    Returns True if the given email address is in the retired-email domain
+    used by settings.RETIRED_EMAIL_DOMAIN.
+    """
+    return email.endswith(f'@{settings.RETIRED_EMAIL_DOMAIN}')
+
+
+def free_retired_learner_email(user):
+    """
+    Lets a fully-retired learner reuse their original email address by appending
+    a suffix to the retired-hash email currently on their auth_user row. This
+    only mutates that one column - the row and its retirement history are kept
+    for compliance, and is_email_retired() will no longer match the freed value.
+
+    Raises RetirementStateError if the user's retirement isn't in a state where
+    it's safe to free the email (still in progress, or doesn't look retired at all).
+    """
+    freed_suffix = f'.freed.{user.id}'
+    if user.email.endswith(freed_suffix):
+        LOGGER.info(f"Email for user {user.id} was already freed, nothing to do.")
+        return
+
+    try:
+        retirement = UserRetirementStatus.objects.select_related('current_state').get(user=user)
+        if retirement.current_state.state_name != 'COMPLETE':
+            raise RetirementStateError(
+                f"Cannot free email for user {user.id}: retirement is in state "
+                f"'{retirement.current_state.state_name}', not COMPLETE."
+            )
+    except UserRetirementStatus.DoesNotExist:
+        if not _is_retired_email_format(user.email):
+            raise RetirementStateError(f"User {user.id} does not appear to be a retired user.")  # lint-amnesty, pylint: disable=raise-missing-from
+
+    old_email = user.email
+    user.email = old_email + freed_suffix
+    user.save(update_fields=['email'])
+    LOGGER.info(f"Freed retired email for user {user.id}: '{old_email}' -> '{user.email}'.")

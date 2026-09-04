@@ -7,8 +7,10 @@ Includes tests for social links, social-auth PII redaction, completion, etc.
 from contextlib import contextmanager
 
 import ddt
+import pytest
 from completion import models
 from completion.test_utils import CompletionWaffleTestMixin
+from django.conf import settings
 from django.db import connection
 from django.db.models.signals import pre_delete
 from django.test import TestCase
@@ -21,10 +23,12 @@ from common.djangoapps.student.tests.factories import UserFactory
 from openedx.core.djangoapps.user_api.accounts.signals import redact_social_auth_pii_before_deletion
 from openedx.core.djangoapps.user_api.accounts.utils import (
     REDACTED_SOCIAL_AUTH_UID_PREFIX,
+    free_retired_learner_email,
     redact_and_delete_historical_social_auth,
     redact_and_delete_social_auth,
     retrieve_last_sitewide_block_completed,
 )
+from openedx.core.djangoapps.user_api.models import RetirementState, RetirementStateError
 from openedx.core.djangolib.testing.utils import assert_redact_before_delete, skip_unless_lms
 from xmodule.modulestore.tests.django_utils import (
     SharedModuleStoreTestCase,  # pylint: disable=wrong-import-order
@@ -35,6 +39,11 @@ from xmodule.modulestore.tests.factories import (  # pylint: disable=wrong-impor
 )
 
 from ..utils import format_social_link, validate_social_link
+from .retirement_helpers import (  # pylint: disable=unused-import
+    RetirementTestCase,
+    create_retirement_status,
+    setup_retirement_states
+)
 
 
 # Use a context manager to guarantee signal reconnection between tests.
@@ -296,3 +305,54 @@ class RedactAndDeleteHistoricalSocialAuthTest(TestCase):
         )
         assert not self.historical_social_auth_model.objects.filter(user=self.user).exists()
         assert self.historical_social_auth_model.objects.filter(user=other_user).exists()
+
+
+class FreeRetiredLearnerEmailTest(RetirementTestCase):
+    """
+    Tests for free_retired_learner_email().
+    """
+
+    def _retire_user_to_state(self, user, state_name):
+        return create_retirement_status(user, state=RetirementState.objects.get(state_name=state_name))
+
+    def test_frees_email_when_retirement_complete(self):
+        user = UserFactory(email='retired__user_abc123@retired.invalid')
+        self._retire_user_to_state(user, 'COMPLETE')
+
+        free_retired_learner_email(user)
+
+        user.refresh_from_db()
+        assert user.email == f'retired__user_abc123@retired.invalid.freed.{user.id}'
+
+    def test_raises_when_retirement_still_in_progress(self):
+        user = UserFactory(email='retired__user_abc123@retired.invalid')
+        self._retire_user_to_state(user, 'RETIRING_LMS')
+
+        with pytest.raises(RetirementStateError):
+            free_retired_learner_email(user)
+
+    def test_is_idempotent(self):
+        user = UserFactory(email='retired__user_abc123@retired.invalid')
+        self._retire_user_to_state(user, 'COMPLETE')
+
+        free_retired_learner_email(user)
+        user.refresh_from_db()
+        freed_email = user.email
+
+        free_retired_learner_email(user)
+        user.refresh_from_db()
+        assert user.email == freed_email
+
+    def test_frees_email_when_status_row_archived(self):
+        user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+
+        free_retired_learner_email(user)
+
+        user.refresh_from_db()
+        assert user.email.endswith(f'.freed.{user.id}')
+
+    def test_raises_when_user_does_not_appear_retired(self):
+        user = UserFactory(email='still.active@example.com')
+
+        with pytest.raises(RetirementStateError):
+            free_retired_learner_email(user)
