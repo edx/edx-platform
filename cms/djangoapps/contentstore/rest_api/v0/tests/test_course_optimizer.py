@@ -2,8 +2,8 @@
 Unit tests for course optimizer
 """
 from django.test import TestCase
-from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from django.urls import reverse
+from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 
 from cms.djangoapps.contentstore.tests.test_utils import AuthorizeStaffTestCase
 
