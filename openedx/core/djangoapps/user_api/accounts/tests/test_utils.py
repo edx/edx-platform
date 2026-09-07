@@ -28,7 +28,7 @@ from openedx.core.djangoapps.user_api.accounts.utils import (
     release_retired_learner_email,
     retrieve_last_sitewide_block_completed,
 )
-from openedx.core.djangoapps.user_api.models import RetirementState, RetirementStateError
+from openedx.core.djangoapps.user_api.models import RetirementState, RetirementStateError, UserRetirementStatus
 from openedx.core.djangolib.testing.utils import assert_redact_before_delete, skip_unless_lms
 from xmodule.modulestore.tests.django_utils import (
     SharedModuleStoreTestCase,  # pylint: disable=wrong-import-order
@@ -328,8 +328,12 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
         user = UserFactory(email='retired__user_abc123@retired.invalid')
         self._retire_user_to_state(user, 'RETIRING_LMS')
 
-        with pytest.raises(RetirementStateError):
+        with pytest.raises(RetirementStateError, match=r"retirement is in state 'RETIRING_LMS', not COMPLETE"):
             release_retired_learner_email(user)
+
+        # A rejected release must not touch the email.
+        user.refresh_from_db()
+        assert user.email == 'retired__user_abc123@retired.invalid'
 
     def test_is_idempotent(self):
         user = UserFactory(email='retired__user_abc123@retired.invalid')
@@ -354,8 +358,15 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
     def test_raises_when_user_does_not_appear_retired(self):
         user = UserFactory(email='still.active@example.com')
 
-        with pytest.raises(RetirementStateError):
+        with pytest.raises(RetirementStateError, match=r'does not appear to be a retired user') as exc_info:
             release_retired_learner_email(user)
+
+        # Raised via "raise ... from exc" off the DoesNotExist - confirm the chain, not just the message.
+        assert isinstance(exc_info.value.__cause__, UserRetirementStatus.DoesNotExist)
+
+        # A rejected release must not touch the email.
+        user.refresh_from_db()
+        assert user.email == 'still.active@example.com'
 
     def test_releases_email_unblocks_reregistration_with_original_email(self):
         """

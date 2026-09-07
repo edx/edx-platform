@@ -65,3 +65,60 @@ def test_blocked_while_retirement_in_progress(setup_retirement_states):  # pylin
 
     user.refresh_from_db()
     assert User.objects.get(id=user.id).email == 'retired__user_abc123@retired.invalid'
+
+
+def test_releases_email_when_status_row_archived():
+    """
+    No UserRetirementStatus row exists for this user (e.g. it was redacted and
+    deleted by the partner-report cleanup endpoint), but the email is still in
+    the retired-domain format - the command should fall back to that and succeed.
+    """
+    user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+
+    call_command('release_retired_user_email', username=user.username)
+
+    user.refresh_from_db()
+    assert user.email == f'retired_email_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+
+
+def test_raises_when_user_does_not_appear_retired():
+    """
+    No UserRetirementStatus row and a non-retired-looking email - the command
+    should refuse via CommandError rather than release the email.
+    """
+    user = UserFactory(email='still.active@example.com')
+
+    with pytest.raises(CommandError, match=r'does not appear to be a retired user'):
+        call_command('release_retired_user_email', username=user.username)
+
+    user.refresh_from_db()
+    assert user.email == 'still.active@example.com'
+
+
+def test_running_twice_is_idempotent(setup_retirement_states, capsys):  # pylint: disable=redefined-outer-name, unused-argument
+    """
+    A second run against an already-released user must not error - it should
+    hit release_retired_learner_email()'s early return and still report success.
+    """
+    user = UserFactory(email='retired__user_abc123@retired.invalid')
+    _retire_user(user, 'COMPLETE')
+
+    call_command('release_retired_user_email', username=user.username)
+    user.refresh_from_db()
+    released_email = user.email
+
+    call_command('release_retired_user_email', username=user.username)
+
+    user.refresh_from_db()
+    assert user.email == released_email
+    assert 'Successfully released email' in capsys.readouterr().out
+
+
+def test_unknown_user_id():
+    """
+    Mirrors test_unknown_user, but for the --user_id branch: the error message
+    is built from a separate f'user_id={user_id!r}' f-string that the
+    username-only test above never exercises.
+    """
+    with pytest.raises(CommandError, match=r'No user found for the given user_id=999999'):
+        call_command('release_retired_user_email', user_id=999999)
