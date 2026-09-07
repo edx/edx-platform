@@ -11,6 +11,8 @@ import waffle  # lint-amnesty, pylint: disable=invalid-django-waffle-import
 from completion.models import BlockCompletion
 from completion.waffle import ENABLE_COMPLETION_TRACKING_SWITCH
 from django.conf import settings
+from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
+from django.db import transaction
 from django.db.models import CharField, TextField, Value
 from django.db.models.functions import Cast, Concat
 from django.utils.translation import gettext as _
@@ -339,23 +341,37 @@ def release_retired_learner_email(user):
 
     Raises RetirementStateError if the user's retirement isn't in a state where
     it's safe to release the email (still in progress, or doesn't look retired at all).
+
+    Locks the user row for the duration of the check, so this can't interleave with a
+    concurrent handle_retirement_cancellation() (which restores the original email on
+    the same row) or with another release_retired_learner_email() call for this user.
+    The check itself runs against a freshly re-fetched copy of the row rather than the
+    `user` passed in, but on success `user.email` is updated in place to match.
     """
     released_email = RELEASED_LEARNER_EMAIL_FORMAT.format(user.id, settings.RETIRED_EMAIL_DOMAIN)
-    if user.email == released_email:
-        LOGGER.info(f"Email for user {user.id} was already released, nothing to do.")
-        return
 
-    try:
-        retirement = UserRetirementStatus.objects.select_related('current_state').get(user=user)
-        if retirement.current_state.state_name != 'COMPLETE':
-            raise RetirementStateError(
-                f"Cannot release email for user {user.id}: retirement is in state "
-                f"'{retirement.current_state.state_name}', not COMPLETE."
-            )
-    except UserRetirementStatus.DoesNotExist as exc:
-        if not _is_retired_email_format(user.email):
-            raise RetirementStateError(f"User {user.id} does not appear to be a retired user.") from exc
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
 
+        if locked_user.email == released_email:
+            LOGGER.info(f"Email for user {locked_user.id} was already released, nothing to do.")
+        else:
+            try:
+                retirement = UserRetirementStatus.objects.select_related('current_state').get(user=locked_user)
+                if retirement.current_state.state_name != 'COMPLETE':
+                    raise RetirementStateError(
+                        f"Cannot release email for user {locked_user.id}: retirement is in state "
+                        f"'{retirement.current_state.state_name}', not COMPLETE."
+                    )
+            except UserRetirementStatus.DoesNotExist as exc:
+                if not _is_retired_email_format(locked_user.email):
+                    raise RetirementStateError(f"User {locked_user.id} does not appear to be a retired user.") from exc
+
+            locked_user.email = released_email
+            locked_user.save(update_fields=['email'])
+            LOGGER.info(f"Released retired email for user {locked_user.id}.")
+
+    # Keep the caller's in-memory object in sync with what was actually persisted -
+    # we mutated a separately-fetched `locked_user`, not `user` itself. Runs on both
+    # the freshly-released and already-released paths (an early return here would skip it).
     user.email = released_email
-    user.save(update_fields=['email'])
-    LOGGER.info(f"Released retired email for user {user.id}.")
