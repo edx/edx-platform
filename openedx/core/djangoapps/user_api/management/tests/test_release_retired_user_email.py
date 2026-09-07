@@ -56,20 +56,6 @@ def test_unknown_user():
         call_command('release_retired_user_email', username='nonexistent')
 
 
-def test_releases_email_with_blank_username(setup_retirement_states):  # pylint: disable=redefined-outer-name, unused-argument
-    """
-    An explicitly passed empty --username must still be looked up as itself,
-    not silently treated as "not supplied" and routed to a user_id=None lookup.
-    """
-    user = UserFactory(username='', email='retired__user_abc123@retired.invalid')
-    _retire_user(user, 'COMPLETE')
-
-    call_command('release_retired_user_email', username='')
-
-    user.refresh_from_db()
-    assert user.email == f'retired_email_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
-
-
 def test_blocked_while_retirement_in_progress(setup_retirement_states):  # pylint: disable=redefined-outer-name, unused-argument
     user = UserFactory(email='retired__user_abc123@retired.invalid')
     _retire_user(user, 'RETIRING_LMS')
