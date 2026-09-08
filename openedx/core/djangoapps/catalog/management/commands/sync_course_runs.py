@@ -25,6 +25,7 @@ class Command(BaseCommand):
         CourseRunField(catalog_name='marketing_url', course_overview_name='marketing_url'),
         CourseRunField(catalog_name='eligible_for_financial_aid', course_overview_name='eligible_for_financial_aid'),
         CourseRunField(catalog_name='content_language', course_overview_name='language'),
+        CourseRunField(catalog_name='variant_id', course_overview_name='variant_id'),
     )
 
     def handle(self, *args, **options):
@@ -51,7 +52,8 @@ class Command(BaseCommand):
             is_course_metadata_updated = False
             for field in self.course_run_fields:
                 catalog_value = course_run.get(field.catalog_name)
-                if getattr(course_overview, field.course_overview_name) != catalog_value:
+                current_value = getattr(course_overview, field.course_overview_name)
+                if str(current_value) != str(catalog_value):
                     setattr(course_overview, field.course_overview_name, catalog_value)
                     is_course_metadata_updated = True
 
