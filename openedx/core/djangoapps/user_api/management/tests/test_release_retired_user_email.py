@@ -29,7 +29,7 @@ def test_releases_email_by_username(setup_retirement_states, capsys):  # pylint:
     call_command('release_retired_user_email', username=user.username)
 
     user.refresh_from_db()
-    assert user.email == f'retired_email_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+    assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
     assert 'Successfully released email' in capsys.readouterr().out
 
 
@@ -40,7 +40,7 @@ def test_releases_email_by_user_id(setup_retirement_states):  # pylint: disable=
     call_command('release_retired_user_email', user_id=user.id)
 
     user.refresh_from_db()
-    assert user.email == f'retired_email_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+    assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
 
 
 def test_requires_exactly_one_identifier():
@@ -78,7 +78,7 @@ def test_releases_email_when_status_row_archived():
     call_command('release_retired_user_email', username=user.username)
 
     user.refresh_from_db()
-    assert user.email == f'retired_email_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+    assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
 
 
 def test_raises_when_user_does_not_appear_retired():

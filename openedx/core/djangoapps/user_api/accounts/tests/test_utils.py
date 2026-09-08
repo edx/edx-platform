@@ -322,7 +322,7 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
         release_retired_learner_email(user)
 
         user.refresh_from_db()
-        assert user.email == f'retired_email_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+        assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
 
     def test_raises_when_retirement_still_in_progress(self):
         user = UserFactory(email='retired__user_abc123@retired.invalid')
@@ -353,7 +353,7 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
         release_retired_learner_email(user)
 
         user.refresh_from_db()
-        assert user.email == f'retired_email_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+        assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
 
     def test_raises_when_user_does_not_appear_retired(self):
         user = UserFactory(email='still.active@example.com')

@@ -40,7 +40,7 @@ REDACTED_SOCIAL_AUTH_UID_SUFFIX = '@safe.com'
 # with the RETIRED_EMAIL_* settings/format used by the retirement pipeline itself. The
 # domain is filled in from settings.RETIRED_EMAIL_DOMAIN so it matches whatever domain
 # _is_retired_email_format() considers "retired" on this deployment.
-RELEASED_LEARNER_EMAIL_FORMAT = 'retired_email_{}@{}'
+RELEASED_LEARNER_EMAIL_FORMAT = 'retired__uid_{}@{}'
 
 ENABLE_SECONDARY_EMAIL_FEATURE_SWITCH = 'enable_secondary_email_feature'
 LOGGER = logging.getLogger(__name__)
@@ -335,7 +335,7 @@ def release_retired_learner_email(user):
     Lets a fully-retired learner reuse their original email address by replacing
     the retired-hash email currently on their auth_user row with a stable,
     human-readable placeholder keyed on their user id (RELEASED_LEARNER_EMAIL_FORMAT,
-    e.g. "retired_email_42@retired.invalid"). This only mutates that one column -
+    e.g. "retired__uid_42@retired.invalid"). This only mutates that one column -
     the row and its retirement history are kept for compliance, and
     is_email_retired() will no longer match the new value.
 
