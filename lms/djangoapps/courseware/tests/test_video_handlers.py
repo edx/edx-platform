@@ -1354,12 +1354,11 @@ class TestVideoBlockAudioDescriptionPlayback(TestVideo):  # lint-amnesty, pylint
     Tests for VideoBlock._get_audio_description_url, the LMS-side
     playback helper used by get_html / student_view_data.
 
-    The companion handler tests for studio_audio_description and the
-    contentstore.enable_audio_description waffle flag live in
+    The companion handler tests for studio_audio_description live in
     cms/djangoapps/contentstore/tests/test_video_audio_description_handler.py
-    -- they cannot live here because cms.djangoapps.contentstore.toggles
-    transitively imports the Studio-only search-api and won't load
-    under LMS test settings.
+    -- they cannot live here because the handler imports the Studio-only
+    cms.djangoapps.contentstore.audio_description_storage_handlers module,
+    which won't load under LMS test settings.
     """
     DATA = """
         <video show_captions="true" display_name="A Name">
@@ -1374,12 +1373,6 @@ class TestVideoBlockAudioDescriptionPlayback(TestVideo):  # lint-amnesty, pylint
         When the block has an AD attached and an edx_video_id set,
         _get_audio_description_url should delegate to the audio
         description URL helper and return its result.
-
-        This is also a regression guard: the helper module must NEVER
-        check the contentstore.enable_audio_description waffle
-        flag. Existing AD files must continue to play in the LMS even
-        after the upload flag is flipped off (see plan
-        audio-description-waffle-flag.md).
         """
         mock_generate.return_value = 'https://s3.example/get-presigned'
         self.block.audio_description = 'bar.mp3'

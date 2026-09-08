@@ -29,7 +29,6 @@
                 this.state = state;
                 this.state.videoAudioDescription = this;
                 this.hasSource = !!state.config.audioDescriptionUrl;
-                this.featureEnabled = state.config.audioDescriptionEnabled;
                 this._currentSpeed = parseFloat(state.speed) || 1.0;
 
                 this.initialize();
@@ -46,7 +45,7 @@
                         ? (this.state.config.audioDescriptionActive || false)
                         : false;
                     this.renderElements();
-                    if (this.hasSource && this.featureEnabled) {
+                    if (this.hasSource) {
                         this.bindHandlers();
                     }
                     if (this.isActive) {
@@ -56,9 +55,6 @@
 
                 renderElements: function() {
                     var buttonHtml, secondaryControls;
-                    if (!this.featureEnabled) {
-                        return;
-                    }
 
                     if (this.hasSource) {
                         var audioEl = $('<audio>', {
