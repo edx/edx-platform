@@ -10,6 +10,7 @@ from uuid import uuid4
 from celery import Task
 
 import pytest
+import requests
 from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.test.utils import override_settings
@@ -33,6 +34,7 @@ from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory  # l
 from ..tasks import (
     LinkState,
     export_olx,
+    submit_course_analysis_report,
     update_special_exams_and_publish,
     rerun_course,
     _validate_urls_access_in_batches,
@@ -668,3 +670,58 @@ class CheckBrokenLinksTaskTest(ModuleStoreTestCase):
             "https://another-valid.com"
         ]
         self.assertEqual(extract_content_URLs_from_course(content), set(expected))
+
+
+class SubmitCourseAnalysisReportTaskTest(CourseTestCase):
+    """
+    Tests for submit_course_analysis_report, the background task that
+    exports a course and uploads it to the Course Optimizer extended-report
+    backend (xpert-ai-workflows).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.course_key_string = str(self.course.id)
+
+    def _mock_tarball(self):
+        tarball = mock.Mock()
+        tarball.name = '/tmp/whatever.tar.gz'
+        return tarball
+
+    @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
+    @mock.patch('cms.djangoapps.contentstore.tasks.create_export_tarball')
+    def test_uploads_export_to_backend(self, mock_export, mock_post):
+        mock_export.return_value = self._mock_tarball()
+        mock_post.return_value = mock.Mock(status_code=202)
+
+        submit_course_analysis_report(self.course_key_string)
+
+        mock_post.assert_called_once()
+        self.assertIn(self.course_key_string, mock_post.call_args.args[0])
+        self.assertEqual(
+            mock_post.call_args.kwargs['headers']['X-Api-Key'],
+            settings.COURSE_ANALYSIS_WORKFLOW_API_KEY,
+        )
+        mock_post.return_value.raise_for_status.assert_called_once()
+
+    @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
+    @mock.patch('cms.djangoapps.contentstore.tasks.create_export_tarball')
+    def test_closes_tarball_even_on_request_failure(self, mock_export, mock_post):
+        tarball = self._mock_tarball()
+        mock_export.return_value = tarball
+        mock_post.side_effect = requests.ConnectionError()
+
+        with self.assertRaises(requests.ConnectionError):
+            submit_course_analysis_report(self.course_key_string)
+
+        tarball.close.assert_called_once()
+
+    @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
+    @mock.patch('cms.djangoapps.contentstore.tasks.create_export_tarball')
+    def test_raises_on_backend_error_response(self, mock_export, mock_post):
+        mock_export.return_value = self._mock_tarball()
+        mock_post.return_value = mock.Mock(status_code=500)
+        mock_post.return_value.raise_for_status.side_effect = requests.HTTPError()
+
+        with self.assertRaises(requests.HTTPError):
+            submit_course_analysis_report(self.course_key_string)

@@ -4,7 +4,6 @@ Unit tests for the Course Optimizer extended-analysis report views
 from unittest.mock import Mock, patch
 
 import requests
-from django.conf import settings
 from django.urls import reverse
 from edx_toggles.toggles.testutils import override_waffle_flag
 from rest_framework import status
@@ -15,9 +14,9 @@ from cms.djangoapps.contentstore.toggles import ENABLE_COURSE_OPTIMIZER_EXTENDED
 
 class CourseAnalysisReportViewTest(CourseTestCase):
     """
-    Tests for CourseAnalysisReportView, which kicks off a Course Optimizer
-    extended-analysis run by generating a course export server-side and
-    handing it to the xpert-ai-workflows backend.
+    Tests for CourseAnalysisReportView, which queues a background task to
+    generate a course export and hand it to the xpert-ai-workflows backend
+    to kick off a Course Optimizer extended-analysis run.
     """
 
     def setUp(self):
@@ -26,17 +25,9 @@ class CourseAnalysisReportViewTest(CourseTestCase):
             'cms.djangoapps.contentstore:v1:course_analysis_report',
             kwargs={'course_id': str(self.course.id)},
         )
-        self.export_patch = (
-            'cms.djangoapps.contentstore.rest_api.v1.views.course_optimizer.create_export_tarball'
+        self.task_patch = (
+            'cms.djangoapps.contentstore.rest_api.v1.views.course_optimizer.submit_course_analysis_report'
         )
-        self.backend_post_patch = (
-            'cms.djangoapps.contentstore.rest_api.v1.views.course_optimizer.requests.post'
-        )
-
-    def _mock_tarball(self):
-        tarball = Mock()
-        tarball.name = '/tmp/whatever.tar.gz'
-        return tarball
 
     def test_unauthenticated(self):
         self.client.logout()
@@ -53,42 +44,13 @@ class CourseAnalysisReportViewTest(CourseTestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
-    def test_kicks_off_backend_run(self):
-        with patch(self.export_patch) as mock_export, patch(self.backend_post_patch) as mock_post:
-            mock_export.return_value = self._mock_tarball()
-            mock_post.return_value = Mock(
-                status_code=202,
-                json=Mock(return_value={'run_id': 'run-123'}),
-            )
+    def test_queues_background_task_and_returns_immediately(self):
+        with patch(self.task_patch) as mock_task:
             response = self.client.post(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
-        self.assertEqual(response.json(), {'run_id': 'run-123'})
-        self.assertEqual(
-            mock_post.call_args.kwargs['headers']['X-Api-Key'],
-            settings.COURSE_ANALYSIS_WORKFLOW_API_KEY,
-        )
-
-    @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
-    def test_backend_unreachable_returns_502(self):
-        with patch(self.export_patch) as mock_export, patch(self.backend_post_patch) as mock_post:
-            mock_export.return_value = self._mock_tarball()
-            mock_post.side_effect = requests.ConnectionError()
-            response = self.client.post(self.url)
-
-        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
-
-    @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
-    def test_backend_returns_invalid_json_returns_502(self):
-        with patch(self.export_patch) as mock_export, patch(self.backend_post_patch) as mock_post:
-            mock_export.return_value = self._mock_tarball()
-            mock_post.return_value = Mock(
-                status_code=202,
-                json=Mock(side_effect=ValueError()),
-            )
-            response = self.client.post(self.url)
-
-        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertEqual(response.json(), {'status': 'pending'})
+        mock_task.delay.assert_called_once_with(str(self.course.id))
 
 
 class CourseAnalysisReportStatusViewTest(CourseTestCase):

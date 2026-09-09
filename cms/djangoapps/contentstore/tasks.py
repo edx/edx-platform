@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 import olxcleaner
+import requests
 from ccx_keys.locator import CCXLocator
 from celery import shared_task
 from celery.utils.log import get_task_logger
@@ -1630,6 +1631,36 @@ def _save_broken_links_file(artifact, file_to_save):
 def _write_broken_links_to_file(broken_or_locked_urls, broken_links_file):
     with open(broken_links_file.name, 'w') as file:
         json.dump(broken_or_locked_urls, file, indent=4)
+
+
+@shared_task
+@set_code_owner_attribute
+def submit_course_analysis_report(course_key_string: str) -> None:
+    """
+    Generates a fresh course export and hands it to the Course Optimizer
+    extended-report backend (xpert-ai-workflows) to start a new analysis
+    run.
+
+    Runs as a background task because exporting and compressing a course
+    can take a while for large courses -- the API view that queues this
+    returns 202 immediately rather than blocking a Studio request thread
+    on it. Callers poll xpert-ai-workflows (via CourseAnalysisReportStatusView)
+    for the run's progress; this task doesn't report status of its own.
+    """
+    course_key = CourseKey.from_string(course_key_string)
+    course_block = modulestore().get_course(course_key)
+    tarball = create_export_tarball(course_block, course_key, {})
+    try:
+        tarball.seek(0)
+        response = requests.post(
+            f'{settings.COURSE_ANALYSIS_WORKFLOW_URL}/courses/{course_key_string}/runs',
+            files={'file': (os.path.basename(tarball.name), tarball, 'application/gzip')},
+            headers={'X-Api-Key': settings.COURSE_ANALYSIS_WORKFLOW_API_KEY},
+            timeout=settings.COURSE_ANALYSIS_WORKFLOW_REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    finally:
+        tarball.close()
 
 
 @shared_task
