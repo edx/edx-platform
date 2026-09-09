@@ -10,7 +10,6 @@ import ddt
 import pytest
 from completion import models
 from completion.test_utils import CompletionWaffleTestMixin
-from django.conf import settings
 from django.db import connection
 from django.db.models.signals import pre_delete
 from django.test import TestCase
@@ -316,16 +315,16 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
         return create_retirement_status(user, state=RetirementState.objects.get(state_name=state_name))
 
     def test_releases_email_when_retirement_complete(self):
-        user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+        user = UserFactory(email='retired__user_abc123@retired.invalid')
         self._retire_user_to_state(user, 'COMPLETE')
 
         release_retired_learner_email(user)
 
         user.refresh_from_db()
-        assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+        assert user.email == f'retired__uid_{user.id}@retired.invalid'
 
     def test_raises_when_retirement_still_in_progress(self):
-        user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+        user = UserFactory(email='retired__user_abc123@retired.invalid')
         self._retire_user_to_state(user, 'RETIRING_LMS')
 
         with pytest.raises(RetirementStateError, match=r"retirement is in state 'RETIRING_LMS', not COMPLETE"):
@@ -333,10 +332,10 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
 
         # A rejected release must not touch the email.
         user.refresh_from_db()
-        assert user.email == f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}'
+        assert user.email == 'retired__user_abc123@retired.invalid'
 
     def test_is_idempotent(self):
-        user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+        user = UserFactory(email='retired__user_abc123@retired.invalid')
         self._retire_user_to_state(user, 'COMPLETE')
 
         release_retired_learner_email(user)
@@ -348,12 +347,12 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
         assert user.email == released_email
 
     def test_releases_email_when_status_row_archived(self):
-        user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+        user = UserFactory(email='retired__user_abc123@retired.invalid')
 
         release_retired_learner_email(user)
 
         user.refresh_from_db()
-        assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+        assert user.email == f'retired__uid_{user.id}@retired.invalid'
 
     def test_raises_when_user_does_not_appear_retired(self):
         user = UserFactory(email='still.active@example.com')

@@ -6,7 +6,6 @@ Test the release_retired_user_email management command
 from unittest.mock import patch
 
 import pytest
-from django.conf import settings
 from django.contrib.auth.models import User  # pylint: disable=imported-auth-user
 from django.core.management import CommandError, call_command
 
@@ -26,13 +25,13 @@ def _retire_user(user, state_name):
 
 @patch('openedx.core.djangoapps.user_api.management.commands.release_retired_user_email.logger')
 def test_releases_email_by_user_id(mock_logger, setup_retirement_states):  # pylint: disable=redefined-outer-name, unused-argument
-    user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+    user = UserFactory(email='retired__user_abc123@retired.invalid')
     _retire_user(user, 'COMPLETE')
 
     call_command('release_retired_user_email', user_id=user.id)
 
     user.refresh_from_db()
-    assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+    assert user.email == f'retired__uid_{user.id}@retired.invalid'
     mock_logger.info.assert_called_with(f'Successfully released email for user {user.id}.')
 
 
@@ -47,14 +46,14 @@ def test_unknown_user_id():
 
 
 def test_blocked_while_retirement_in_progress(setup_retirement_states):  # pylint: disable=redefined-outer-name, unused-argument
-    user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+    user = UserFactory(email='retired__user_abc123@retired.invalid')
     _retire_user(user, 'RETIRING_LMS')
 
     with pytest.raises(CommandError, match=r'not COMPLETE'):
         call_command('release_retired_user_email', user_id=user.id)
 
     user.refresh_from_db()
-    assert User.objects.get(id=user.id).email == f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}'
+    assert User.objects.get(id=user.id).email == 'retired__user_abc123@retired.invalid'
 
 
 def test_releases_email_when_status_row_archived():
@@ -63,12 +62,12 @@ def test_releases_email_when_status_row_archived():
     deleted by the partner-report cleanup endpoint), but the email is still in
     the retired-domain format - the command should fall back to that and succeed.
     """
-    user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+    user = UserFactory(email='retired__user_abc123@retired.invalid')
 
     call_command('release_retired_user_email', user_id=user.id)
 
     user.refresh_from_db()
-    assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
+    assert user.email == f'retired__uid_{user.id}@retired.invalid'
 
 
 def test_raises_when_user_does_not_appear_retired():
@@ -91,7 +90,7 @@ def test_running_twice_is_idempotent(mock_logger, setup_retirement_states):  # p
     A second run against an already-released user must not error - it should
     hit release_retired_learner_email()'s early return and still report success.
     """
-    user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
+    user = UserFactory(email='retired__user_abc123@retired.invalid')
     _retire_user(user, 'COMPLETE')
 
     call_command('release_retired_user_email', user_id=user.id)
