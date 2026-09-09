@@ -316,7 +316,7 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
         return create_retirement_status(user, state=RetirementState.objects.get(state_name=state_name))
 
     def test_releases_email_when_retirement_complete(self):
-        user = UserFactory(email='retired__user_abc123@retired.invalid')
+        user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
         self._retire_user_to_state(user, 'COMPLETE')
 
         release_retired_learner_email(user)
@@ -325,7 +325,7 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
         assert user.email == f'retired__uid_{user.id}@{settings.RETIRED_EMAIL_DOMAIN}'
 
     def test_raises_when_retirement_still_in_progress(self):
-        user = UserFactory(email='retired__user_abc123@retired.invalid')
+        user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
         self._retire_user_to_state(user, 'RETIRING_LMS')
 
         with pytest.raises(RetirementStateError, match=r"retirement is in state 'RETIRING_LMS', not COMPLETE"):
@@ -333,10 +333,10 @@ class ReleaseRetiredLearnerEmailTest(RetirementTestCase):
 
         # A rejected release must not touch the email.
         user.refresh_from_db()
-        assert user.email == 'retired__user_abc123@retired.invalid'
+        assert user.email == f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}'
 
     def test_is_idempotent(self):
-        user = UserFactory(email='retired__user_abc123@retired.invalid')
+        user = UserFactory(email=f'retired__user_abc123@{settings.RETIRED_EMAIL_DOMAIN}')
         self._retire_user_to_state(user, 'COMPLETE')
 
         release_retired_learner_email(user)
