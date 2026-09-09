@@ -8,6 +8,8 @@ from openedx.core.constants import COURSE_ID_PATTERN
 from .views import (
     ContainerChildrenView,
     ContainerHandlerView,
+    CourseAnalysisReportStatusView,
+    CourseAnalysisReportView,
     CourseCertificatesView,
     CourseDetailsView,
     CourseGradingView,
@@ -149,6 +151,16 @@ urlpatterns = [
         fr'^unit_handler/{settings.USAGE_KEY_PATTERN}$',
         UnitComponentsView.as_view(),
         name="unit_components"
+    ),
+
+    # Course Optimizer
+    re_path(
+        fr'^course_optimizer/analysis/{COURSE_ID_PATTERN}$',
+        CourseAnalysisReportView.as_view(), name='course_analysis_report'
+    ),
+    re_path(
+        fr'^course_optimizer/analysis/{COURSE_ID_PATTERN}/status$',
+        CourseAnalysisReportStatusView.as_view(), name='course_analysis_report_status'
     ),
 
     # Authoring API
