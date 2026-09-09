@@ -6,13 +6,19 @@ from django.http import HttpResponse
 from django.test import override_settings
 from django.urls import reverse
 from openedx_filters import PipelineStep
-from openedx_filters.learning.filters import DashboardRenderStarted, CourseEnrollmentStarted, CourseUnenrollmentStarted
+from openedx_filters.learning.filters import CourseEnrollmentStarted, CourseUnenrollmentStarted, DashboardRenderStarted
 from rest_framework import status
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
 
-from common.djangoapps.student.models import CourseEnrollment, EnrollmentNotAllowed, UnenrollmentNotAllowed
+from common.djangoapps.student.models import (
+    CourseEnrollment,
+    EnrollmentNotAllowed,
+    Registration,
+    UnenrollmentNotAllowed
+)
 from common.djangoapps.student.tests.factories import UserFactory, UserProfileFactory
+from common.djangoapps.student.views.management import compose_activation_email
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 
 
@@ -109,6 +115,17 @@ class TestRenderCustomResponse(PipelineStep):
             "You can't see this site's dashboard.",
             response=response,
         )
+
+
+class TestActivationEmailComposedPipelineStep(PipelineStep):
+    """
+    Utility class used when getting steps for pipeline.
+    """
+
+    def run_filter(self, user, message_context):  # pylint: disable=arguments-differ
+        """Pipeline step that stamps a marker onto the activation email context."""
+        message_context["is_enterprise_learner"] = True
+        return {"user": user, "message_context": message_context}
 
 
 @skip_unless_lms
@@ -464,3 +481,58 @@ class StudentDashboardFiltersTest(ModuleStoreTestCase):
 
         self.assertContains(response, self.first_course.id)
         self.assertContains(response, self.second_course.id)
+
+
+@skip_unless_lms
+class AccountActivationEmailFiltersTest(ModuleStoreTestCase):
+    """
+    Tests for the Open edX Filters associated with composing the account activation email.
+
+    This class guarantees that the following filter is triggered when the activation email
+    is composed:
+    - AccountActivationEmailComposed
+    """
+
+    def setUp(self):  # pylint: disable=arguments-differ
+        super().setUp()
+        self.user = UserFactory()
+        self.registration = Registration()
+        self.registration.register(self.user)
+        self.registration.save()
+
+    @override_settings(
+        OPEN_EDX_FILTERS_CONFIG={
+            "org.openedx.learning.account.activation.email.compose.v1": {
+                "pipeline": [
+                    "common.djangoapps.student.tests.test_filters.TestActivationEmailComposedPipelineStep",
+                ],
+                "fail_silently": False,
+            },
+        },
+    )
+    def test_activation_email_composed_filter_executed(self):
+        """
+        Test whether the activation email composed filter is triggered before the
+        activation email message context is finalized.
+
+        Expected result:
+            - AccountActivationEmailComposed is triggered and executes
+              TestActivationEmailComposedPipelineStep.
+            - The composed message's context contains the pipeline step's modification.
+        """
+        message = compose_activation_email(self.user, self.registration)
+
+        assert message.context["is_enterprise_learner"] is True
+
+    @override_settings(OPEN_EDX_FILTERS_CONFIG={})
+    def test_activation_email_composed_without_filter_config(self):
+        """
+        Test that compose_activation_email succeeds with no pipeline steps configured.
+
+        Expected result:
+            - AccountActivationEmailComposed executes a noop (empty pipeline).
+            - No 'is_enterprise_learner' key is injected into the message context.
+        """
+        message = compose_activation_email(self.user, self.registration)
+
+        assert "is_enterprise_learner" not in message.context

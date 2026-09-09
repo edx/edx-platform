@@ -15,7 +15,6 @@ from common.djangoapps.student.models import Registration
 from common.djangoapps.student.tests.factories import UserFactory
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangolib.testing.utils import skip_unless_lms
-from openedx.features.enterprise_support.tests.factories import EnterpriseCustomerUserFactory
 
 FEATURES_WITH_AUTHN_MFE_ENABLED = settings.FEATURES.copy()
 FEATURES_WITH_AUTHN_MFE_ENABLED['ENABLE_AUTHN_MICROFRONTEND'] = True
@@ -180,15 +179,14 @@ class TestActivateAccount(TestCase):
         self.assertContains(response, 'Your email could not be confirmed')
 
     @override_settings(LOGIN_REDIRECT_WHITELIST=['localhost:1991'])
-    @override_settings(FEATURES={**FEATURES_WITH_AUTHN_MFE_ENABLED, 'ENABLE_ENTERPRISE_INTEGRATION': True})
+    @override_settings(FEATURES=FEATURES_WITH_AUTHN_MFE_ENABLED)
     def test_authenticated_account_activation_with_valid_next_url(self):
         """
         Verify that an activation link with a valid next URL will redirect
-        the activated enterprise user to that next URL, even if the AuthN
-        MFE is active and redirects to it are enabled.
+        the activated user to that next URL, even if the AuthN MFE is active
+        and redirects to it are enabled.
         """
         self._assert_user_active_state(expected_active_state=False)
-        EnterpriseCustomerUserFactory(user_id=self.user.id)
 
         # Make sure the user is authenticated before activation.
         self.login()
@@ -206,6 +204,33 @@ class TestActivateAccount(TestCase):
         # There's not actually a server running at localhost:1991 for testing,
         # so we should expect to land on `redirect_url` but with a status code of 404.
         self.assertRedirects(response, redirect_url, target_status_code=404)
+        self._assert_user_active_state(expected_active_state=True)
+
+    @override_settings(LOGIN_REDIRECT_WHITELIST=['localhost:1991'])
+    def test_unauthenticated_user_redirects_to_login_with_valid_next_url(self):
+        """
+        Verify that when the AuthN MFE is disabled, an unauthenticated user activating
+        with a valid next URL is sent to the legacy login page with that URL preserved
+        as the `next` parameter, rather than having it dropped in favour of the
+        dashboard. The legacy login page renders the activation message itself.
+        """
+        self._assert_user_active_state(expected_active_state=False)
+
+        redirect_url = 'http://localhost:1991/pied-piper/learn'
+        base_activation_url = reverse('activate', args=[self.registration.activation_key])
+        activation_url = '{base}?{params}'.format(
+            base=base_activation_url,
+            params=urlencode({'next': redirect_url}),
+        )
+
+        # HTTP_ACCEPT is needed so the safe redirect checks pass.
+        response = self.client.get(activation_url, HTTP_ACCEPT='*/*')
+
+        expected_destination = '{login_url}?{params}'.format(
+            login_url=reverse('signin_user'),
+            params=urlencode({'next': redirect_url}),
+        )
+        assert response.url == expected_destination
         self._assert_user_active_state(expected_active_state=True)
 
     @override_settings(LOGIN_REDIRECT_WHITELIST=['localhost:9876'])
