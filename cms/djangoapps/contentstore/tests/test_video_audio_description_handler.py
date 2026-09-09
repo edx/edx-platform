@@ -1,28 +1,24 @@
 """
-Tests for the studio_audio_description XBlock handler and its
-contentstore.enable_audio_description waffle flag gate.
+Tests for the studio_audio_description XBlock handler.
 
 The handler itself delegates to the storage helpers in
 cms.djangoapps.contentstore.audio_description_storage_handlers; these
-tests focus on the handler's gating behavior and dispatch logic, not on
-the storage helpers themselves.
+tests focus on the handler's dispatch logic, not on the storage helpers
+themselves.
 
 These tests live in CMS-test land (rather than alongside the rest of
 the LMS-side video handler tests in
-lms/djangoapps/courseware/tests/test_video_handlers.py) because
-cms.djangoapps.contentstore.toggles transitively imports the
-Studio-only search-api and so cannot be loaded under LMS test settings.
+lms/djangoapps/courseware/tests/test_video_handlers.py) because the
+handler imports the Studio-only audio_description_storage_handlers
+module, which cannot be loaded under LMS test settings.
 """
 
 import importlib
 from unittest.mock import Mock, patch
 
 from django.test import TestCase
-from edx_toggles.toggles.testutils import override_waffle_flag
-from opaque_keys.edx.locator import CourseLocator
 from webob import Request
 
-from cms.djangoapps.contentstore.toggles import ENABLE_AUDIO_DESCRIPTION
 from xmodule.video_block.video_block import VideoBlock
 
 
@@ -53,13 +49,11 @@ class StudioAudioDescriptionHandlerTest(TestCase):
                 "edx_video_id",
                 "audio_description",
                 "audio_description_video_id",
-                "course_id",
             ]
         )
         block.edx_video_id = edx_video_id
         block.audio_description = audio_description
         block.audio_description_video_id = ""
-        block.course_id = CourseLocator(org="test", course="test", run="test")
         return block
 
     def _call(self, block, method, body=None, request=None):
@@ -75,21 +69,9 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         request = Request.blank("", **kwargs)
         return VideoBlock.studio_audio_description(block, request=request)
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=False)
-    def test_handler_returns_404_when_flag_disabled(self):
-        """
-        When the upload flag is off, every HTTP method on the handler
-        must return 404 so the endpoint looks non-existent to clients.
-        """
-        block = self._build_block_mock()
-        for method in ("GET", "POST", "DELETE"):
-            response = self._call(block, method)
-            self.assertEqual(response.status_code, 404, msg=f"method={method}")
-
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_post_uploads_file_and_returns_url(self):
         """
-        With the flag on, a POST request carrying a file should reach
+        A POST request carrying a file should reach
         upload_audio_description and return {file_name, url} with 201.
         """
         block = self._build_block_mock(edx_video_id="video-1")
@@ -125,11 +107,10 @@ class StudioAudioDescriptionHandlerTest(TestCase):
                 file_data=file_mock.file,
             )
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_post_returns_400_when_file_missing(self):
         """
-        With the flag on but no file in the POST body, the handler must
-        return 400 with an error message.
+        With no file in the POST body, the handler must return 400 with
+        an error message.
         """
         block = self._build_block_mock(edx_video_id="video-1")
 
@@ -142,11 +123,10 @@ class StudioAudioDescriptionHandlerTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("error", response.json)
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_get_returns_404_when_no_url(self):
         """
-        With the flag on but no AD record on the block, the GET branch
-        should return 404 (the storage helper returns None).
+        With no AD record on the block, the GET branch should return 404
+        (the storage helper returns None).
         """
         block = self._build_block_mock()
 
@@ -156,12 +136,11 @@ class StudioAudioDescriptionHandlerTest(TestCase):
 
             self.assertEqual(response.status_code, 404)
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
     def test_get_returns_url_when_present(self):
         """
-        With the flag on and a ready AD record, the GET branch returns
-        a JSON body containing the helper's pre-signed URL plus the
-        block's stored filename.
+        With a ready AD record, the GET branch returns a JSON body
+        containing the helper's pre-signed URL plus the block's stored
+        filename.
         """
         block = self._build_block_mock(audio_description="bar.mp3")
 
@@ -178,12 +157,10 @@ class StudioAudioDescriptionHandlerTest(TestCase):
                 },
             )
 
-    @override_waffle_flag(ENABLE_AUDIO_DESCRIPTION, active=True)
-    def test_delete_when_flag_enabled(self):
+    def test_delete_clears_field_and_returns_204(self):
         """
-        With the flag on, a DELETE request should call the storage
-        helper, clear the block's audio_description field, and return
-        204.
+        A DELETE request should call the storage helper, clear the
+        block's audio_description field, and return 204.
         """
         block = self._build_block_mock(
             edx_video_id="video-1", audio_description="bar.mp3"
