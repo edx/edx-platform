@@ -13,9 +13,11 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.test.client import RequestFactory
+from django.urls import reverse
 
 from edx_django_utils.cache import TieredCache
 from edx_toggles.toggles.testutils import override_waffle_flag, override_waffle_switch
+from xmodule.capa.tests.response_xml_factory import OptionResponseXMLFactory
 from xmodule.data import CertificatesDisplayBehaviors
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
@@ -45,6 +47,7 @@ from common.djangoapps.student.roles import CourseInstructorRole
 from common.djangoapps.student.tests.factories import CourseEnrollmentCelebrationFactory, UserFactory
 from openedx.core.djangoapps.agreements.api import create_integrity_signature
 from openedx.core.djangolib.testing.utils import skip_unless_lms
+from openedx.core.lib.url_utils import quote_slashes
 from openedx.features.course_experience.waffle import ENABLE_COURSE_ABOUT_SIDEBAR_HTML
 
 User = get_user_model()
@@ -531,6 +534,46 @@ class XBlockChildrenApiTestViews(BaseCoursewareTests):
         assert returned_keys == {str(child.location) for child in self.children}
         for result in data['results']:
             assert result['html']
+
+    def test_batch_renders_persisted_problem_state(self):
+        """
+        A problem rendered after the eager window must use the same StudentModule state
+        as the normal problem handler, rather than appearing as a fresh attempt.
+        """
+        problem_xml = OptionResponseXMLFactory().build_xml(
+            question_text='The correct answer is Correct',
+            num_inputs=1,
+            weight=1,
+            options=['Correct', 'Incorrect'],
+            correct_option='Correct',
+        )
+        problem = BlockFactory.create(
+            parent_location=self.unit.location,
+            category='problem',
+            data=problem_xml,
+            display_name='persisted-problem',
+        )
+
+        problem_check_url = reverse(
+            'xblock_handler',
+            kwargs={
+                'course_id': str(self.course.id),
+                'usage_id': quote_slashes(str(problem.location)),
+                'handler': 'xmodule_handler',
+                'suffix': 'problem_check',
+            },
+        )
+        answer_key = f'input_{problem.location.html_id()}_2_1'
+        submit_response = self.client.post(problem_check_url, {answer_key: 'Correct'})
+        assert submit_response.status_code == 200
+
+        response = self.client.get(self.url, {'child_usage_keys': str(problem.location)})
+        assert response.status_code == 200
+        data = response.json()
+        assert not data['errors']
+        rendered_html = data['results'][0]['html']
+        assert 'data-attempts-used="1"' in rendered_html
+        assert answer_key in rendered_html
 
     def test_batch_requires_authentication(self):
         self.client.logout()
