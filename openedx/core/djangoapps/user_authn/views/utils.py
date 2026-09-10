@@ -2,6 +2,7 @@
 User Auth Views Utils
 """
 import logging
+import hashlib
 import re
 from typing import Dict
 
@@ -26,6 +27,35 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 API_V1 = 'v1'
+UUID4_REGEX = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
+ENTERPRISE_ENROLLMENT_URL_REGEX = fr'/enterprise/{UUID4_REGEX}/course/{settings.COURSE_KEY_REGEX}/enroll'
+TOTAL_REGISTRATION_TIME_RE = re.compile(r'^\d+(?:\.\d+)?$')
+
+
+def get_total_registration_time_validation_error(data):
+    """
+    Validate optional registration timing telemetry with an allowlist pattern.
+
+    Returns:
+        dict | None: error details when invalid, otherwise None.
+    """
+    total_registration_time = data.get('total_registration_time')
+    if total_registration_time is None:
+        total_registration_time = data.get('totalRegistrationTime')
+
+    if total_registration_time in (None, ''):
+        return None
+
+    normalized_value = str(total_registration_time).strip()
+    if TOTAL_REGISTRATION_TIME_RE.fullmatch(normalized_value):
+        return None
+
+    return {
+        "field": "total_registration_time",
+        "user_message": _("Enter a valid registration time value."),
+        "error_code": "invalid-total-registration-time",
+        "value_digest": hashlib.shake_128(normalized_value.encode("utf-8")).hexdigest(16),
+    }
 
 
 def third_party_auth_context(request, redirect_to, tpa_hint=None):

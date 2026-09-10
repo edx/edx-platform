@@ -1,5 +1,6 @@
 """Tests for account creation"""
 
+import hashlib
 import json
 from datetime import datetime
 from unittest import mock, skipIf, skipUnless
@@ -2091,6 +2092,47 @@ class RegistrationViewTestV2(RegistrationViewTestV1):
     def setUp(self):  # pylint: disable=arguments-differ
         super(RegistrationViewTestV1, self).setUp()  # lint-amnesty, pylint: disable=bad-super-call
         self.url = reverse("user_api_registration_v2")
+
+    def test_register_invalid_total_registration_time(self):
+        invalid_total_registration_time = '57.664" AND "1"="1" --'
+        response = self.client.post(self.url, {
+            "email": self.EMAIL,
+            "name": self.NAME,
+            "username": self.USERNAME,
+            "password": self.PASSWORD,
+            "honor_code": "true",
+            "total_registration_time": invalid_total_registration_time,
+        })
+
+        self.assertHttpBadRequest(response)
+        response_json = json.loads(response.content.decode('utf-8'))
+        self.assertDictEqual(
+            response_json,
+            {
+                "total_registration_time": [{
+                    "user_message": "Enter a valid registration time value.",
+                }],
+                "error_code": "invalid-total-registration-time",
+            }
+        )
+
+        expected_digest = hashlib.shake_128(invalid_total_registration_time.encode("utf-8")).hexdigest(16)
+        with LogCapture() as logger:
+            self.client.post(self.url, {
+                "email": self.EMAIL,
+                "name": self.NAME,
+                "username": "another_user",
+                "password": self.PASSWORD,
+                "honor_code": "true",
+                "total_registration_time": invalid_total_registration_time,
+            })
+            logger.check_present(
+                (
+                    'audit',
+                    'WARNING',
+                    f'Registration rejected due to invalid total_registration_time payload digest={expected_digest}'
+                )
+            )
 
     @override_settings(
         REGISTRATION_EXTRA_FIELDS={
