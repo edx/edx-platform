@@ -361,6 +361,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
     def test_certificate_pdf_download_streams_when_allowed(self, mock_get, _mock_proctoring_status):
         upstream_response = Mock()
         upstream_response.is_redirect = False
+        upstream_response.status_code = 200
         upstream_response.headers = {
             'Content-Type': 'application/pdf',
             'Content-Length': '4',
@@ -440,6 +441,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
     def test_certificate_pdf_download_returns_503_for_non_pdf_response(self, mock_get, _mock_proctoring_status):
         upstream_response = Mock()
         upstream_response.is_redirect = False
+        upstream_response.status_code = 200
         upstream_response.headers = {'Content-Type': 'application/pdf'}
         upstream_response.iter_content.return_value = [b'<html>']
         mock_get.return_value = upstream_response
@@ -475,7 +477,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
     @patch('lms.djangoapps.certificates.views.webview.requests.get')
     def test_certificate_pdf_download_returns_503_for_redirect_response(self, mock_get, _mock_proctoring_status):
         upstream_response = Mock()
-        upstream_response.is_redirect = True
+        upstream_response.status_code = 302
         upstream_response.headers = {'Location': 'https://evil.example.com/certificate.pdf'}
         mock_get.return_value = upstream_response
 
