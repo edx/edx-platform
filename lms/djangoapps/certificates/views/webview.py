@@ -4,19 +4,23 @@ Certificate HTML webview.
 
 
 import logging
-import urllib
+import os
+import urllib.parse
 from datetime import datetime
 from uuid import uuid4
 
 import pytz
+import requests
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.http import Http404, HttpResponse, HttpResponseRedirect
+from django.http import Http404, HttpResponse, HttpResponseRedirect, StreamingHttpResponse
 from django.template import RequestContext
 from django.utils import translation
 from django.utils.encoding import smart_str
+from django.utils.text import get_valid_filename
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
+from edx_django_utils.monitoring.utils import increment
 from openedx_filters.learning.filters import CertificateRenderStarted
 from organizations import api as organizations_api
 from edx_django_utils.plugins import pluggable_override
@@ -42,6 +46,7 @@ from lms.djangoapps.certificates.models import (
     GeneratedCertificate
 )
 from lms.djangoapps.certificates.permissions import PREVIEW_CERTIFICATES
+from lms.djangoapps.certificates.proctoring_block import get_certificate_proctoring_status
 from lms.djangoapps.certificates.utils import (
     emit_certificate_event,
     get_certificate_url,
@@ -60,6 +65,7 @@ _ = translation.gettext
 
 
 INVALID_CERTIFICATE_TEMPLATE_PATH = 'certificates/invalid.html'
+PROCTORING_BLOCKED_CERTIFICATE_TEMPLATE_PATH = 'certificates/proctoring_blocked.html'
 
 
 def get_certificate_description(mode, certificate_type, platform_name, course_key):
@@ -514,6 +520,19 @@ def render_html_view(request, course_id, certificate=None):  # pylint: disable=t
         )
         return _render_invalid_certificate(request, course_id, platform_name, configuration)
 
+    if not preview_mode:
+        proctoring_status = get_certificate_proctoring_status(user, course_key)
+        if proctoring_status['blocked']:
+            log.info(
+                "Certificate view blocked by proctoring status for user %d in course %s: %s",
+                user_id,
+                course_id,
+                proctoring_status['reason'],
+            )
+            return _render_proctoring_blocked_certificate(
+                request, course_id, platform_name, configuration, proctoring_status
+            )
+
     # Get the active certificate configuration for this course
     # If we do not have an active certificate, we'll need to send the user to the "Invalid" screen
     # Passing in the 'preview' parameter, if specified, will return a configuration, if defined
@@ -684,6 +703,193 @@ def _render_invalid_certificate(request, course_id, platform_name, configuration
     context.update(get_certificate_header_context(is_secure=request.is_secure()))
     context.update(get_certificate_footer_context())
     return render_to_response(cert_path, context)
+
+
+def _render_proctoring_blocked_certificate(
+    request, course_id, platform_name, configuration, proctoring_status, status=200
+):
+    """Render an actionable page when certificate access is blocked by proctoring."""
+    context = {}
+    _update_context_with_basic_info(context, course_id, platform_name, configuration)
+    context['document_title'] = _("Certificate temporarily unavailable")
+    context['certificate_block_reason'] = proctoring_status.get('reason')
+    context['certificate_blocking_statuses'] = proctoring_status.get('blocking_statuses', [])
+    context.update(get_certificate_header_context(is_secure=request.is_secure()))
+    context.update(get_certificate_footer_context())
+    return render_to_response(PROCTORING_BLOCKED_CERTIFICATE_TEMPLATE_PATH, context, status=status)
+
+
+def _allowed_certificate_pdf_hosts():
+    """Return the allowlisted hosts that may serve certificate PDFs."""
+    hosts = set(getattr(settings, 'CERTIFICATE_PDF_DOWNLOAD_HOSTS', ()))
+    media_host = urllib.parse.urlparse(getattr(settings, 'MEDIA_URL', '')).hostname
+    if media_host:
+        hosts.add(media_host)
+
+    custom_domain = getattr(settings, 'AWS_S3_CUSTOM_DOMAIN', '')
+    if custom_domain and not custom_domain.startswith('SET-ME-PLEASE'):
+        hosts.add(custom_domain)
+
+    bucket_name = getattr(settings, 'AWS_STORAGE_BUCKET_NAME', '')
+    if bucket_name and not bucket_name.startswith('SET-ME-PLEASE'):
+        hosts.add(f'{bucket_name}.s3.amazonaws.com')
+
+    return {
+        urllib.parse.urlparse(f'//{host}').hostname or host
+        for host in hosts
+    }
+
+
+def _certificate_pdf_filename(certificate):
+    """Return a stable filename for the streamed certificate PDF."""
+    filename = os.path.basename(urllib.parse.urlparse(certificate.download_url).path)
+    if filename.lower().endswith('.pdf'):
+        return get_valid_filename(urllib.parse.unquote(filename))
+    return f'certificate-{certificate.verify_uuid}.pdf'
+
+
+def _stream_certificate_pdf(certificate):
+    """Stream a certificate PDF without exposing its backing storage URL."""
+    certificate_url = urllib.parse.urlparse(certificate.download_url)
+    allowed_hosts = _allowed_certificate_pdf_hosts()
+    if (
+        certificate_url.scheme not in ('http', 'https')
+        or not certificate_url.netloc
+        or certificate_url.hostname not in allowed_hosts
+    ):
+        log.error(
+            "Certificate download URL is not allowlisted for certificate %s",
+            certificate.verify_uuid,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+
+    upstream_response = None
+    try:
+        upstream_response = requests.get(
+            certificate.download_url,
+            stream=True,
+            timeout=getattr(settings, 'CERTIFICATE_PDF_DOWNLOAD_TIMEOUT', 30),
+            allow_redirects=False,
+        )
+        if 300 <= upstream_response.status_code < 400:
+            upstream_response.close()
+            log.error(
+                "Certificate download URL attempted to redirect for certificate %s",
+                certificate.verify_uuid,
+            )
+            increment('certificates.proctoring_block.pdf_fetch_error')
+            return HttpResponse(
+                _("The certificate is temporarily unavailable. Please try again later."),
+                status=503,
+            )
+        upstream_response.raise_for_status()
+    except requests.exceptions.RequestException:
+        if upstream_response is not None:
+            upstream_response.close()
+        log.exception(
+            "Unable to retrieve certificate PDF for certificate %s",
+            certificate.verify_uuid,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+
+    content_type = upstream_response.headers.get('Content-Type', '')
+    media_type = content_type.lower().split(';', 1)[0] if content_type else ''
+    if media_type and media_type not in {'application/pdf', 'application/octet-stream'}:
+        upstream_response.close()
+        log.error(
+            "Certificate download URL returned an unsupported content type for certificate %s: %s",
+            certificate.verify_uuid,
+            content_type,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+
+    content_iter = upstream_response.iter_content(chunk_size=8192)
+    try:
+        first_chunk = next((chunk for chunk in content_iter if chunk), b'')
+    except requests.exceptions.RequestException:
+        upstream_response.close()
+        log.exception(
+            "Unable to read certificate PDF for certificate %s",
+            certificate.verify_uuid,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+    if not first_chunk.startswith(b'%PDF'):
+        upstream_response.close()
+        log.error(
+            "Certificate download URL returned content without a PDF signature for certificate %s",
+            certificate.verify_uuid,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+
+    def iter_pdf_content():
+        try:
+            yield first_chunk
+            for chunk in content_iter:
+                if chunk:
+                    yield chunk
+        finally:
+            upstream_response.close()
+
+    response = StreamingHttpResponse(
+        iter_pdf_content(),
+        content_type='application/pdf',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{_certificate_pdf_filename(certificate)}"'
+    response['Cache-Control'] = 'private, no-store'
+    response['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
+@login_required
+def download_cert_by_uuid(request, certificate_uuid):
+    """Stream an owner certificate PDF after rechecking proctoring access."""
+    try:
+        certificate = GeneratedCertificate.eligible_certificates.get(
+            verify_uuid=certificate_uuid,
+            user=request.user,
+            status=CertificateStatuses.downloadable,
+        )
+    except GeneratedCertificate.DoesNotExist as exc:
+        raise Http404 from exc
+
+    proctoring_status = get_certificate_proctoring_status(request.user, certificate.course_id)
+    if proctoring_status['blocked']:
+        platform_name = configuration_helpers.get_value("platform_name", settings.PLATFORM_NAME)
+        configuration = CertificateHtmlViewConfiguration.get_config()
+        log.info(
+            "Certificate download blocked by proctoring status for user %d in course %s: %s",
+            request.user.id,
+            certificate.course_id,
+            proctoring_status['reason'],
+        )
+        return _render_proctoring_blocked_certificate(
+            request, str(certificate.course_id), platform_name, configuration, proctoring_status, status=403
+        )
+
+    if not certificate.download_url:
+        raise Http404
+
+    return _stream_certificate_pdf(certificate)
 
 
 def _render_valid_certificate(request, context, custom_template=None):

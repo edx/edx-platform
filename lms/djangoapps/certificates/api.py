@@ -23,8 +23,10 @@ from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.api import is_user_enrolled_in_course
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.branding import api as branding_api
-from lms.djangoapps.certificates.config import AUTO_CERTIFICATE_GENERATION as _AUTO_CERTIFICATE_GENERATION
-from lms.djangoapps.certificates.config import REDACT_CERTIFICATES_HISTORICAL_PII
+from lms.djangoapps.certificates.config import (
+    AUTO_CERTIFICATE_GENERATION as _AUTO_CERTIFICATE_GENERATION,
+    REDACT_CERTIFICATES_HISTORICAL_PII,
+)
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.generation_handler import generate_certificate_task as _generate_certificate_task
 from lms.djangoapps.certificates.generation_handler import is_on_certificate_allowlist as _is_on_certificate_allowlist
@@ -39,8 +41,10 @@ from lms.djangoapps.certificates.models import (
     ExampleCertificateSet,
     GeneratedCertificate,
 )
+from lms.djangoapps.certificates.proctoring_block import get_certificate_proctoring_status
 from lms.djangoapps.certificates.utils import certificate_status as _certificate_status
 from lms.djangoapps.certificates.utils import certificate_status_for_student as _certificate_status_for_student
+from lms.djangoapps.certificates.utils import get_certificate_download_url
 from lms.djangoapps.certificates.utils import get_certificate_url as _get_certificate_url
 from lms.djangoapps.certificates.utils import has_html_certificates_enabled as _has_html_certificates_enabled
 from lms.djangoapps.certificates.utils import should_certificate_be_visible as _should_certificate_be_visible
@@ -66,6 +70,21 @@ def _format_certificate_for_user(username, cert):
     Returns: dict
     """
     course_overview = get_course_overview_or_none(cert.course_id)
+    proctoring_status = (
+        get_certificate_proctoring_status(cert.user, cert.course_id)
+        if cert.status == CertificateStatuses.downloadable
+        else {'blocked': False, 'reason': None, 'blocking_statuses': []}
+    )
+    is_proctoring_blocked = proctoring_status['blocked']
+    download_url = None
+    if cert.status == CertificateStatuses.downloadable and not is_proctoring_blocked:
+        if cert.download_url:
+            download_url = get_certificate_download_url(cert)
+        else:
+            download_url = get_certificate_url(
+                cert.user.id, cert.course_id, uuid=cert.verify_uuid, user_certificate=cert
+            )
+
     if cert.download_url or course_overview:
         return {
             "username": username,
@@ -77,13 +96,13 @@ def _format_certificate_for_user(username, cert):
             "modified": cert.modified_date,
             "is_passing": CertificateStatuses.is_passing_status(cert.status),
             "is_pdf_certificate": bool(cert.download_url),
-            "download_url": (
-                cert.download_url
-                or get_certificate_url(cert.user.id, cert.course_id, uuid=cert.verify_uuid, user_certificate=cert)
-                if cert.status == CertificateStatuses.downloadable
-                else None
-            ),
+            "download_url": download_url,
             "uuid": cert.verify_uuid,
+            "certificate_blocked_due_to_proctoring": is_proctoring_blocked,
+            "certificate_block_reason": proctoring_status['reason'] if is_proctoring_blocked else None,
+            "certificate_blocking_statuses": (
+                proctoring_status['blocking_statuses'] if is_proctoring_blocked else []
+            ),
         }
 
     return None
@@ -284,6 +303,14 @@ def certificate_downloadable_status(student, course_key):
         "uuid": None,
     }
     # pylint: enable=simplifiable-if-expression
+
+    if current_status.get('certificate_blocked_due_to_proctoring'):
+        response_data.update({
+            'certificate_blocked_due_to_proctoring': True,
+            'certificate_block_reason': current_status.get('certificate_block_reason'),
+            'certificate_blocking_statuses': current_status.get('certificate_blocking_statuses', []),
+        })
+        return response_data
 
     course_overview = get_course_overview_or_none(course_key)
 

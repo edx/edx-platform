@@ -170,28 +170,45 @@ log = logging.getLogger("edx.courseware")
 REQUIREMENTS_DISPLAY_MODES = CourseMode.CREDIT_MODES + [CourseMode.VERIFIED]
 
 CertData = namedtuple(
-    "CertData", ["cert_status", "title", "msg", "download_url", "cert_web_view_url", "certificate_available_date"]
+    "CertData",
+    [
+        "cert_status",
+        "title",
+        "msg",
+        "download_url",
+        "cert_web_view_url",
+        "certificate_available_date",
+        "certificate_blocked_due_to_proctoring",
+        "certificate_block_reason",
+        "certificate_blocking_statuses",
+    ],
 )
 EARNED_BUT_NOT_AVAILABLE_CERT_STATUS = 'earned_but_not_available'
 
 NOT_EARNED_BUT_AVAILABLE_DATE_CERT_STATUS = 'not_earned_but_available_date'
 
 AUDIT_PASSING_CERT_DATA = CertData(
-    CertificateStatuses.audit_passing,
-    _('Your enrollment: Audit track'),
-    _('You are enrolled in the audit track for this course. The audit track does not include a certificate.'),
+    cert_status=CertificateStatuses.audit_passing,
+    title=_('Your enrollment: Audit track'),
+    msg=_('You are enrolled in the audit track for this course. The audit track does not include a certificate.'),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
+    certificate_block_reason=None,
+    certificate_blocking_statuses=(),
 )
 
 HONOR_PASSING_CERT_DATA = CertData(
-    CertificateStatuses.honor_passing,
-    _('Your enrollment: Honor track'),
-    _('You are enrolled in the honor track for this course. The honor track does not include a certificate.'),
+    cert_status=CertificateStatuses.honor_passing,
+    title=_('Your enrollment: Honor track'),
+    msg=_('You are enrolled in the honor track for this course. The honor track does not include a certificate.'),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
+    certificate_block_reason=None,
+    certificate_blocking_statuses=(),
 )
 
 INELIGIBLE_PASSING_CERT_DATA = {
@@ -200,66 +217,115 @@ INELIGIBLE_PASSING_CERT_DATA = {
 }
 
 GENERATING_CERT_DATA = CertData(
-    CertificateStatuses.generating,
-    _("We're working on it..."),
-    _(
+    cert_status=CertificateStatuses.generating,
+    title=_("We're working on it..."),
+    msg=_(
         "We're creating your certificate. You can keep working in your courses and a link "
         "to it will appear here and on your Dashboard when it is ready."
     ),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
+    certificate_block_reason=None,
+    certificate_blocking_statuses=(),
 )
 
 INVALID_CERT_DATA = CertData(
-    CertificateStatuses.invalidated,
-    _('Your certificate has been invalidated'),
-    _('Please contact your course team if you have any questions.'),
+    cert_status=CertificateStatuses.invalidated,
+    title=_('Your certificate has been invalidated'),
+    msg=_('Please contact your course team if you have any questions.'),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
+    certificate_block_reason=None,
+    certificate_blocking_statuses=(),
 )
 
 REQUESTING_CERT_DATA = CertData(
-    CertificateStatuses.requesting,
-    _('Congratulations, you qualified for a certificate!'),
-    _("You've earned a certificate for this course."),
+    cert_status=CertificateStatuses.requesting,
+    title=_('Congratulations, you qualified for a certificate!'),
+    msg=_("You've earned a certificate for this course."),
     download_url=None,
     cert_web_view_url=None,
-    certificate_available_date=None
+    certificate_available_date=None,
+    certificate_blocked_due_to_proctoring=False,
+    certificate_block_reason=None,
+    certificate_blocking_statuses=(),
 )
 
 
 def _earned_but_not_available_cert_data(cert_downloadable_status):
     return CertData(
-        EARNED_BUT_NOT_AVAILABLE_CERT_STATUS,
-        _('Your certificate will be available soon!'),
-        _('After this course officially ends, you will receive an email notification with your certificate.'),
+        cert_status=EARNED_BUT_NOT_AVAILABLE_CERT_STATUS,
+        title=_('Your certificate will be available soon!'),
+        msg=_('After this course officially ends, you will receive an email notification with your certificate.'),
         download_url=None,
         cert_web_view_url=None,
-        certificate_available_date=cert_downloadable_status.get('certificate_available_date')
+        certificate_available_date=cert_downloadable_status.get('certificate_available_date'),
+        certificate_blocked_due_to_proctoring=False,
+        certificate_block_reason=None,
+        certificate_blocking_statuses=(),
     )
 
 
 def _not_earned_but_available_date_cert_data(cert_downloadable_status):
     return CertData(
-        NOT_EARNED_BUT_AVAILABLE_DATE_CERT_STATUS,
-        _('Your certificate will be available after the indicated date'),
-        _('After this course officially ends, you will receive an email notification with your certificate.'),
+        cert_status=NOT_EARNED_BUT_AVAILABLE_DATE_CERT_STATUS,
+        title=_('Your certificate will be available after the indicated date'),
+        msg=_('After this course officially ends, you will receive an email notification with your certificate.'),
         download_url=None,
         cert_web_view_url=None,
-        certificate_available_date=cert_downloadable_status.get('certificate_available_date')
+        certificate_available_date=cert_downloadable_status.get('certificate_available_date'),
+        certificate_blocked_due_to_proctoring=False,
+        certificate_block_reason=None,
+        certificate_blocking_statuses=(),
     )
 
 
 def _downloadable_cert_data(download_url=None, cert_web_view_url=None):
     return CertData(
-        CertificateStatuses.downloadable,
-        _('Your certificate is available'),
-        _("You've earned a certificate for this course."),
+        cert_status=CertificateStatuses.downloadable,
+        title=_('Your certificate is available'),
+        msg=_("You've earned a certificate for this course."),
         download_url=download_url,
         cert_web_view_url=cert_web_view_url,
-        certificate_available_date=None
+        certificate_available_date=None,
+        certificate_blocked_due_to_proctoring=False,
+        certificate_block_reason=None,
+        certificate_blocking_statuses=(),
+    )
+
+
+def _proctoring_blocked_cert_data(cert_downloadable_status):
+    """Return certificate data for a certificate blocked by proctoring."""
+    block_reason = cert_downloadable_status.get('certificate_block_reason')
+    if block_reason == 'proctoring_review_pending':
+        message = _(
+            'Your certificate is temporarily unavailable while your required proctored exam is being reviewed. '
+            'Please check back after the review is complete.'
+        )
+    elif block_reason == 'proctored_exam_not_attempted':
+        message = _('Complete your required proctored exam before accessing your certificate.')
+    elif block_reason == 'proctored_exam_incomplete':
+        message = _('Complete your required proctored exam before accessing your certificate.')
+    else:
+        message = _(
+            'Your certificate is temporarily unavailable because the proctoring result is still being confirmed. '
+            'Please check back later.'
+        )
+
+    return CertData(
+        cert_status='proctoring_blocked',
+        title=_('Certificate temporarily unavailable'),
+        msg=message,
+        download_url=None,
+        cert_web_view_url=None,
+        certificate_available_date=None,
+        certificate_blocked_due_to_proctoring=True,
+        certificate_block_reason=block_reason,
+        certificate_blocking_statuses=cert_downloadable_status.get('certificate_blocking_statuses', []),
     )
 
 
@@ -268,15 +334,18 @@ def _unverified_cert_data():
         platform_name is dynamically updated in multi-tenant installations
     """
     return CertData(
-        CertificateStatuses.unverified,
-        _('Certificate unavailable'),
-        _(
+        cert_status=CertificateStatuses.unverified,
+        title=_('Certificate unavailable'),
+        msg=_(
             'You have not received a certificate because you do not have a current {platform_name} '
             'verified identity.'
         ).format(platform_name=configuration_helpers.get_value('PLATFORM_NAME', settings.PLATFORM_NAME)),
         download_url=None,
         cert_web_view_url=None,
-        certificate_available_date=None
+        certificate_available_date=None,
+        certificate_blocked_due_to_proctoring=False,
+        certificate_block_reason=None,
+        certificate_blocking_statuses=(),
     )
 
 
@@ -1111,6 +1180,9 @@ def _certificate_message(student, course, enrollment_mode):  # lint-amnesty, pyl
 
     cert_downloadable_status = certs_api.certificate_downloadable_status(student, course.id)
 
+    if cert_downloadable_status.get('certificate_blocked_due_to_proctoring'):
+        return _proctoring_blocked_cert_data(cert_downloadable_status)
+
     if cert_downloadable_status.get('earned_but_not_available'):
         return _earned_but_not_available_cert_data(cert_downloadable_status)
 
@@ -1140,6 +1212,9 @@ def get_cert_data(student, course, enrollment_mode, course_grade=None):
         returns dict if course certificate is available else None.
     """
     cert_data = _certificate_message(student, course, enrollment_mode)
+    if cert_data.certificate_blocked_due_to_proctoring:
+        return cert_data
+
     if not CourseMode.is_eligible_for_certificate(enrollment_mode, status=cert_data.cert_status):
         return INELIGIBLE_PASSING_CERT_DATA.get(enrollment_mode)
 
