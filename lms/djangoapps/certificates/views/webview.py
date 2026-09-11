@@ -761,6 +761,7 @@ def _stream_certificate_pdf(certificate):
             certificate.download_url,
             stream=True,
             timeout=getattr(settings, 'CERTIFICATE_PDF_DOWNLOAD_TIMEOUT', 30),
+            allow_redirects=False,
         )
         upstream_response.raise_for_status()
     except requests.exceptions.RequestException:
@@ -768,6 +769,18 @@ def _stream_certificate_pdf(certificate):
             upstream_response.close()
         log.exception(
             "Unable to retrieve certificate PDF for certificate %s",
+            certificate.verify_uuid,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+
+    if upstream_response.is_redirect:
+        upstream_response.close()
+        log.error(
+            "Certificate download URL attempted to redirect for certificate %s",
             certificate.verify_uuid,
         )
         increment('certificates.proctoring_block.pdf_fetch_error')
