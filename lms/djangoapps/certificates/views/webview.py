@@ -786,7 +786,7 @@ def _stream_certificate_pdf(certificate):
             status=503,
         )
 
-    if upstream_response.is_redirect:
+    if 300 <= upstream_response.status_code < 400:
         upstream_response.close()
         log.error(
             "Certificate download URL attempted to redirect for certificate %s",
