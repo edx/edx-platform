@@ -382,6 +382,32 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
     )
     @override_settings(CERTIFICATE_PDF_DOWNLOAD_HOSTS=('www.example.com',))
     @patch('lms.djangoapps.certificates.views.webview.requests.get')
+    def test_certificate_pdf_download_uses_filename_from_pdf_url(self, mock_get, _mock_proctoring_status):
+        self.cert.download_url = 'https://www.example.com/certificates/My%20Certificate.pdf'
+        self.cert.save()
+        upstream_response = Mock()
+        upstream_response.status_code = 200
+        upstream_response.headers = {
+            'Content-Type': 'application/pdf',
+            'Content-Length': '4',
+        }
+        upstream_response.iter_content.return_value = [b'%PDF']
+        mock_get.return_value = upstream_response
+
+        response = self.client.get(
+            reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
+        )
+
+        assert response.status_code == 200
+        assert response['Content-Disposition'] == 'attachment; filename="My Certificate.pdf"'
+        assert response['Content-Length'] == '4'
+
+    @patch(
+        'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
+        return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
+    )
+    @override_settings(CERTIFICATE_PDF_DOWNLOAD_HOSTS=('www.example.com',))
+    @patch('lms.djangoapps.certificates.views.webview.requests.get')
     def test_certificate_pdf_download_streams_when_allowed(self, mock_get, _mock_proctoring_status):
         upstream_response = Mock()
         upstream_response.is_redirect = False
@@ -401,6 +427,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         assert 'Location' not in response
         assert response['Content-Type'] == 'application/pdf'
         assert response['Content-Disposition'] == f'attachment; filename="certificate-{self.cert.verify_uuid}.pdf"'
+        assert response['Content-Length'] == '4'
         assert response['Cache-Control'] == 'private, no-store'
         assert response['X-Content-Type-Options'] == 'nosniff'
         assert b''.join(response.streaming_content) == b'%PDF'
