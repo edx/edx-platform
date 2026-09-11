@@ -170,7 +170,19 @@ log = logging.getLogger("edx.courseware")
 REQUIREMENTS_DISPLAY_MODES = CourseMode.CREDIT_MODES + [CourseMode.VERIFIED]
 
 CertData = namedtuple(
-    "CertData", ["cert_status", "title", "msg", "download_url", "cert_web_view_url", "certificate_available_date"]
+    "CertData",
+    [
+        "cert_status",
+        "title",
+        "msg",
+        "download_url",
+        "cert_web_view_url",
+        "certificate_available_date",
+        "certificate_blocked_due_to_proctoring",
+        "certificate_block_reason",
+        "certificate_blocking_statuses",
+    ],
+    defaults=(False, None, ()),
 )
 EARNED_BUT_NOT_AVAILABLE_CERT_STATUS = 'earned_but_not_available'
 
@@ -260,6 +272,37 @@ def _downloadable_cert_data(download_url=None, cert_web_view_url=None):
         download_url=download_url,
         cert_web_view_url=cert_web_view_url,
         certificate_available_date=None
+    )
+
+
+def _proctoring_blocked_cert_data(cert_downloadable_status):
+    """Return certificate data for a certificate blocked by proctoring."""
+    block_reason = cert_downloadable_status.get('certificate_block_reason')
+    if block_reason == 'proctoring_review_pending':
+        message = _(
+            'Your certificate is temporarily unavailable while your required proctored exam is being reviewed. '
+            'Please check back after the review is complete.'
+        )
+    elif block_reason == 'proctored_exam_not_attempted':
+        message = _('Complete your required proctored exam before accessing your certificate.')
+    elif block_reason == 'proctored_exam_incomplete':
+        message = _('Complete your required proctored exam before accessing your certificate.')
+    else:
+        message = _(
+            'Your certificate is temporarily unavailable because the proctoring result is still being confirmed. '
+            'Please check back later.'
+        )
+
+    return CertData(
+        CertificateStatuses.downloadable,
+        _('Certificate temporarily unavailable'),
+        message,
+        download_url=None,
+        cert_web_view_url=None,
+        certificate_available_date=None,
+        certificate_blocked_due_to_proctoring=True,
+        certificate_block_reason=block_reason,
+        certificate_blocking_statuses=cert_downloadable_status.get('certificate_blocking_statuses', []),
     )
 
 
@@ -1111,6 +1154,9 @@ def _certificate_message(student, course, enrollment_mode):  # lint-amnesty, pyl
 
     cert_downloadable_status = certs_api.certificate_downloadable_status(student, course.id)
 
+    if cert_downloadable_status.get('certificate_blocked_due_to_proctoring'):
+        return _proctoring_blocked_cert_data(cert_downloadable_status)
+
     if cert_downloadable_status.get('earned_but_not_available'):
         return _earned_but_not_available_cert_data(cert_downloadable_status)
 
@@ -1142,6 +1188,9 @@ def get_cert_data(student, course, enrollment_mode, course_grade=None):
     cert_data = _certificate_message(student, course, enrollment_mode)
     if not CourseMode.is_eligible_for_certificate(enrollment_mode, status=cert_data.cert_status):
         return INELIGIBLE_PASSING_CERT_DATA.get(enrollment_mode)
+
+    if cert_data.certificate_blocked_due_to_proctoring:
+        return cert_data
 
     if cert_data.cert_status == EARNED_BUT_NOT_AVAILABLE_CERT_STATUS:
         return cert_data

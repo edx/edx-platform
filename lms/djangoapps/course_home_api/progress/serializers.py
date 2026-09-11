@@ -117,6 +117,11 @@ class CertificateDataSerializer(ReadOnlySerializer):
     cert_web_view_url = serializers.CharField()
     download_url = serializers.CharField()
     certificate_available_date = serializers.DateTimeField()
+    certificate_blocked_due_to_proctoring = serializers.BooleanField(default=False)
+    certificate_block_reason = serializers.CharField(allow_null=True, required=False, default=None)
+    certificate_blocking_statuses = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list
+    )
 
 
 class VerificationDataSerializer(ReadOnlySerializer):

@@ -489,7 +489,8 @@ def _cert_info(user, enrollment, cert_status):
     Returns:
         dictionary containing:
             'status': one of 'generating', 'downloadable', 'notpassing', 'restricted', 'auditing',
-                'processing', 'unverified', 'unavailable', or 'certificate_earned_but_not_available'
+                'processing', 'unverified', 'unavailable', 'proctoring_blocked', or
+                'certificate_earned_but_not_available'
             'show_survey_button': bool
             'can_unenroll': if status allows for unenrollment
 
@@ -552,6 +553,22 @@ def _cert_info(user, enrollment, cert_status):
         'linked_in_url': None,
         'can_unenroll': status not in DISABLE_UNENROLL_CERT_STATES,
     }
+
+    if cert_status.get('certificate_blocked_due_to_proctoring'):
+        # Keep the certificate visible in the dashboard, but remove every
+        # certificate action until the current proctoring result permits it.
+        status_dict.update({
+            'status': 'proctoring_blocked',
+            'certificate_blocked_due_to_proctoring': True,
+            'certificate_block_reason': cert_status.get('certificate_block_reason'),
+            'certificate_blocking_statuses': cert_status.get('certificate_blocking_statuses', []),
+            'show_survey_button': False,
+            'show_cert_web_view': False,
+            'cert_web_view_url': None,
+            'download_url': None,
+            'linked_in_url': None,
+        })
+        return status_dict
 
     if status != default_status and course_overview.end_of_course_survey_url is not None:
         status_dict.update({

@@ -1487,6 +1487,26 @@ class ProgressPageTests(ProgressPageBaseTests):
         assert response.cert_status == 'downloadable'
         assert response.title == 'Your certificate is available'
 
+    def test_proctoring_blocked_get_cert_data(self):
+        """A blocked downloadable certificate is returned with actionable copy."""
+        self.generate_certificate("honor")
+        with patch(
+            'lms.djangoapps.certificates.api.certificate_downloadable_status',
+            return_value={
+                **self.mock_certificate_downloadable_status(is_downloadable=False),
+                'certificate_blocked_due_to_proctoring': True,
+                'certificate_block_reason': 'proctoring_review_pending',
+                'certificate_blocking_statuses': ['submitted'],
+            },
+        ):
+            response = views.get_cert_data(self.user, self.course, CourseMode.HONOR, MagicMock(passed=True))
+
+        assert response.cert_status == 'downloadable'
+        assert response.certificate_blocked_due_to_proctoring is True
+        assert response.download_url is None
+        assert response.cert_web_view_url is None
+        assert 'being reviewed' in response.msg
+
     def test_generating_get_cert_data(self):
         """
         Verify that generating cert data is returned if cert is generating.

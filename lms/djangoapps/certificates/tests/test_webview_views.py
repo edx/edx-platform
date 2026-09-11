@@ -315,6 +315,81 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         )
 
     @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
+    @patch(
+        'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
+        return_value={
+            'blocked': True,
+            'reason': 'proctoring_review_pending',
+            'blocking_statuses': ['submitted'],
+        },
+    )
+    def test_certificate_webview_shows_proctoring_block(self, _mock_proctoring_status):
+        self._add_course_certificates(count=1, signatory_count=1, is_active=True)
+        test_url = get_certificate_url(course_id=self.course.id, uuid=self.cert.verify_uuid)
+
+        response = self.client.get(test_url)
+
+        assert response.status_code == 200
+        self.assertContains(response, 'Certificate temporarily unavailable')
+        self.assertContains(response, 'being reviewed')
+        self.assertNotContains(response, 'Cannot Find Certificate')
+        self.assertNotContains(response, 'successfully completed')
+
+    @patch(
+        'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
+        return_value={
+            'blocked': True,
+            'reason': 'proctored_exam_incomplete',
+            'blocking_statuses': ['started'],
+        },
+    )
+    def test_certificate_pdf_download_shows_proctoring_block(self, _mock_proctoring_status):
+        response = self.client.get(
+            reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
+        )
+
+        assert response.status_code == 200
+        self.assertContains(response, 'Complete your required proctored exam')
+
+    @patch(
+        'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
+        return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
+    )
+    @patch('lms.djangoapps.certificates.views.webview.requests.get')
+    def test_certificate_pdf_download_streams_when_allowed(self, mock_get, _mock_proctoring_status):
+        upstream_response = Mock()
+        upstream_response.headers = {
+            'Content-Type': 'application/pdf',
+            'Content-Length': '4',
+        }
+        upstream_response.iter_content.return_value = [b'%PDF']
+        mock_get.return_value = upstream_response
+
+        response = self.client.get(
+            reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
+        )
+
+        assert response.status_code == 200
+        assert 'Location' not in response
+        assert response['Content-Type'] == 'application/pdf'
+        assert response['Content-Disposition'] == 'attachment; filename="certificate.pdf"'
+        assert response['Cache-Control'] == 'private, no-store'
+        assert response['X-Content-Type-Options'] == 'nosniff'
+        assert b''.join(response.streaming_content) == b'%PDF'
+        mock_get.assert_called_once_with(self.cert.download_url, stream=True, timeout=30)
+        upstream_response.close.assert_called_once_with()
+
+    def test_certificate_pdf_download_returns_404_for_different_user(self):
+        other_user = UserFactory.create()
+        self.client.force_login(other_user)
+
+        response = self.client.get(
+            reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
+        )
+
+        assert response.status_code == 404
+
+    @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
     @with_site_configuration(
         configuration={
             'platform_name': 'My Platform Site', 'LINKEDIN_COMPANY_ID': 2448,
