@@ -1800,6 +1800,32 @@ COURSE_ANALYSIS_WORKFLOW_API_KEY = ''
 # .. COURSE_ANALYSIS_WORKFLOW_URL before giving up. A slow/unreachable
 # .. backend shouldn't tie up a Studio request thread waiting on it.
 COURSE_ANALYSIS_WORKFLOW_REQUEST_TIMEOUT_SECONDS = 5
+# .. setting_name: COURSE_ANALYSIS_EXPORT_TASK_SOFT_TIME_LIMIT
+# .. setting_default: 600
+# .. setting_description: Soft Celery time limit, in seconds, for the
+# .. background task that exports and uploads a course to the Course
+# .. Optimizer extended-report backend. When exceeded, the task gets a
+# .. chance to record the run as failed before it's terminated, so a
+# .. pathological or very large course can't tie up a worker indefinitely.
+COURSE_ANALYSIS_EXPORT_TASK_SOFT_TIME_LIMIT = 600
+# .. setting_name: COURSE_ANALYSIS_EXPORT_TASK_TIME_LIMIT
+# .. setting_default: 660
+# .. setting_description: Hard Celery time limit, in seconds, for the
+# .. background task that exports and uploads a course to the Course
+# .. Optimizer extended-report backend. Should be a little higher than
+# .. COURSE_ANALYSIS_EXPORT_TASK_SOFT_TIME_LIMIT to give the soft limit a
+# .. chance to run first.
+COURSE_ANALYSIS_EXPORT_TASK_TIME_LIMIT = 660
+# .. setting_name: COURSE_ANALYSIS_REPORT_CACHE_TIMEOUT_SECONDS
+# .. setting_default: 900
+# .. setting_description: How long Studio remembers that a Course Optimizer
+# .. extended-analysis run is pending or failed, keyed by course. This
+# .. covers the window between queuing the export/upload task and
+# .. xpert-ai-workflows actually creating the run, during which the status
+# .. endpoint would otherwise have nothing new to report and could
+# .. mistake a stale prior run for the one just requested. Should be a
+# .. little higher than COURSE_ANALYSIS_EXPORT_TASK_TIME_LIMIT.
+COURSE_ANALYSIS_REPORT_CACHE_TIMEOUT_SECONDS = 900
 
 # .. setting_name: LIBRARY_ENABLED_BLOCKS
 # .. setting_default: ['problem', 'video', 'html', 'drag-and-drop-v2']
