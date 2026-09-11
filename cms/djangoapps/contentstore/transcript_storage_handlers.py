@@ -43,18 +43,24 @@ BARE_TO_CANONICAL_LANGUAGE_CODE = {
     'it': 'it-it',
     'ko': 'ko-kr',
     'pt': 'pt-br',
+    'pt-br': 'pt-br',
     'tr': 'tr-tr',
     'zh': 'zh-cn',
+    'zh-cn': 'zh-cn',
 }
 
 
 def normalize_language_code(language_code):
     """
-    Normalize a bare language code (e.g. "es") to its canonical edX dialect code
-    (e.g. "es-419"). Codes with no known mapping, including already-canonical ones,
-    are returned unchanged.
+    Normalize a bare language code (e.g. "es", "pt-BR") to its canonical edX dialect
+    code (e.g. "es-419", "pt-br"). Codes with no known mapping, including already-
+    canonical ones, are returned unchanged (after case normalization).
     """
-    return BARE_TO_CANONICAL_LANGUAGE_CODE.get(language_code, language_code)
+    if not language_code:
+        return language_code
+
+    code = language_code.lower().replace('_', '-')
+    return BARE_TO_CANONICAL_LANGUAGE_CODE.get(code, code)
 
 
 class TranscriptionProviderErrorType:
@@ -203,13 +209,18 @@ def upload_transcript(request):
         Transcript file in SRT format
     """
     edx_video_id = request.POST['edx_video_id']
-    language_code = request.POST['language_code']
+    language_code = normalize_language_code(request.POST['language_code'])
     new_language_code = normalize_language_code(request.POST['new_language_code'])
     transcript_file = request.FILES['file']
     try:
+        available_languages = get_available_transcript_languages(video_id=edx_video_id)
+        normalized_available_languages = {
+            normalize_language_code(language_code)
+            for language_code in available_languages
+        }
         # Determine whether this upload replaces an existing transcript
         # (return 200) or creates a new one (return 201).
-        is_replace = new_language_code in get_available_transcript_languages(video_id=edx_video_id)
+        is_replace = new_language_code in normalized_available_languages
         # Convert SRT transcript into an SJSON format
         # and upload it to S3.
         sjson_subs = Transcript.convert(
@@ -256,10 +267,16 @@ def validate_transcript_upload_data(data, files):
     if missing:
         error = _('The following parameters are required: {missing}.').format(missing=', '.join(missing))
     else:
+        language_code = normalize_language_code(data['language_code'])
         new_language_code = normalize_language_code(data['new_language_code'])
+        available_languages = get_available_transcript_languages(video_id=data['edx_video_id'])
+        normalized_available_languages = {
+            normalize_language_code(language_code)
+            for language_code in available_languages
+        }
         if (
-            data['language_code'] != new_language_code and
-            new_language_code in get_available_transcript_languages(video_id=data['edx_video_id'])
+            language_code != new_language_code and
+            new_language_code in normalized_available_languages
         ):
             error = _('A transcript with the "{language_code}" language code already exists.'.format(  # lint-amnesty, pylint: disable=translation-of-non-string
                 language_code=new_language_code

@@ -52,6 +52,7 @@ class UploadTranscriptLanguageNormalizationTest(TestCase):
         ("zh", "zh-cn"),
         ("es", "es-419"),
         ("pt", "pt-br"),
+        ("pt-BR", "pt-br"),
         ("de", "de-de"),
         ("it", "it-it"),
         ("ko", "ko-kr"),
@@ -88,13 +89,13 @@ class UploadTranscriptLanguageNormalizationTest(TestCase):
     @patch("cms.djangoapps.contentstore.transcript_storage_handlers.use_mock_video_uploads", return_value=False)
     @patch("cms.djangoapps.contentstore.transcript_storage_handlers.create_or_update_video_transcript")
     def test_is_replace_detection_uses_normalized_code(self, mock_create_or_update, mock_use_mock):  # pylint: disable=unused-argument
-        # An existing transcript is stored under the canonical code ("zh-cn"), while the
-        # upload request supplies the bare code ("zh") for the same language.
+        # An existing transcript is stored under the legacy code ("zh"), while the
+        # upload request supplies the canonical code ("zh-cn") for the same language.
         with patch(
             "cms.djangoapps.contentstore.transcript_storage_handlers.get_available_transcript_languages",
-            return_value=["zh-cn"],
+            return_value=["zh"],
         ):
-            request = _build_request(new_language_code="zh")
+            request = _build_request(new_language_code="zh-cn")
             response = transcript_storage_handlers.upload_transcript(request)
 
         # Without normalization this would be treated as a brand new language (201, not 200).
@@ -113,11 +114,11 @@ class ValidateTranscriptUploadDataNormalizationTest(TestCase):
         self.files = {"file": ContentFile(b"0\n", name="transcript.srt")}
 
     @patch("cms.djangoapps.contentstore.transcript_storage_handlers.get_available_transcript_languages",
-           return_value=["es-419"])
+           return_value=["es"])
     def test_bare_duplicate_code_is_detected_via_normalization(self, mock_get_available_languages):  # pylint: disable=unused-argument
-        # A transcript in "es-419" already exists; uploading "es" (its bare equivalent)
+        # A transcript in legacy "es" already exists; uploading canonical "es-419"
         # for the same language should be flagged as a duplicate.
-        data = {"edx_video_id": "video-1", "language_code": "en", "new_language_code": "es"}
+        data = {"edx_video_id": "video-1", "language_code": "en", "new_language_code": "es-419"}
 
         error = transcript_storage_handlers.validate_transcript_upload_data(data, self.files)
 
