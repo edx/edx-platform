@@ -399,7 +399,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         )
 
         assert response.status_code == 200
-        assert response['Content-Disposition'] == 'attachment; filename="My Certificate.pdf"'
+        assert response['Content-Disposition'] == 'attachment; filename="My_Certificate.pdf"'
 
     @patch(
         'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
@@ -536,6 +536,26 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
     def test_certificate_pdf_download_returns_503_for_redirect_response(self, mock_get, _mock_proctoring_status):
         upstream_response = Mock()
         upstream_response.status_code = 302
+        upstream_response.headers = {'Location': 'https://evil.example.com/certificate.pdf'}
+        mock_get.return_value = upstream_response
+
+        response = self.client.get(
+            reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
+        )
+
+        assert response.status_code == 503
+        self.assertContains(response, 'temporarily unavailable')
+        upstream_response.close.assert_called_once_with()
+
+    @patch(
+        'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
+        return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
+    )
+    @override_settings(CERTIFICATE_PDF_DOWNLOAD_HOSTS=('www.example.com',))
+    @patch('lms.djangoapps.certificates.views.webview.requests.get')
+    def test_certificate_pdf_download_returns_503_for_307_redirect_response(self, mock_get, _mock_proctoring_status):
+        upstream_response = Mock()
+        upstream_response.status_code = 307
         upstream_response.headers = {'Location': 'https://evil.example.com/certificate.pdf'}
         mock_get.return_value = upstream_response
 

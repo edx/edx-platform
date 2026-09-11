@@ -17,6 +17,7 @@ from django.http import Http404, HttpResponse, HttpResponseRedirect, StreamingHt
 from django.template import RequestContext
 from django.utils import translation
 from django.utils.encoding import smart_str
+from django.utils.text import get_valid_filename
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 from edx_django_utils.monitoring.utils import increment
@@ -741,7 +742,7 @@ def _certificate_pdf_filename(certificate):
     """Return a stable filename for the streamed certificate PDF."""
     filename = os.path.basename(urllib.parse.urlparse(certificate.download_url).path)
     if filename.lower().endswith('.pdf'):
-        return urllib.parse.unquote(filename)
+        return get_valid_filename(urllib.parse.unquote(filename))
     return f'certificate-{certificate.verify_uuid}.pdf'
 
 
