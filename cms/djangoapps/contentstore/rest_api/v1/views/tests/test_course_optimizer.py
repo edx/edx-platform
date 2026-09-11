@@ -52,7 +52,7 @@ class CourseAnalysisReportViewTest(CourseTestCase):
             response = self.client.post(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
-        self.assertEqual(response.json(), {'status': 'pending'})
+        self.assertEqual(response.json(), {'status': 'PENDING'})
         mock_task.delay.assert_called_once_with(str(self.course.id))
 
     @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
@@ -62,7 +62,7 @@ class CourseAnalysisReportViewTest(CourseTestCase):
 
         self.assertEqual(
             cache.get(course_analysis_report_cache_key(str(self.course.id))),
-            {'status': 'pending'},
+            {'status': 'PENDING'},
         )
 
 
@@ -148,27 +148,27 @@ class CourseAnalysisReportStatusViewTest(CourseTestCase):
     def test_pending_task_short_circuits_backend_call(self):
         cache.set(
             course_analysis_report_cache_key(str(self.course.id)),
-            {'status': 'pending'},
+            {'status': 'PENDING'},
         )
         with patch(self.backend_get_patch) as mock_get:
             response = self.client.get(self.url)
 
         mock_get.assert_not_called()
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), {'status': 'pending'})
+        self.assertEqual(response.json(), {'status': 'PENDING'})
 
     @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
     def test_failed_task_short_circuits_backend_call(self):
         cache.set(
             course_analysis_report_cache_key(str(self.course.id)),
-            {'status': 'failed', 'error': 'boom'},
+            {'status': 'FAILED', 'error': 'boom'},
         )
         with patch(self.backend_get_patch) as mock_get:
             response = self.client.get(self.url)
 
         mock_get.assert_not_called()
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), {'status': 'failed', 'error': 'boom'})
+        self.assertEqual(response.json(), {'status': 'FAILED', 'error': 'boom'})
 
     @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
     def test_produces_404_when_course_does_not_exist(self):

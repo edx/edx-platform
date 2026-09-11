@@ -1663,7 +1663,7 @@ def submit_course_analysis_report(course_key_string: str) -> None:
     CourseAnalysisReportView marks the run pending (via
     course_analysis_report_cache_key) before queuing this task. If export
     or upload fails -- including this task hitting its own time limit --
-    that cache entry is updated to a terminal 'failed' status instead of
+    that cache entry is updated to a terminal 'FAILED' status instead of
     leaving the status endpoint to poll a stale or nonexistent run
     forever. On success the entry is cleared so the status endpoint goes
     back to proxying xpert-ai-workflows directly.
@@ -1691,7 +1691,7 @@ def submit_course_analysis_report(course_key_string: str) -> None:
     except Exception as exc:
         cache.set(
             cache_key,
-            {'status': 'failed', 'error': str(exc)},
+            {'status': 'FAILED', 'error': str(exc)},
             settings.COURSE_ANALYSIS_REPORT_CACHE_TIMEOUT_SECONDS,
         )
         raise

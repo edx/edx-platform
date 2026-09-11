@@ -707,7 +707,7 @@ class SubmitCourseAnalysisReportTaskTest(CourseTestCase):
     def test_uploads_export_to_backend(self, mock_export, mock_post):
         mock_export.return_value = self._mock_tarball()
         mock_post.return_value = mock.Mock(status_code=202)
-        cache.set(self.cache_key, {'status': 'pending'})
+        cache.set(self.cache_key, {'status': 'PENDING'})
 
         submit_course_analysis_report(self.course_key_string)
 
@@ -737,14 +737,14 @@ class SubmitCourseAnalysisReportTaskTest(CourseTestCase):
     def test_request_failure_marks_run_failed_in_cache(self, mock_export, mock_post):
         mock_export.return_value = self._mock_tarball()
         mock_post.side_effect = requests.ConnectionError('unreachable')
-        cache.set(self.cache_key, {'status': 'pending'})
+        cache.set(self.cache_key, {'status': 'PENDING'})
 
         with self.assertRaises(requests.ConnectionError):
             submit_course_analysis_report(self.course_key_string)
 
         self.assertEqual(
             cache.get(self.cache_key),
-            {'status': 'failed', 'error': 'unreachable'},
+            {'status': 'FAILED', 'error': 'unreachable'},
         )
 
     @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
@@ -763,12 +763,12 @@ class SubmitCourseAnalysisReportTaskTest(CourseTestCase):
         mock_export.return_value = self._mock_tarball()
         mock_post.return_value = mock.Mock(status_code=500)
         mock_post.return_value.raise_for_status.side_effect = requests.HTTPError('server error')
-        cache.set(self.cache_key, {'status': 'pending'})
+        cache.set(self.cache_key, {'status': 'PENDING'})
 
         with self.assertRaises(requests.HTTPError):
             submit_course_analysis_report(self.course_key_string)
 
         self.assertEqual(
             cache.get(self.cache_key),
-            {'status': 'failed', 'error': 'server error'},
+            {'status': 'FAILED', 'error': 'server error'},
         )

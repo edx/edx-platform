@@ -60,7 +60,7 @@ class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
         **Response Values**
         ```json
         {
-            "status": "pending"
+            "status": "PENDING"
         }
         ```
         """
@@ -76,11 +76,11 @@ class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
 
         cache.set(
             course_analysis_report_cache_key(course_id),
-            {'status': 'pending'},
+            {'status': 'PENDING'},
             settings.COURSE_ANALYSIS_REPORT_CACHE_TIMEOUT_SECONDS,
         )
         submit_course_analysis_report.delay(course_id)
-        return Response({'status': 'pending'}, status=status.HTTP_202_ACCEPTED)
+        return Response({'status': 'PENDING'}, status=status.HTTP_202_ACCEPTED)
 
 
 @view_auth_classes()
@@ -123,7 +123,7 @@ class CourseAnalysisReportStatusView(DeveloperErrorViewMixin, APIView):
 
             While a background export/upload triggered by
             CourseAnalysisReportView is in flight (or just failed), this
-            returns `{status: "pending"}` or `{status: "failed", error}`
+            returns `{status: "PENDING"}` or `{status: "FAILED", error}`
             instead of proxying xpert-ai-workflows -- otherwise, a course
             with an older completed run would look done again as soon as
             it's requeued, even though the requested run hasn't landed yet.
