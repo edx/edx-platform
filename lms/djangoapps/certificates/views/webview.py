@@ -715,12 +715,38 @@ def _render_proctoring_blocked_certificate(request, course_id, platform_name, co
     return render_to_response(PROCTORING_BLOCKED_CERTIFICATE_TEMPLATE_PATH, context)
 
 
+def _allowed_certificate_pdf_hosts():
+    """Return the allowlisted hosts that may serve certificate PDFs."""
+    hosts = set(getattr(settings, 'CERTIFICATE_PDF_DOWNLOAD_HOSTS', ()))
+    media_host = urllib.parse.urlparse(getattr(settings, 'MEDIA_URL', '')).hostname
+    if media_host:
+        hosts.add(media_host)
+
+    custom_domain = getattr(settings, 'AWS_S3_CUSTOM_DOMAIN', '')
+    if custom_domain and not custom_domain.startswith('SET-ME-PLEASE'):
+        hosts.add(custom_domain)
+
+    bucket_name = getattr(settings, 'AWS_STORAGE_BUCKET_NAME', '')
+    if bucket_name and not bucket_name.startswith('SET-ME-PLEASE'):
+        hosts.add(f'{bucket_name}.s3.amazonaws.com')
+
+    return {
+        urllib.parse.urlparse(f'//{host}').hostname or host
+        for host in hosts
+    }
+
+
 def _stream_certificate_pdf(certificate):
     """Stream a certificate PDF without exposing its backing storage URL."""
     certificate_url = urllib.parse.urlparse(certificate.download_url)
-    if certificate_url.scheme not in ('http', 'https') or not certificate_url.netloc:
+    allowed_hosts = _allowed_certificate_pdf_hosts()
+    if (
+        certificate_url.scheme not in ('http', 'https')
+        or not certificate_url.netloc
+        or certificate_url.hostname not in allowed_hosts
+    ):
         log.error(
-            "Certificate download URL has an unsupported scheme for certificate %s",
+            "Certificate download URL is not allowlisted for certificate %s",
             certificate.verify_uuid,
         )
         increment('certificates.proctoring_block.pdf_fetch_error')

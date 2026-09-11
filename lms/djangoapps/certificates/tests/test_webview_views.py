@@ -356,6 +356,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
         return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
     )
+    @override_settings(CERTIFICATE_PDF_DOWNLOAD_HOSTS=('www.example.com',))
     @patch('lms.djangoapps.certificates.views.webview.requests.get')
     def test_certificate_pdf_download_streams_when_allowed(self, mock_get, _mock_proctoring_status):
         upstream_response = Mock()
@@ -394,6 +395,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
         return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
     )
+    @override_settings(CERTIFICATE_PDF_DOWNLOAD_HOSTS=('www.example.com',))
     @patch(
         'lms.djangoapps.certificates.views.webview.requests.get',
         side_effect=requests.exceptions.RequestException('boom'),
@@ -427,6 +429,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
         return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
     )
+    @override_settings(CERTIFICATE_PDF_DOWNLOAD_HOSTS=('www.example.com',))
     @patch('lms.djangoapps.certificates.views.webview.requests.get')
     def test_certificate_pdf_download_returns_503_for_non_pdf_response(self, mock_get, _mock_proctoring_status):
         upstream_response = Mock()
@@ -441,6 +444,21 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         assert response.status_code == 503
         self.assertContains(response, 'temporarily unavailable')
         upstream_response.close.assert_called_once_with()
+
+    @patch(
+        'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
+        return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
+    )
+    @override_settings(CERTIFICATE_PDF_DOWNLOAD_HOSTS=('storage.example.com',))
+    @patch('lms.djangoapps.certificates.views.webview.requests.get')
+    def test_certificate_pdf_download_returns_503_for_unallowlisted_host(self, mock_get, _mock_proctoring_status):
+        response = self.client.get(
+            reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
+        )
+
+        assert response.status_code == 503
+        self.assertContains(response, 'temporarily unavailable')
+        mock_get.assert_not_called()
 
     @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
     @with_site_configuration(
