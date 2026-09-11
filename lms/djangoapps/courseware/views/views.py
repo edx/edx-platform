@@ -1212,11 +1212,11 @@ def get_cert_data(student, course, enrollment_mode, course_grade=None):
         returns dict if course certificate is available else None.
     """
     cert_data = _certificate_message(student, course, enrollment_mode)
-    if not CourseMode.is_eligible_for_certificate(enrollment_mode, status=cert_data.cert_status):
-        return INELIGIBLE_PASSING_CERT_DATA.get(enrollment_mode)
-
     if cert_data.certificate_blocked_due_to_proctoring:
         return cert_data
+
+    if not CourseMode.is_eligible_for_certificate(enrollment_mode, status=cert_data.cert_status):
+        return INELIGIBLE_PASSING_CERT_DATA.get(enrollment_mode)
 
     if cert_data.cert_status == EARNED_BUT_NOT_AVAILABLE_CERT_STATUS:
         return cert_data

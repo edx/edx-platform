@@ -1141,6 +1141,23 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         self.assertContains(response, 'Signatory_Title 0')
 
     @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
+    @patch(
+        'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
+        return_value={'blocked': True, 'reason': 'proctoring_review_pending', 'blocking_statuses': ['submitted']},
+    )
+    def test_render_html_view_preview_mode_bypasses_proctoring_block(self, mock_proctoring_status):
+        self._add_course_certificates(count=1, signatory_count=1)
+        CourseStaffRole(self.course.id).add_users(self.user)
+        test_url = reverse('certificates:preview_cert', kwargs={'course_id': self.course_id})
+
+        response = self.client.get(test_url + '?preview=honor')
+
+        assert response.status_code == 200
+        self.assertContains(response, 'course_title_0')
+        self.assertNotContains(response, 'Certificate temporarily unavailable')
+        mock_proctoring_status.assert_not_called()
+
+    @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
     def test_render_html_view_with_preview_mode_when_user_already_has_cert(self):
         """
         test certificate web view should render properly in
