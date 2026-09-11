@@ -49,13 +49,17 @@ def _result(blocked=False, reason=None, blocking_statuses=None):
     """Build a stable result for API and UI consumers."""
     if blocked:
         increment('certificates.proctoring_block.blocked')
-        if reason == 'proctoring_status_unavailable':
-            increment('certificates.proctoring_block.lookup_error')
     return {
         'blocked': blocked,
         'reason': reason,
         'blocking_statuses': blocking_statuses or [],
     }
+
+
+def _lookup_error_result(blocking_statuses=None):
+    """Record a failed lookup and return the blocked fallback result."""
+    increment('certificates.proctoring_block.lookup_error')
+    return _result(True, 'proctoring_status_unavailable', blocking_statuses)
 
 
 def _reason_for_status(status):
@@ -99,7 +103,7 @@ def get_certificate_proctoring_status(user, course_key):
             'Unable to import edx-proctoring while checking certificate access. '
             'user_id=%s course_key=%s', user.id, course_key
         )
-        return _result(True, 'proctoring_status_unavailable')
+        return _lookup_error_result()
 
     try:
         exams = get_all_exams_for_course(str(course_key), active_only=True) or []
@@ -108,7 +112,7 @@ def get_certificate_proctoring_status(user, course_key):
             'Unable to retrieve proctored exams while checking certificate access. '
             'user_id=%s course_key=%s', user.id, course_key
         )
-        return _result(True, 'proctoring_status_unavailable')
+        return _lookup_error_result()
 
     for exam in exams:
         if not isinstance(exam, dict):
@@ -116,7 +120,7 @@ def get_certificate_proctoring_status(user, course_key):
                 'Proctoring returned a malformed exam while checking certificate access. '
                 'user_id=%s course_key=%s', user.id, course_key
             )
-            return _result(True, 'proctoring_status_unavailable')
+            return _lookup_error_result()
 
         if not (
             exam.get('is_proctored')
@@ -131,7 +135,7 @@ def get_certificate_proctoring_status(user, course_key):
                 'Proctoring returned an active proctored exam without content_id. '
                 'user_id=%s course_key=%s', user.id, course_key
             )
-            return _result(True, 'proctoring_status_unavailable')
+            return _lookup_error_result()
 
         try:
             summary = get_attempt_status_summary(user.id, str(course_key), content_id)
@@ -140,14 +144,14 @@ def get_certificate_proctoring_status(user, course_key):
                 'Unable to retrieve proctoring attempt status summary. '
                 'user_id=%s course_key=%s content_id=%s', user.id, course_key, content_id
             )
-            return _result(True, 'proctoring_status_unavailable')
+            return _lookup_error_result()
 
         if not summary or not summary.get('status'):
             log.error(
                 'Proctoring returned no status while checking certificate access. '
                 'user_id=%s course_key=%s content_id=%s', user.id, course_key, content_id
             )
-            return _result(True, 'proctoring_status_unavailable')
+            return _lookup_error_result()
 
         status = summary['status']
         # ``eligible`` is the edx-proctoring representation for no attempt.
@@ -169,6 +173,6 @@ def get_certificate_proctoring_status(user, course_key):
             'user_id=%s course_key=%s content_id=%s status=%s',
             user.id, course_key, content_id, status
         )
-        return _result(True, 'proctoring_status_unavailable', [status])
+        return _lookup_error_result([status])
 
     return _result()
