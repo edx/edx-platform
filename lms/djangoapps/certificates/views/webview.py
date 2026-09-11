@@ -705,7 +705,9 @@ def _render_invalid_certificate(request, course_id, platform_name, configuration
     return render_to_response(cert_path, context)
 
 
-def _render_proctoring_blocked_certificate(request, course_id, platform_name, configuration, proctoring_status):
+def _render_proctoring_blocked_certificate(
+    request, course_id, platform_name, configuration, proctoring_status, status=200
+):
     """Render an actionable page when certificate access is blocked by proctoring."""
     context = {}
     _update_context_with_basic_info(context, course_id, platform_name, configuration)
@@ -714,7 +716,7 @@ def _render_proctoring_blocked_certificate(request, course_id, platform_name, co
     context['certificate_blocking_statuses'] = proctoring_status.get('blocking_statuses', [])
     context.update(get_certificate_header_context(is_secure=request.is_secure()))
     context.update(get_certificate_footer_context())
-    return render_to_response(PROCTORING_BLOCKED_CERTIFICATE_TEMPLATE_PATH, context)
+    return render_to_response(PROCTORING_BLOCKED_CERTIFICATE_TEMPLATE_PATH, context, status=status)
 
 
 def _allowed_certificate_pdf_hosts():
@@ -881,7 +883,7 @@ def download_cert_by_uuid(request, certificate_uuid):
             proctoring_status['reason'],
         )
         return _render_proctoring_blocked_certificate(
-            request, str(certificate.course_id), platform_name, configuration, proctoring_status
+            request, str(certificate.course_id), platform_name, configuration, proctoring_status, status=403
         )
 
     if not certificate.download_url:

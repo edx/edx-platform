@@ -349,7 +349,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
             reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 403
         self.assertContains(response, 'Complete your required proctored exam')
 
     @patch(
