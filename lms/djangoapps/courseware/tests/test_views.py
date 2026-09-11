@@ -1501,7 +1501,7 @@ class ProgressPageTests(ProgressPageBaseTests):
         ):
             response = views.get_cert_data(self.user, self.course, CourseMode.HONOR, MagicMock(passed=True))
 
-        assert response.cert_status == 'downloadable'
+        assert response.cert_status == 'proctoring_blocked'
         assert response.certificate_blocked_due_to_proctoring is True
         assert response.download_url is None
         assert response.cert_web_view_url is None

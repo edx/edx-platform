@@ -294,7 +294,7 @@ def _proctoring_blocked_cert_data(cert_downloadable_status):
         )
 
     return CertData(
-        CertificateStatuses.downloadable,
+        'proctoring_blocked',
         _('Certificate temporarily unavailable'),
         message,
         download_url=None,

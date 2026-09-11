@@ -63,15 +63,13 @@ else:
         % if cert_status['status'] == CertificateStatuses.downloadable or cert_status['status'] == CertificateStatuses.requesting:
             ${_("Congratulations! Your certificate is ready.")}
         % elif cert_status['status'] == 'proctoring_blocked':
-          <p class="message-copy">
-            % if cert_status.get('certificate_block_reason') in ('proctored_exam_not_attempted', 'proctored_exam_incomplete'):
-              ${_("Complete your required proctored exam before accessing your certificate.")}
-            % elif cert_status.get('certificate_block_reason') in ('proctoring_error', 'proctoring_status_unavailable'):
-              ${_("Your certificate is temporarily unavailable because the proctoring result is still being confirmed. Please check back later.")}
-            % else:
-              ${_("Your certificate is temporarily unavailable while your required proctored exam is being reviewed. Please check back after the review is complete.")}
-            % endif
-          </p>
+          % if cert_status.get('certificate_block_reason') in ('proctored_exam_not_attempted', 'proctored_exam_incomplete'):
+            ${_("Complete your required proctored exam before accessing your certificate.")}
+          % elif cert_status.get('certificate_block_reason') in ('proctoring_error', 'proctoring_status_unavailable'):
+            ${_("Your certificate is temporarily unavailable because the proctoring result is still being confirmed. Please check back later.")}
+          % else:
+            ${_("Your certificate is temporarily unavailable while your required proctored exam is being reviewed. Please check back after the review is complete.")}
+          % endif
         % elif cert_status['status'] == 'notpassing':
           % if enrollment.mode != 'audit':
             ${_("Grade required for a {cert_name_short}:").format(cert_name_short=cert_name_short)}

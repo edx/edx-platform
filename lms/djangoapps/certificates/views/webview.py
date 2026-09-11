@@ -750,6 +750,19 @@ def _stream_certificate_pdf(certificate):
             status=503,
         )
 
+    content_type = upstream_response.headers.get('Content-Type', '')
+    if not content_type.lower().startswith('application/pdf'):
+        upstream_response.close()
+        log.error(
+            "Certificate download URL returned a non-PDF response for certificate %s",
+            certificate.verify_uuid,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+
     def iter_pdf_content():
         try:
             for chunk in upstream_response.iter_content(chunk_size=8192):
@@ -760,7 +773,7 @@ def _stream_certificate_pdf(certificate):
 
     response = StreamingHttpResponse(
         iter_pdf_content(),
-        content_type=upstream_response.headers.get('Content-Type', 'application/pdf'),
+        content_type='application/pdf',
     )
     response['Content-Disposition'] = 'attachment; filename="certificate.pdf"'
     response['Cache-Control'] = 'private, no-store'
