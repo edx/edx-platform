@@ -375,7 +375,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         assert response.status_code == 200
         assert 'Location' not in response
         assert response['Content-Type'] == 'application/pdf'
-        assert response['Content-Disposition'] == 'attachment; filename="certificate.pdf"'
+        assert response['Content-Disposition'] == f'attachment; filename="certificate-{self.cert.verify_uuid}.pdf"'
         assert response['Cache-Control'] == 'private, no-store'
         assert response['X-Content-Type-Options'] == 'nosniff'
         assert b''.join(response.streaming_content) == b'%PDF'

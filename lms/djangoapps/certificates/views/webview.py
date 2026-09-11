@@ -4,6 +4,7 @@ Certificate HTML webview.
 
 
 import logging
+import os
 import urllib.parse
 from datetime import datetime
 from uuid import uuid4
@@ -736,6 +737,14 @@ def _allowed_certificate_pdf_hosts():
     }
 
 
+def _certificate_pdf_filename(certificate):
+    """Return a stable filename for the streamed certificate PDF."""
+    filename = os.path.basename(urllib.parse.urlparse(certificate.download_url).path)
+    if filename.lower().endswith('.pdf'):
+        return urllib.parse.unquote(filename)
+    return f'certificate-{certificate.verify_uuid}.pdf'
+
+
 def _stream_certificate_pdf(certificate):
     """Stream a certificate PDF without exposing its backing storage URL."""
     certificate_url = urllib.parse.urlparse(certificate.download_url)
@@ -790,16 +799,11 @@ def _stream_certificate_pdf(certificate):
         )
 
     content_type = upstream_response.headers.get('Content-Type', '')
-    if not content_type.lower().startswith('application/pdf'):
-        upstream_response.close()
-        log.error(
-            "Certificate download URL returned a non-PDF response for certificate %s",
+    if content_type and not content_type.lower().startswith('application/pdf'):
+        log.warning(
+            "Certificate download URL returned an unexpected content type for certificate %s: %s",
             certificate.verify_uuid,
-        )
-        increment('certificates.proctoring_block.pdf_fetch_error')
-        return HttpResponse(
-            _("The certificate is temporarily unavailable. Please try again later."),
-            status=503,
+            content_type,
         )
 
     content_iter = upstream_response.iter_content(chunk_size=8192)
@@ -841,7 +845,7 @@ def _stream_certificate_pdf(certificate):
         iter_pdf_content(),
         content_type='application/pdf',
     )
-    response['Content-Disposition'] = 'attachment; filename="certificate.pdf"'
+    response['Content-Disposition'] = f'attachment; filename="{_certificate_pdf_filename(certificate)}"'
     response['Cache-Control'] = 'private, no-store'
     response['X-Content-Type-Options'] = 'nosniff'
     return response
