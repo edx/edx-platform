@@ -332,7 +332,7 @@ class TranscriptUploadTest(CourseTestCase):
             video_id='123',
             language_code='en',
             metadata={
-                'language_code': 'es',
+                'language_code': 'es-419',
                 'file_format': 'sjson',
                 'provider': 'Custom'
             },
@@ -411,7 +411,7 @@ class TranscriptUploadTest(CourseTestCase):
 
     @patch(
         'cms.djangoapps.contentstore.transcript_storage_handlers.get_available_transcript_languages',
-        Mock(return_value=['en', 'es'])
+        Mock(return_value=['en', 'es-419'])
     )
     def test_transcript_upload_handler_existing_transcript(self):
         """
@@ -428,7 +428,7 @@ class TranscriptUploadTest(CourseTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             json.loads(response.content.decode('utf-8'))['error'],
-            'A transcript with the "es" language code already exists.'
+            'A transcript with the "es-419" language code already exists.'
         )
 
     @patch(
@@ -642,7 +642,7 @@ class TranscriptUploadApiTest(CourseTestCase):
             video_id='123',
             language_code='en',
             metadata={
-                'language_code': 'es',
+                'language_code': 'es-419',
                 'file_format': 'sjson',
                 'provider': 'Custom'
             },
@@ -696,7 +696,7 @@ class TranscriptUploadApiTest(CourseTestCase):
 
     @patch(
         'cms.djangoapps.contentstore.transcript_storage_handlers.get_available_transcript_languages',
-        Mock(return_value=['en', 'es'])
+        Mock(return_value=['en', 'es-419'])
     )
     def test_transcript_upload_handler_existing_transcript(self):
         """
@@ -713,7 +713,7 @@ class TranscriptUploadApiTest(CourseTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             json.loads(response.content.decode('utf-8'))['error'],
-            'A transcript with the "es" language code already exists.'
+            'A transcript with the "es-419" language code already exists.'
         )
 
     @patch(
