@@ -854,9 +854,6 @@ def _stream_certificate_pdf(certificate):
     response['Content-Disposition'] = f'attachment; filename="{_certificate_pdf_filename(certificate)}"'
     response['Cache-Control'] = 'private, no-store'
     response['X-Content-Type-Options'] = 'nosniff'
-    content_length = upstream_response.headers.get('Content-Length')
-    if content_length and content_length.isdigit():
-        response['Content-Length'] = content_length
     return response
 
 

@@ -400,7 +400,6 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
 
         assert response.status_code == 200
         assert response['Content-Disposition'] == 'attachment; filename="My Certificate.pdf"'
-        assert response['Content-Length'] == '4'
 
     @patch(
         'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
@@ -427,7 +426,6 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         assert 'Location' not in response
         assert response['Content-Type'] == 'application/pdf'
         assert response['Content-Disposition'] == f'attachment; filename="certificate-{self.cert.verify_uuid}.pdf"'
-        assert response['Content-Length'] == '4'
         assert response['Cache-Control'] == 'private, no-store'
         assert response['X-Content-Type-Options'] == 'nosniff'
         assert b''.join(response.streaming_content) == b'%PDF'
@@ -465,6 +463,15 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
 
         assert response.status_code == 503
         self.assertContains(response, 'temporarily unavailable')
+
+    def test_certificate_pdf_download_requires_login(self):
+        self.client.logout()
+
+        response = self.client.get(
+            reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
+        )
+
+        assert response.status_code == 302
 
     @patch(
         'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
