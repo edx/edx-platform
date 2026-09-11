@@ -4,10 +4,12 @@ Unit tests for the Course Optimizer extended-analysis report views
 from unittest.mock import Mock, patch
 
 import requests
+from django.core.cache import cache
 from django.urls import reverse
 from edx_toggles.toggles.testutils import override_waffle_flag
 from rest_framework import status
 
+from cms.djangoapps.contentstore.tasks import course_analysis_report_cache_key
 from cms.djangoapps.contentstore.tests.utils import CourseTestCase
 from cms.djangoapps.contentstore.toggles import ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS
 
@@ -21,6 +23,7 @@ class CourseAnalysisReportViewTest(CourseTestCase):
 
     def setUp(self):
         super().setUp()
+        cache.clear()
         self.url = reverse(
             'cms.djangoapps.contentstore:v1:course_analysis_report',
             kwargs={'course_id': str(self.course.id)},
@@ -52,6 +55,16 @@ class CourseAnalysisReportViewTest(CourseTestCase):
         self.assertEqual(response.json(), {'status': 'pending'})
         mock_task.delay.assert_called_once_with(str(self.course.id))
 
+    @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
+    def test_marks_run_pending_before_queuing_task(self):
+        with patch(self.task_patch):
+            self.client.post(self.url)
+
+        self.assertEqual(
+            cache.get(course_analysis_report_cache_key(str(self.course.id))),
+            {'status': 'pending'},
+        )
+
 
 class CourseAnalysisReportStatusViewTest(CourseTestCase):
     """
@@ -62,6 +75,7 @@ class CourseAnalysisReportStatusViewTest(CourseTestCase):
 
     def setUp(self):
         super().setUp()
+        cache.clear()
         self.url = reverse(
             'cms.djangoapps.contentstore:v1:course_analysis_report_status',
             kwargs={'course_id': str(self.course.id)},
@@ -129,6 +143,32 @@ class CourseAnalysisReportStatusViewTest(CourseTestCase):
             response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
+    @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
+    def test_pending_task_short_circuits_backend_call(self):
+        cache.set(
+            course_analysis_report_cache_key(str(self.course.id)),
+            {'status': 'pending'},
+        )
+        with patch(self.backend_get_patch) as mock_get:
+            response = self.client.get(self.url)
+
+        mock_get.assert_not_called()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {'status': 'pending'})
+
+    @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
+    def test_failed_task_short_circuits_backend_call(self):
+        cache.set(
+            course_analysis_report_cache_key(str(self.course.id)),
+            {'status': 'failed', 'error': 'boom'},
+        )
+        with patch(self.backend_get_patch) as mock_get:
+            response = self.client.get(self.url)
+
+        mock_get.assert_not_called()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {'status': 'failed', 'error': 'boom'})
 
     @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
     def test_produces_404_when_course_does_not_exist(self):

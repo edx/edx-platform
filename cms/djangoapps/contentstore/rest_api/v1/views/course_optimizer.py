@@ -3,13 +3,14 @@
 import edx_api_doc_tools as apidocs
 import requests
 from django.conf import settings
+from django.core.cache import cache
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from cms.djangoapps.contentstore.tasks import submit_course_analysis_report
+from cms.djangoapps.contentstore.tasks import course_analysis_report_cache_key, submit_course_analysis_report
 from cms.djangoapps.contentstore.toggles import enable_course_optimizer_extended_checks
 from common.djangoapps.student.auth import has_course_author_access
 from common.djangoapps.util.json_request import JsonResponse
@@ -73,6 +74,11 @@ class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        cache.set(
+            course_analysis_report_cache_key(course_id),
+            {'status': 'pending'},
+            settings.COURSE_ANALYSIS_REPORT_CACHE_TIMEOUT_SECONDS,
+        )
         submit_course_analysis_report.delay(course_id)
         return Response({'status': 'pending'}, status=status.HTTP_202_ACCEPTED)
 
@@ -114,6 +120,13 @@ class CourseAnalysisReportStatusView(DeveloperErrorViewMixin, APIView):
             The xpert-ai-workflows run-status response, passed through
             unchanged: `{run_id, status, report, error}`. A 404 means the
             course has no analysis runs yet.
+
+            While a background export/upload triggered by
+            CourseAnalysisReportView is in flight (or just failed), this
+            returns `{status: "pending"}` or `{status: "failed", error}`
+            instead of proxying xpert-ai-workflows -- otherwise, a course
+            with an older completed run would look done again as soon as
+            it's requeued, even though the requested run hasn't landed yet.
         """
         course_key = CourseKey.from_string(course_id)
         if not has_course_author_access(request.user, course_key):
@@ -124,6 +137,10 @@ class CourseAnalysisReportStatusView(DeveloperErrorViewMixin, APIView):
                 {"error": "Course optimizer extended checks are not enabled."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        cached_status = cache.get(course_analysis_report_cache_key(course_id))
+        if cached_status is not None:
+            return Response(cached_status, status=status.HTTP_200_OK)
 
         try:
             response = requests.get(

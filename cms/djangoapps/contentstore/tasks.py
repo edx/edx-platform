@@ -22,6 +22,7 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.exceptions import SuspiciousOperation
 from django.core.files import File
 from django.test import RequestFactory
@@ -1633,7 +1634,19 @@ def _write_broken_links_to_file(broken_or_locked_urls, broken_links_file):
         json.dump(broken_or_locked_urls, file, indent=4)
 
 
-@shared_task
+def course_analysis_report_cache_key(course_key_string: str) -> str:
+    """
+    Cache key tracking the in-flight/failed state of a course's Course
+    Optimizer extended-analysis run, shared between
+    submit_course_analysis_report and CourseAnalysisReportStatusView.
+    """
+    return f'course_analysis_report_status:{course_key_string}'
+
+
+@shared_task(
+    soft_time_limit=settings.COURSE_ANALYSIS_EXPORT_TASK_SOFT_TIME_LIMIT,
+    time_limit=settings.COURSE_ANALYSIS_EXPORT_TASK_TIME_LIMIT,
+)
 @set_code_owner_attribute
 def submit_course_analysis_report(course_key_string: str) -> None:
     """
@@ -1645,22 +1658,44 @@ def submit_course_analysis_report(course_key_string: str) -> None:
     can take a while for large courses -- the API view that queues this
     returns 202 immediately rather than blocking a Studio request thread
     on it. Callers poll xpert-ai-workflows (via CourseAnalysisReportStatusView)
-    for the run's progress; this task doesn't report status of its own.
+    for the run's progress.
+
+    CourseAnalysisReportView marks the run pending (via
+    course_analysis_report_cache_key) before queuing this task. If export
+    or upload fails -- including this task hitting its own time limit --
+    that cache entry is updated to a terminal 'failed' status instead of
+    leaving the status endpoint to poll a stale or nonexistent run
+    forever. On success the entry is cleared so the status endpoint goes
+    back to proxying xpert-ai-workflows directly.
+
+    Note: a hard Celery time limit kills the worker process outright, so
+    the except block below can't run in that case -- the pending cache
+    entry just expires on its own per COURSE_ANALYSIS_REPORT_CACHE_TIMEOUT_SECONDS.
     """
-    course_key = CourseKey.from_string(course_key_string)
-    course_block = modulestore().get_course(course_key)
-    tarball = create_export_tarball(course_block, course_key, {})
+    cache_key = course_analysis_report_cache_key(course_key_string)
     try:
-        tarball.seek(0)
-        response = requests.post(
-            f'{settings.COURSE_ANALYSIS_WORKFLOW_URL}/courses/{course_key_string}/runs',
-            files={'file': (os.path.basename(tarball.name), tarball, 'application/gzip')},
-            headers={'X-Api-Key': settings.COURSE_ANALYSIS_WORKFLOW_API_KEY},
-            timeout=settings.COURSE_ANALYSIS_WORKFLOW_REQUEST_TIMEOUT_SECONDS,
+        course_key = CourseKey.from_string(course_key_string)
+        course_block = modulestore().get_course(course_key)
+        tarball = create_export_tarball(course_block, course_key, {})
+        try:
+            tarball.seek(0)
+            response = requests.post(
+                f'{settings.COURSE_ANALYSIS_WORKFLOW_URL}/courses/{course_key_string}/runs',
+                files={'file': (os.path.basename(tarball.name), tarball, 'application/gzip')},
+                headers={'X-Api-Key': settings.COURSE_ANALYSIS_WORKFLOW_API_KEY},
+                timeout=settings.COURSE_ANALYSIS_WORKFLOW_REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+        finally:
+            tarball.close()
+    except Exception as exc:
+        cache.set(
+            cache_key,
+            {'status': 'failed', 'error': str(exc)},
+            settings.COURSE_ANALYSIS_REPORT_CACHE_TIMEOUT_SECONDS,
         )
-        response.raise_for_status()
-    finally:
-        tarball.close()
+        raise
+    cache.delete(cache_key)
 
 
 @shared_task
