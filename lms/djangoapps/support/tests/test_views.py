@@ -115,6 +115,30 @@ class SupportViewManageUserTests(SupportViewTestCase):
         response = self.client.get(url)
         assert response.status_code == 200
 
+    @override_settings(ZENDESK_URL=ZENDESK_URL)
+    @patch('lms.djangoapps.support.views.contact_us.SupportContactContextRequested.run_filter')
+    def test_get_contact_us_tags_run_through_filter(self, mock_run_filter):
+        """
+        The page context (including tags) is passed through the SupportContactContextRequested
+        filter, and the filter's return value is used as the final context for the rendered page.
+
+        The behavior of the filter's pipeline step (edx-enterprise's SupportContactEnterpriseTagStep)
+        is covered by edx-enterprise's own test suite. This view only needs to verify it wires
+        the filter's return value through correctly.
+        """
+        def fake_run_filter(context):
+            return {**context, 'tags': [*context['tags'], 'enterprise_learner']}
+
+        mock_run_filter.side_effect = fake_run_filter
+
+        response = self.client.get(reverse('support:contact_us'))
+
+        assert response.status_code == 200
+        mock_run_filter.assert_called_once()
+        _, call_kwargs = mock_run_filter.call_args
+        assert call_kwargs['context']['tags'] == ['LMS']
+        assert b'enterprise_learner' in response.content
+
     def test_get_contact_us_redirect_if_undefined_zendesk_url(self):
         """
         Tests the Support contact us Page redirects if ZENDESK_URL setting is not defined
