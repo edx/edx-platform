@@ -430,7 +430,8 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
     @patch('lms.djangoapps.certificates.views.webview.requests.get')
     def test_certificate_pdf_download_returns_503_for_non_pdf_response(self, mock_get, _mock_proctoring_status):
         upstream_response = Mock()
-        upstream_response.headers = {'Content-Type': 'text/html'}
+        upstream_response.headers = {'Content-Type': 'application/pdf'}
+        upstream_response.iter_content.return_value = [b'<html>']
         mock_get.return_value = upstream_response
 
         response = self.client.get(

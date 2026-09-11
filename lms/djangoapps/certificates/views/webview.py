@@ -763,9 +763,36 @@ def _stream_certificate_pdf(certificate):
             status=503,
         )
 
+    content_iter = upstream_response.iter_content(chunk_size=8192)
+    try:
+        first_chunk = next((chunk for chunk in content_iter if chunk), b'')
+    except requests.exceptions.RequestException:
+        upstream_response.close()
+        log.exception(
+            "Unable to read certificate PDF for certificate %s",
+            certificate.verify_uuid,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+    if not first_chunk.startswith(b'%PDF'):
+        upstream_response.close()
+        log.error(
+            "Certificate download URL returned content without a PDF signature for certificate %s",
+            certificate.verify_uuid,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
+        )
+
     def iter_pdf_content():
         try:
-            for chunk in upstream_response.iter_content(chunk_size=8192):
+            yield first_chunk
+            for chunk in content_iter:
                 if chunk:
                     yield chunk
         finally:

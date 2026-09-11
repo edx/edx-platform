@@ -182,7 +182,7 @@ CertData = namedtuple(
         "certificate_block_reason",
         "certificate_blocking_statuses",
     ],
-    defaults=(False, None, ()),
+    defaults=(None, None, None, False, None, ()),
 )
 EARNED_BUT_NOT_AVAILABLE_CERT_STATUS = 'earned_but_not_available'
 
