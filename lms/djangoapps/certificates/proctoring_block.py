@@ -94,7 +94,7 @@ def get_certificate_proctoring_status(user, course_key):
     try:
         from edx_proctoring.api import get_all_exams_for_course, get_attempt_status_summary
         from edx_proctoring.statuses import ProctoredExamStudentAttemptStatus
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         log.exception(
             'Unable to import edx-proctoring while checking certificate access. '
             'user_id=%s course_key=%s', user.id, course_key
@@ -103,7 +103,7 @@ def get_certificate_proctoring_status(user, course_key):
 
     try:
         exams = get_all_exams_for_course(str(course_key), active_only=True) or []
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         log.exception(
             'Unable to retrieve proctored exams while checking certificate access. '
             'user_id=%s course_key=%s', user.id, course_key
@@ -135,7 +135,7 @@ def get_certificate_proctoring_status(user, course_key):
 
         try:
             summary = get_attempt_status_summary(user.id, str(course_key), content_id)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             log.exception(
                 'Unable to retrieve proctoring attempt status summary. '
                 'user_id=%s course_key=%s content_id=%s', user.id, course_key, content_id

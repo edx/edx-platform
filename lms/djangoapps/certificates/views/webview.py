@@ -12,7 +12,7 @@ import pytz
 import requests
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.http import Http404, HttpResponse, HttpResponseRedirect, StreamingHttpResponse
 from django.template import RequestContext
 from django.utils import translation
 from django.utils.encoding import smart_str

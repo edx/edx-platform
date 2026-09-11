@@ -473,7 +473,7 @@ def cert_info(user, enrollment):
     )
 
 
-def _cert_info(user, enrollment, cert_status):
+def _cert_info(user, enrollment, cert_status):  # lint-amnesty, pylint: disable=too-many-statements
     """
     Implements the logic for cert_info -- split out for testing.
 

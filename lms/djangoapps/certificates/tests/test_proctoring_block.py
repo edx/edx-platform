@@ -27,6 +27,7 @@ class CertificateProctoringBlockTests(SimpleTestCase):
         }
 
     def _check(self, status, **exam_overrides):
+        """Return the block decision for a single mocked exam status."""
         exam = {**self.exam, **exam_overrides}
         with mock.patch.object(
             proctoring_block.CERTIFICATE_PROCTORING_REVIEW_BLOCK,
