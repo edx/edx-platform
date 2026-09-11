@@ -356,6 +356,30 @@ class CertificatesViewsTests(CommonCertificatesTestCase, CacheIsolationTestCase)
         'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
         return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
     )
+    @override_settings(AWS_S3_CUSTOM_DOMAIN='www.example.com')
+    @patch('lms.djangoapps.certificates.views.webview.requests.get')
+    def test_certificate_pdf_download_streams_when_host_is_allowed_by_storage_settings(
+        self, mock_get, _mock_proctoring_status
+    ):
+        upstream_response = Mock()
+        upstream_response.status_code = 200
+        upstream_response.headers = {'Content-Type': 'application/octet-stream'}
+        upstream_response.iter_content.return_value = [b'%PDF']
+        mock_get.return_value = upstream_response
+
+        response = self.client.get(
+            reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.cert.verify_uuid})
+        )
+
+        assert response.status_code == 200
+        assert response['Content-Type'] == 'application/pdf'
+        assert b''.join(response.streaming_content) == b'%PDF'
+        mock_get.assert_called_once()
+
+    @patch(
+        'lms.djangoapps.certificates.views.webview.get_certificate_proctoring_status',
+        return_value={'blocked': False, 'reason': None, 'blocking_statuses': []},
+    )
     @override_settings(CERTIFICATE_PDF_DOWNLOAD_HOSTS=('www.example.com',))
     @patch('lms.djangoapps.certificates.views.webview.requests.get')
     def test_certificate_pdf_download_streams_when_allowed(self, mock_get, _mock_proctoring_status):

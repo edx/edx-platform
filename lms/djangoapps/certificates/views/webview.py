@@ -798,11 +798,18 @@ def _stream_certificate_pdf(certificate):
         )
 
     content_type = upstream_response.headers.get('Content-Type', '')
-    if content_type and not content_type.lower().startswith('application/pdf'):
-        log.warning(
-            "Certificate download URL returned an unexpected content type for certificate %s: %s",
+    media_type = content_type.lower().split(';', 1)[0] if content_type else ''
+    if media_type and media_type not in {'application/pdf', 'application/octet-stream'}:
+        upstream_response.close()
+        log.error(
+            "Certificate download URL returned an unsupported content type for certificate %s: %s",
             certificate.verify_uuid,
             content_type,
+        )
+        increment('certificates.proctoring_block.pdf_fetch_error')
+        return HttpResponse(
+            _("The certificate is temporarily unavailable. Please try again later."),
+            status=503,
         )
 
     content_iter = upstream_response.iter_content(chunk_size=8192)

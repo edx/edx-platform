@@ -117,11 +117,18 @@ class CertificateDataSerializer(ReadOnlySerializer):
     cert_web_view_url = serializers.CharField()
     download_url = serializers.CharField()
     certificate_available_date = serializers.DateTimeField()
-    certificate_blocked_due_to_proctoring = serializers.BooleanField(default=False, required=False)
-    certificate_block_reason = serializers.CharField(allow_null=True, required=False, default=None)
-    certificate_blocking_statuses = serializers.ListField(
-        child=serializers.CharField(), required=False, default=list
-    )
+    certificate_blocked_due_to_proctoring = serializers.SerializerMethodField()
+    certificate_block_reason = serializers.SerializerMethodField()
+    certificate_blocking_statuses = serializers.SerializerMethodField()
+
+    def get_certificate_blocked_due_to_proctoring(self, cert_data):
+        return getattr(cert_data, 'certificate_blocked_due_to_proctoring', False)
+
+    def get_certificate_block_reason(self, cert_data):
+        return getattr(cert_data, 'certificate_block_reason', None)
+
+    def get_certificate_blocking_statuses(self, cert_data):
+        return getattr(cert_data, 'certificate_blocking_statuses', [])
 
 
 class VerificationDataSerializer(ReadOnlySerializer):
