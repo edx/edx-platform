@@ -10,6 +10,8 @@ from django.contrib.admin.sites import AdminSite
 from django.core import mail
 from django.http import HttpRequest
 from django.test import TestCase
+from django.test.utils import override_settings
+
 
 from cms.djangoapps.course_creators.admin import CourseCreatorAdmin
 from cms.djangoapps.course_creators.models import CourseCreator
