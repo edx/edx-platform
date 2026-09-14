@@ -9,7 +9,7 @@ from unittest import mock
 from django.contrib.admin.sites import AdminSite
 from django.core import mail
 from django.http import HttpRequest
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from cms.djangoapps.course_creators.admin import CourseCreatorAdmin
 from cms.djangoapps.course_creators.models import CourseCreator
@@ -49,8 +49,8 @@ class CourseCreatorAdminTest(TestCase):
 
         self.studio_request_email = 'mark@marky.mark'
         self.enable_creator_group_patch = {
-            "ENABLE_CREATOR_GROUP": True,
-            "STUDIO_REQUEST_EMAIL": self.studio_request_email
+            'ENABLE_CREATOR_GROUP': True,
+            'STUDIO_REQUEST_EMAIL': self.studio_request_email,
         }
         self.context = {
             'studio_request_email': self.studio_request_email,
@@ -59,7 +59,6 @@ class CourseCreatorAdminTest(TestCase):
             'user_name': 'test_user',
             'user_email': 'test_user+courses@edx.org',
         }
-        self.enable_creator_group_patch = {'ENABLE_CREATOR_GROUP': True}
 
     @mock.patch('django.contrib.auth.models.User.email_user')
     def test_change_status(self, email_user):
