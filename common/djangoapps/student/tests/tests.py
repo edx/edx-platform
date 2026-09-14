@@ -127,6 +127,29 @@ class CourseEndingTest(ModuleStoreTestCase):
                                                              'grade': '0.67', 'mode': 'honor', 'linked_in_url': None,
                                                              'can_unenroll': False}
 
+        blocked_cert_status = {
+            'status': 'downloadable',
+            'mode': 'honor',
+            'uuid': 'fakeuuidbutitsfine',
+            'download_url': 'http://s3.edx/cert',
+            'certificate_blocked_due_to_proctoring': True,
+            'certificate_block_reason': 'proctoring_review_pending',
+            'certificate_blocking_statuses': ['submitted'],
+        }
+        assert _cert_info(user, enrollment, blocked_cert_status) == {
+            'status': 'proctoring_blocked',
+            'mode': 'honor',
+            'linked_in_url': None,
+            'can_unenroll': False,
+            'show_survey_button': False,
+            'certificate_blocked_due_to_proctoring': True,
+            'certificate_block_reason': 'proctoring_review_pending',
+            'certificate_blocking_statuses': ['submitted'],
+            'show_cert_web_view': False,
+            'cert_web_view_url': None,
+            'download_url': None,
+        }
+
         cert_status = {
             'status': 'notpassing', 'grade': '0.67',
             'download_url': cert.download_url,
