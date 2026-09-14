@@ -1,0 +1,24 @@
+<%page expression_filter="h"/>
+<%inherit file="accomplishment-base.html" />
+<%! from django.utils.translation import gettext as _ %>
+
+<div class="wrapper-content status status-invalid">
+    <div class="wrapper-content-grid">
+        <main class="content content-main">
+            <section>
+                <h2 class="title">${_("Certificate temporarily unavailable")}</h2>
+                <div class="copy">
+                    % if certificate_block_reason == 'proctoring_review_pending':
+                        <p>${_("Your certificate is temporarily unavailable while your required proctored exam is being reviewed. Please check back after the review is complete.")}</p>
+                    % elif certificate_block_reason in ('proctored_exam_not_attempted', 'proctored_exam_incomplete'):
+                        <p>${_("Complete your required proctored exam before accessing your certificate.")}</p>
+                    % else:
+                        <p>${_("Your certificate is temporarily unavailable because the proctoring result is still being confirmed. Please check back later.")}</p>
+                    % endif
+                </div>
+            </section>
+        </main>
+        <aside role="complementary" class="content-secondary about" aria-label="${_('About {platform_name} Certificates').format(platform_name=platform_name)}">
+        </aside>
+    </div>
+</div>

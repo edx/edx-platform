@@ -71,6 +71,12 @@ class CertificatesDetailView(APIView):
 
             * download_url: A string representation of the certificate url.
 
+            * certificate_blocked_due_to_proctoring: Whether certificate access is currently blocked by proctoring.
+
+            * certificate_block_reason: Machine-readable reason when access is blocked.
+
+            * certificate_blocking_statuses: Proctoring statuses currently blocking access.
+
             * grade: A string representation of a float for the user's course grade.
 
         **Example GET Response**
@@ -143,7 +149,12 @@ class CertificatesDetailView(APIView):
                 "status": user_cert.get('status'),
                 "is_passing": user_cert.get('is_passing'),
                 "download_url": user_cert.get('download_url'),
-                "grade": user_cert.get('grade')
+                "grade": user_cert.get('grade'),
+                "certificate_blocked_due_to_proctoring": user_cert.get(
+                    'certificate_blocked_due_to_proctoring', False
+                ),
+                "certificate_block_reason": user_cert.get('certificate_block_reason'),
+                "certificate_blocking_statuses": user_cert.get('certificate_blocking_statuses', []),
             }
         )
 
@@ -214,6 +225,12 @@ class CertificatesListView(APIView):
 
             * download_url: A string representation of the certificate url.
 
+            * certificate_blocked_due_to_proctoring: Whether certificate access is currently blocked by proctoring.
+
+            * certificate_block_reason: Machine-readable reason when access is blocked.
+
+            * certificate_blocking_statuses: Proctoring statuses currently blocking access.
+
             * grade: A string representation of a float for the user's course grade.
 
         **Example GET Response**
@@ -245,6 +262,11 @@ class CertificatesListView(APIView):
                     'download_url': user_cert.get('download_url'),
                     'grade': user_cert.get('grade'),
                     'uuid': user_cert.get('uuid'),
+                    'certificate_blocked_due_to_proctoring': user_cert.get(
+                        'certificate_blocked_due_to_proctoring', False
+                    ),
+                    'certificate_block_reason': user_cert.get('certificate_block_reason'),
+                    'certificate_blocking_statuses': user_cert.get('certificate_blocking_statuses', []),
                 })
         return Response(user_certs)
 
