@@ -11,6 +11,7 @@ from opaque_keys.edx.keys import CourseKey
 from pytz import utc
 
 from common.djangoapps.student import models_api as student_api
+from lms.djangoapps.certificates.config import CERTIFICATE_PROCTORING_REVIEW_BLOCK
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.models import GeneratedCertificate
 from openedx.core.djangoapps.content.course_overviews.api import get_course_overview_or_none
@@ -118,10 +119,34 @@ def _certificate_download_url(user_id, course_id, user_certificate=None):
                 'course: %s', str(user_id), str(course_id)
             )
 
-    if user_certificate:
-        return user_certificate.download_url
+    if user_certificate and user_certificate.download_url:
+        return get_certificate_download_url(user_certificate)
 
     return ''
+
+
+def get_certificate_download_url(user_certificate):
+    """Return the appropriate PDF URL for a certificate.
+
+    When the proctoring access policy is enabled, callers must use the
+    owner-authenticated LMS endpoint so the policy is checked again at
+    download time.  Keeping the switch decision here prevents one certificate
+    API from accidentally exposing the backing storage URL while another API
+    uses the controlled endpoint.
+    """
+    if not user_certificate:
+        return ''
+
+    if not CERTIFICATE_PROCTORING_REVIEW_BLOCK.is_enabled():
+        return user_certificate.download_url
+
+    if not user_certificate.verify_uuid:
+        return ''
+
+    return reverse(
+        'certificates:download_cert_by_uuid',
+        kwargs={'certificate_uuid': user_certificate.verify_uuid},
+    )
 
 
 def _safe_course_key(course_key):
@@ -218,7 +243,25 @@ def certificate_status_for_student(student, course_id):
         generated_certificate = GeneratedCertificate.objects.get(user=student, course_id=course_id)
     except GeneratedCertificate.DoesNotExist:
         generated_certificate = None
-    return certificate_status(generated_certificate)
+
+    cert_status = certificate_status(generated_certificate)
+    if generated_certificate and generated_certificate.status == CertificateStatuses.downloadable:
+        from lms.djangoapps.certificates.proctoring_block import get_certificate_proctoring_status
+
+        proctoring_status = get_certificate_proctoring_status(student, _safe_course_key(course_id))
+        if proctoring_status['blocked']:
+            cert_status.pop('download_url', None)
+            cert_status.update({
+                'certificate_blocked_due_to_proctoring': True,
+                'certificate_block_reason': proctoring_status['reason'],
+                'certificate_blocking_statuses': proctoring_status['blocking_statuses'],
+            })
+        elif generated_certificate.download_url:
+            # When enabled, this is the controlled LMS endpoint rather than
+            # the backing storage URL.  The endpoint checks policy again.
+            cert_status['download_url'] = get_certificate_download_url(generated_certificate)
+
+    return cert_status
 
 
 def get_preferred_certificate_name(user):
