@@ -362,7 +362,7 @@ class TestAccountsAPI(FilteredQueryCountMixin, CacheIsolationTestCase, UserAPITe
 
     ENABLED_CACHES = ['default']
     TOTAL_QUERY_COUNT = 25
-    FULL_RESPONSE_FIELD_COUNT = 28
+    FULL_RESPONSE_FIELD_COUNT = 29
 
     def setUp(self):
         super().setUp()
