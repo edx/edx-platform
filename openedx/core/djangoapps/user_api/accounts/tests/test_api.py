@@ -660,6 +660,12 @@ class AccountSettingsOnCreationTest(CreateAccountMixin, TestCase):
             'course_certificates': None,
             'phone_number': None,
             'pending_name_change': None,
+            'progressive_profile_status': {
+                'status': 'not_started',
+                'answered_questions': 0,
+                'total_questions': 4,
+                'remaining_questions': 4,
+            },
         }
 
     def test_normalize_password(self):
