@@ -2946,6 +2946,7 @@ ACCOUNT_VISIBILITY_CONFIGURATION["admin_fields"] = (
         "id",
         "verified_name",
         "extended_profile",
+        "progressive_profile_status",
         "gender",
         "state",
         "goals",
