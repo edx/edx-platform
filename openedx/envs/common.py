@@ -201,6 +201,7 @@ LANGUAGES = [
     ('fi-fi', 'Suomi (Suomi)'),  # Finnish (Finland)
     ('fil', 'Filipino'),  # Filipino
     ('fr', 'Français'),  # French
+    ('fr-ca', 'Français (Canada)'),  # French (Canada)
     ('gl', 'Galego'),  # Galician
     ('gu', 'ગુજરાતી'),  # Gujarati
     ('he', 'עברית'),  # Hebrew
