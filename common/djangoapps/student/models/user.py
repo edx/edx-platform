@@ -887,7 +887,12 @@ class Registration(models.Model):
         self.activation_timestamp = datetime.utcnow()
         self.save()
         USER_ACCOUNT_ACTIVATED.send_robust(self.__class__, user=self.user)
-        log.info('User %s (%s) account is successfully activated.', self.user.username, self.user.email)
+        user_identifier_for_log = (
+            self.user.id
+            if getattr(settings, 'SQUELCH_PII_IN_LOGS', False)
+            else f'{self.user.username}, {self.user.email}'
+        )
+        log.info('User %s account is successfully activated.', user_identifier_for_log)
 
 
 class PendingNameChange(DeletableByUserValue, models.Model):
@@ -1313,7 +1318,7 @@ def log_successful_login(sender, request, user, **kwargs):  # lint-amnesty, pyli
             'event_type': "login",
         }
     )
-    if settings.FEATURES['SQUELCH_PII_IN_LOGS']:
+    if settings.SQUELCH_PII_IN_LOGS:
         AUDIT_LOG.info(f"Login success - user.id: {user.id}")
     else:
         AUDIT_LOG.info(f"Login success - {user.username} ({user.email})")
@@ -1330,7 +1335,7 @@ def log_successful_logout(sender, request, user, **kwargs):  # lint-amnesty, pyl
                 'event_type': "logout",
             }
         )
-        if settings.FEATURES['SQUELCH_PII_IN_LOGS']:
+        if settings.SQUELCH_PII_IN_LOGS:
             AUDIT_LOG.info(f'Logout - user.id: {request.user.id}')  # pylint: disable=logging-format-interpolation
         else:
             AUDIT_LOG.info(f'Logout - {request.user}')  # pylint: disable=logging-format-interpolation
