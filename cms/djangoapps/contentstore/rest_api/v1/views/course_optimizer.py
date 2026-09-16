@@ -4,6 +4,7 @@ import edx_api_doc_tools as apidocs
 import requests
 from django.conf import settings
 from django.core.cache import cache
+from kombu.exceptions import OperationalError
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import status
 from rest_framework.request import Request
@@ -74,12 +75,17 @@ class CourseAnalysisReportView(DeveloperErrorViewMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        cache_key = course_analysis_report_cache_key(course_id)
         cache.set(
-            course_analysis_report_cache_key(course_id),
+            cache_key,
             {'status': 'PENDING'},
             settings.COURSE_ANALYSIS_REPORT_CACHE_TIMEOUT_SECONDS,
         )
-        submit_course_analysis_report.delay(course_id)
+        try:
+            submit_course_analysis_report.delay(course_id)
+        except OperationalError:
+            cache.delete(cache_key)
+            raise
         return Response({'status': 'PENDING'}, status=status.HTTP_202_ACCEPTED)
 
 

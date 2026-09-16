@@ -7,6 +7,7 @@ import requests
 from django.core.cache import cache
 from django.urls import reverse
 from edx_toggles.toggles.testutils import override_waffle_flag
+from kombu.exceptions import OperationalError
 from rest_framework import status
 
 from cms.djangoapps.contentstore.tasks import course_analysis_report_cache_key
@@ -63,6 +64,17 @@ class CourseAnalysisReportViewTest(CourseTestCase):
         self.assertEqual(
             cache.get(course_analysis_report_cache_key(str(self.course.id))),
             {'status': 'PENDING'},
+        )
+
+    @override_waffle_flag(ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS, True)
+    def test_clears_pending_marker_when_enqueue_fails(self):
+        with patch(self.task_patch) as mock_task:
+            mock_task.delay.side_effect = OperationalError('broker unavailable')
+            with self.assertRaises(OperationalError):
+                self.client.post(self.url)
+
+        self.assertIsNone(
+            cache.get(course_analysis_report_cache_key(str(self.course.id))),
         )
 
 
