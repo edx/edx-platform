@@ -1,0 +1,889 @@
+openapi: 3.0.3
+info:
+  title: edX Platform - Core Authentication API
+  version: '1.0'
+  description: >-
+    Core account registration, login, logout, password-reset, and account
+    activation endpoints owned by
+    `openedx/core/djangoapps/user_authn/`. These are the primary endpoints
+    used by the logistration MFE and other first-party clients to
+    authenticate learners on an Open edX instance.
+
+
+    Companion specs:
+      * `third-party-auth-openapi.yaml` - SAML/OAuth2/LTI federated login pipeline.
+      * `oauth2-openapi.yaml` - edX OAuth2 (django-oauth-toolkit) bridge used to mint API access tokens.
+  contact:
+    name: edX Authentication Team
+  license:
+    name: AGPL-3.0
+servers:
+  - url: /
+security:
+  - {}
+tags:
+  - name: registration
+    description: Account creation and registration form/field validation.
+  - name: login
+    description: Session-based login.
+  - name: logout
+    description: Session termination.
+  - name: password-reset
+    description: Forgot-password / reset-password flows.
+  - name: account-activation
+    description: Email verification / account activation.
+  - name: mfe-context
+    description: Context and configuration used by the logistration micro-frontend.
+  - name: jwks
+    description: Public signing keys for verifying edX-issued JWTs.
+paths:
+  /api/user/v1/account/registration/:
+    get:
+      operationId: registration_v1_get_form
+      summary: Get the registration form description (v1).
+      description: Same as the `v2` form description, except `confirm_email` is included as a required field.
+      tags: [registration]
+      responses:
+        '200':
+          description: Form description.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/FormDescription'
+    post:
+      operationId: registration_v1_create_account
+      summary: Create a new user account (v1, deprecated in favor of v2).
+      deprecated: true
+      description: >-
+        Identical to `POST /api/user/v2/account/registration/`, except the
+        client must resubmit the email address a second time via a
+        `confirm_email` field, and some duplicate-account error codes use
+        the legacy `duplicate` value instead of the more specific
+        `duplicate-email`/`duplicate-username` codes.
+      tags: [registration]
+      security:
+        - CsrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/RegistrationRequest'
+                - type: object
+                  properties:
+                    confirm_email:
+                      type: string
+                      format: email
+                  required: [confirm_email]
+      responses:
+        '200':
+          description: Account created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated_user:
+                    $ref: 'components.yaml#/components/schemas/AuthenticatedUser'
+                  redirect_url:
+                    type: string
+                    nullable: true
+        '400':
+          description: One or more fields failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/RegistrationErrorResponse'
+        '403':
+          description: Forbidden - rate limited or third-party-auth-only mode is enabled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/RegistrationErrorResponse'
+        '409':
+          description: A user with this email and/or username already exists.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/RegistrationErrorResponse'
+  /api/user/v2/account/registration/:
+    get:
+      operationId: registration_v2_get_form
+      summary: Get the registration form description.
+      description: >-
+        Returns a `FormDescription` describing the fields the client must
+        submit to `POST` this same URL, including any instance-specific
+        `REGISTRATION_EXTRA_FIELDS` (e.g. `country`, `gender`,
+        `level_of_education`) and `REGISTRATION_FIELD_ORDER` configuration.
+      tags: [registration]
+      responses:
+        '200':
+          description: Form description.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/FormDescription'
+    post:
+      operationId: registration_v2_create_account
+      summary: Create a new user account.
+      description: >-
+        Creates the user's account. All fields required by the form
+        description (see the `GET` on this same path) must be submitted.
+        On success the user is logged in (session + JWT cookies are set)
+        and, if third-party auth was in progress, the pending social auth
+        association is completed.
+
+
+        The `v2` variant differs from `v1` in that it does not require the
+        `confirm_email` field to be resubmitted and aligns duplicate-account
+        error codes with the logistration MFE's expectations.
+      tags: [registration]
+      security:
+        - CsrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+            examples:
+              minimal:
+                value:
+                  username: janedoe
+                  email: jane@example.com
+                  password: correct-horse-battery-staple
+                  name: Jane Doe
+                  honor_code: true
+                  terms_of_service: true
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+      responses:
+        '200':
+          description: Account created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated_user:
+                    $ref: 'components.yaml#/components/schemas/AuthenticatedUser'
+                  redirect_url:
+                    type: string
+                    nullable: true
+        '400':
+          description: One or more fields failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/RegistrationErrorResponse'
+        '403':
+          description: >-
+            Forbidden - rate limited, third-party-auth-only mode is enabled
+            and no TPA session is present, or the honor code/terms of
+            service were not accepted.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/RegistrationErrorResponse'
+        '409':
+          description: A user with this email and/or username already exists.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/RegistrationErrorResponse'
+    parameters: []
+  /api/user/v1/validation/registration:
+    post:
+      operationId: registration_validate_fields
+      summary: Validate individual registration form field(s) without creating an account.
+      description: >-
+        Validates one or more registration fields (as if they had been
+        submitted to the registration endpoint) and returns a per-field
+        validation decision. Used by the logistration MFE for inline,
+        as-you-type field validation.
+      tags: [registration]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                username:
+                  type: string
+                email:
+                  type: string
+                confirm_email:
+                  type: string
+                password:
+                  type: string
+                country:
+                  type: string
+                honor_code:
+                  type: boolean
+                form_field_key:
+                  type: string
+                  description: >-
+                    If provided, restricts validation to a single named
+                    field; otherwise every provided field is validated.
+                reset_password_page:
+                  type: boolean
+                  description: Whether this validation is occurring on the reset-password page.
+      responses:
+        '200':
+          description: Field-by-field validation decisions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  validation_decisions:
+                    type: object
+                    additionalProperties:
+                      $ref: 'components.yaml#/components/schemas/ValidationErrorDecision'
+                  username_suggestions:
+                    type: array
+                    items:
+                      type: string
+        '403':
+          description: Rate limited.
+  /api/user/v1/account/login_session/:
+    get:
+      operationId: login_session_v1_get_form
+      summary: Get the login form description (v1).
+      tags: [login]
+      responses:
+        '200':
+          description: Form description for the login form.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/FormDescription'
+    post:
+      operationId: login_session_v1_create
+      summary: Log in and establish a session (v1, deprecated in favor of v2).
+      deprecated: true
+      description: >-
+        Identical to `POST /api/user/v2/account/login_session/`, except the
+        client must submit an `email` field instead of `email_or_username`.
+      tags: [login]
+      security:
+        - CsrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+                analytics:
+                  type: object
+              required: [email, password]
+      responses:
+        '200':
+          description: Login succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginSuccessResponse'
+        '400':
+          description: Missing/invalid credentials or account requires attention.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
+        '403':
+          description: Forbidden - account locked out, rate limited, or TPA-only account.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
+  /api/user/v2/account/login_session/:
+    get:
+      operationId: login_session_get_form
+      summary: Get the login form description.
+      tags: [login]
+      responses:
+        '200':
+          description: Form description for the login form.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/FormDescription'
+    post:
+      operationId: login_session_create
+      summary: Log in and establish a session.
+      description: >-
+        Authenticates the user with an email/username + password pair and,
+        on success, establishes a Django session (session cookie) as well as
+        `edx-jwt-cookie-header-payload` / `edx-jwt-cookie-signature` JWT
+        cookies used by other IDAs. `v1` requires an `email` field; `v2`
+        accepts `email_or_username` so that learners can log in with either
+        identifier.
+      tags: [login]
+      security:
+        - CsrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginSuccessResponse'
+        '400':
+          description: Missing/invalid credentials or account requires attention.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
+        '403':
+          description: >-
+            Forbidden - account locked out after repeated failures, rate
+            limited, or the account is linked to a third-party-auth provider
+            and no password is usable.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
+    parameters: []
+  /login_ajax:
+    post:
+      operationId: login_ajax
+      summary: Legacy AJAX login endpoint.
+      description: >-
+        Legacy counterpart to `/api/user/v1/account/login_session/`,
+        retained for backwards compatibility with older clients. Behaves
+        identically; new integrations should prefer the versioned
+        `login_session` endpoint.
+      tags: [login]
+      security:
+        - CsrfToken: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginSuccessResponse'
+        '400':
+          description: Invalid credentials.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
+        '403':
+          description: Forbidden - locked out, rate limited, or TPA-only account.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
+  /login_refresh:
+    post:
+      operationId: login_refresh
+      summary: Refresh the caller's JWT cookies.
+      description: >-
+        Re-issues the `edx-jwt-cookie-*` cookie pair for the currently
+        authenticated session, without requiring the user to re-enter
+        credentials. Used by clients shortly before JWT expiry.
+      tags: [login]
+      security:
+        - SessionAuth: []
+      responses:
+        '200':
+          description: JWT cookies refreshed (set via `Set-Cookie` response headers).
+        '401':
+          description: No authenticated session present.
+  /account/finish_auth:
+    get:
+      operationId: finish_auth
+      summary: Post-login landing page that completes deferred actions (e.g. auto-enroll).
+      description: >-
+        Reached after logistration completes. Renders an HTML page that
+        performs client-side follow-up actions such as enrolling the user
+        in `course_id` when `enrollment_action=enroll` is present.
+      tags: [login]
+      security:
+        - SessionAuth: []
+      parameters:
+        - name: course_id
+          in: query
+          schema:
+            type: string
+        - name: enrollment_action
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: HTML page.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Redirect to login if the session is not authenticated.
+  /logout:
+    get:
+      operationId: logout_get
+      summary: Log the user out.
+      tags: [logout]
+      security:
+        - SessionAuth: []
+      parameters:
+        - name: redirect_url
+          in: query
+          schema:
+            type: string
+          description: Safe URL to redirect to after logout (validated against an allow-list).
+        - name: client_id
+          in: query
+          schema:
+            type: string
+          description: OAuth client id, used to validate `redirect_url` against that client's allowed redirect URIs.
+      responses:
+        '200':
+          description: >-
+            HTML logout page containing hidden iframes that call the
+            logout endpoints of other Independently Deployable
+            Applications (IDAs), followed by a client-side redirect.
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      operationId: logout_post
+      summary: Log the user out (same behavior as `GET`).
+      tags: [logout]
+      security:
+        - SessionAuth: []
+        - CsrfToken: []
+      responses:
+        '200':
+          description: HTML logout page.
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/user/v1/account/password_reset/:
+    get:
+      operationId: password_reset_get_form
+      summary: Get the "forgot password" form description.
+      tags: [password-reset]
+      responses:
+        '200':
+          description: Form description.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/FormDescription'
+  /account/password:
+    post:
+      operationId: password_reset_request
+      summary: Request a password-reset email.
+      description: >-
+        Sends a password-reset email to the given address if a matching,
+        non-retired account exists. Always returns `200` regardless of
+        whether the address is registered, to avoid leaking account
+        existence; the caller-visible signal is only the rate-limit error.
+      tags: [password-reset]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+              required: [email]
+      responses:
+        '200':
+          description: Reset email sent (or silently skipped for unknown addresses).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  value:
+                    type: string
+                    description: Rendered confirmation HTML fragment.
+        '403':
+          description: Rate limited - a previous request is still in progress.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  value:
+                    type: string
+  /password_reset_confirm/{uidb36}-{token}/:
+    get:
+      operationId: password_reset_confirm_get
+      summary: Render the "choose a new password" form.
+      tags: [password-reset]
+      parameters:
+        - $ref: '#/components/parameters/Uidb36'
+        - $ref: '#/components/parameters/ResetToken'
+      responses:
+        '200':
+          description: HTML form.
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      operationId: password_reset_confirm_post
+      summary: Submit a new password using a base36 uid + token pair (Django-style).
+      tags: [password-reset]
+      parameters:
+        - $ref: '#/components/parameters/Uidb36'
+        - $ref: '#/components/parameters/ResetToken'
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                new_password1:
+                  type: string
+                new_password2:
+                  type: string
+              required: [new_password1, new_password2]
+      responses:
+        '302':
+          description: Redirect to `/password_reset_complete/` on success.
+        '200':
+          description: Re-rendered form with validation errors.
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/user/v1/account/password_reset/token/validate/:
+    post:
+      operationId: password_reset_token_validate
+      summary: Validate a password-reset token.
+      description: >-
+        Checks whether a `uidb36-token` value is a valid, unexpired
+        password-reset token. As a side effect, activates the associated
+        user account if it was still inactive (this endpoint doubles as an
+        account-activation confirmation step in some flows).
+      tags: [password-reset]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Value in the form `<uidb36>-<token>`.
+              required: [token]
+      responses:
+        '200':
+          description: Validation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_valid:
+                    type: boolean
+  /password/reset/{uidb36}-{token}/:
+    post:
+      operationId: logistration_password_reset_confirm
+      summary: Submit a new password (JSON API used by the logistration MFE).
+      description: >-
+        JSON counterpart to `/password_reset_confirm/{uidb36}-{token}/`,
+        used by single-page-app clients. Also supports the account-recovery
+        flow via `?is_account_recovery=true`, in which case the user's
+        primary email is updated to the recovery email on success.
+      tags: [password-reset]
+      parameters:
+        - $ref: '#/components/parameters/Uidb36'
+        - $ref: '#/components/parameters/ResetToken'
+        - name: is_account_recovery
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                new_password1:
+                  type: string
+                new_password2:
+                  type: string
+              required: [new_password1, new_password2]
+      responses:
+        '200':
+          description: Result of the reset attempt.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reset_status:
+                    type: boolean
+                  err_msg:
+                    type: string
+                  token_invalid:
+                    type: boolean
+  /api/send_account_activation_email:
+    post:
+      operationId: send_account_activation_email
+      summary: Resend the account-activation email.
+      tags: [account-activation]
+      security:
+        - SessionAuth: []
+      responses:
+        '200':
+          description: Activation email sent (empty JSON body).
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Failed to send the activation email.
+  /api/mfe_context:
+    get:
+      operationId: mfe_context
+      summary: Get logistration MFE context (available TPA providers, registration fields, pipeline state).
+      description: >-
+        Aggregates everything the logistration micro-frontend needs to
+        render the combined login/registration/TPA experience: configured
+        third-party-auth providers, dynamic registration field definitions,
+        optional profile fields, and any in-progress third-party-auth
+        pipeline user details. Identical to `GET /api/third_party_auth_context`
+        (kept for backwards compatibility with older client code).
+      tags: [mfe-context]
+      parameters:
+        - $ref: '#/components/parameters/TpaHint'
+        - $ref: '#/components/parameters/IsRegisterPage'
+        - $ref: '#/components/parameters/IsWelcomePage'
+        - $ref: '#/components/parameters/Next'
+      responses:
+        '200':
+          description: MFE context payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFEContextResponse'
+  /api/third_party_auth_context:
+    get:
+      operationId: third_party_auth_context
+      summary: Get logistration MFE context (available TPA providers, registration fields, pipeline state).
+      description: Legacy name for `GET /api/mfe_context`; same behavior and response shape.
+      tags: [mfe-context]
+      parameters:
+        - $ref: '#/components/parameters/TpaHint'
+        - $ref: '#/components/parameters/IsRegisterPage'
+        - $ref: '#/components/parameters/IsWelcomePage'
+        - $ref: '#/components/parameters/Next'
+      responses:
+        '200':
+          description: MFE context payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFEContextResponse'
+  /auth/jwks.json:
+    get:
+      operationId: jwks
+      summary: Get the platform's public JSON Web Key Set.
+      description: >-
+        Returns the public keys used to verify asymmetrically-signed JWTs
+        issued by this Open edX instance (see `oauth2-openapi.yaml`).
+        Intended to be consumed as a standard JWKS endpoint by relying
+        parties.
+      tags: [jwks]
+      security: []
+      responses:
+        '200':
+          description: JSON Web Key Set.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/JsonWebKeySet'
+        '400':
+          description: No JWK set is configured for this deployment.
+components:
+  securitySchemes:
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    CsrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRFToken
+  parameters:
+    Uidb36:
+      name: uidb36
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Base36-encoded user id.
+    ResetToken:
+      name: token
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Password-reset token generated for the user.
+    TpaHint:
+      name: tpa_hint
+      in: query
+      schema:
+        type: string
+      description: Provider id to pre-select/skip the provider picker.
+    IsRegisterPage:
+      name: is_register_page
+      in: query
+      schema:
+        type: boolean
+    IsWelcomePage:
+      name: is_welcome_page
+      in: query
+      schema:
+        type: boolean
+    Next:
+      name: next
+      in: query
+      schema:
+        type: string
+  schemas:
+    MFEContextResponse:
+      type: object
+      properties:
+        contextData:
+          type: object
+          properties:
+            currentProvider:
+              type: string
+              nullable: true
+            platformName:
+              type: string
+            providers:
+              type: array
+              items:
+                $ref: 'components.yaml#/components/schemas/ThirdPartyAuthProvider'
+            secondaryProviders:
+              type: array
+              items:
+                $ref: 'components.yaml#/components/schemas/ThirdPartyAuthProvider'
+            finishAuthUrl:
+              type: string
+              nullable: true
+            errorMessage:
+              type: string
+              nullable: true
+            autoSubmitRegForm:
+              type: boolean
+            syncLearnerProfileData:
+              type: boolean
+            countryCode:
+              type: string
+              nullable: true
+            pipelineUserDetails:
+              type: object
+              nullable: true
+              properties:
+                username:
+                  type: string
+                  nullable: true
+                email:
+                  type: string
+                  nullable: true
+                name:
+                  type: string
+                  nullable: true
+        registrationFields:
+          type: object
+        optionalFields:
+          type: object
+    RegistrationRequest:
+      type: object
+      description: >-
+        Core fields are always required; additional fields may be required
+        depending on the `REGISTRATION_EXTRA_FIELDS` Django setting for this
+        deployment (e.g. `country`, `gender`, `year_of_birth`,
+        `level_of_education`, `mailing_address`, `goals`, `city`).
+      properties:
+        username:
+          type: string
+          minLength: 2
+          maxLength: 30
+          pattern: '^[\w.@+-]+$'
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+        name:
+          type: string
+          maxLength: 255
+          description: Full name; must not contain HTML.
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code.
+        honor_code:
+          type: boolean
+        terms_of_service:
+          type: boolean
+        marketing_emails_opt_in:
+          type: boolean
+        course_id:
+          type: string
+          description: Course to enroll in immediately after registration, if provided.
+        analytics:
+          type: object
+          description: 'Free-form analytics context, e.g. `{"enroll_course_id": "..."}`.'
+      required: [username, email, password, name]
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          description: Required for `v1`. Ignored if `email_or_username` is present.
+        email_or_username:
+          type: string
+          description: Required for `v2`. Either the account's email address or username.
+        password:
+          type: string
+        analytics:
+          type: object
+      required: [password]
