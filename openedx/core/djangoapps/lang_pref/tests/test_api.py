@@ -116,3 +116,61 @@ class LanguageApiTest(CacheIsolationTestCase):
             released_languages = language_api.released_languages()
             expected_languages = [EN, ES_419, LT_LT]
             assert released_languages == expected_languages
+
+    def test_site_languages_flag_beta_languages(self):
+        """
+        Tests that site languages record whether each language is fully released.
+        """
+        with override_settings(LANGUAGES=[EN, ES_419, LT_LT], LANGUAGE_CODE='en'):
+            user = User()
+            user.save()
+            DarkLangConfig(
+                released_languages='es-419',
+                changed_by=user,
+                enabled=True,
+                beta_languages='lt-lt',
+                enable_beta_languages=True
+            ).save()
+
+            assert language_api.site_languages() == [
+                language_api.SiteLanguage('en', 'English', True),
+                language_api.SiteLanguage('es-419', 'Español (Latinoamérica)', True),
+                language_api.SiteLanguage('lt-lt', 'Lietuvių (Lietuva)', False),
+            ]
+
+    def test_site_languages_treat_released_as_winning_over_beta(self):
+        """
+        Tests that a language configured as both released and beta is fully released.
+        """
+        with override_settings(LANGUAGES=[EN, LT_LT], LANGUAGE_CODE='en'):
+            user = User()
+            user.save()
+            DarkLangConfig(
+                released_languages='lt-lt',
+                changed_by=user,
+                enabled=True,
+                beta_languages='lt-lt',
+                enable_beta_languages=True
+            ).save()
+
+            assert language_api.site_languages() == [
+                language_api.SiteLanguage('en', 'English', True),
+                language_api.SiteLanguage('lt-lt', 'Lietuvių (Lietuva)', True),
+            ]
+
+    def test_site_languages_cache_version_tracks_the_configuration(self):
+        """
+        Tests that the cache version is derived from the current dark lang configuration.
+        """
+        user = User()
+        user.save()
+        DarkLangConfig(released_languages='es-419', changed_by=user, enabled=True).save()
+
+        config = DarkLangConfig.current()
+        assert language_api.site_languages_cache_version() == config.change_date.isoformat()
+
+    def test_site_languages_cache_version_without_a_configuration(self):
+        """
+        Tests that the cache version has a sentinel value before any config is saved.
+        """
+        assert language_api.site_languages_cache_version() == 'default'
