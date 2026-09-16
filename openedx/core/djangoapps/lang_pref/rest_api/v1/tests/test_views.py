@@ -11,16 +11,22 @@ from edx_django_utils.cache import RequestCache
 
 from openedx.core.djangoapps.dark_lang.models import DarkLangConfig
 from openedx.core.djangoapps.lang_pref import api as language_api
-from openedx.core.djangolib.testing.utils import CacheIsolationTestCase
+from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
 
 EN = ('en', 'English')
 ES_419 = ('es-419', 'Español (Latinoamérica)')
 LT_LT = ('lt-lt', 'Lietuvių (Lietuva)')
 
 
+@skip_unless_lms
 class ReleasedLanguagesViewTest(CacheIsolationTestCase):
     """
     Tests for the released site languages endpoint.
+
+    The endpoint itself is only wired up in ``lms/urls.py``, not ``cms/urls.py``, so these
+    tests are skipped when this app's test suite runs under CMS settings (as CI does, since
+    ``lang_pref`` is installed in both LMS and CMS) to avoid a ``NoReverseMatch`` on the
+    ``lang_pref_api`` namespace, which only exists in the LMS URLconf.
     """
     ENABLED_CACHES = ['default']
 
