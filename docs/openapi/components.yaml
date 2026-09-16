@@ -1,0 +1,384 @@
+openapi: 3.0.3
+info:
+  title: edX Platform Authentication - Shared Components
+  version: '1.0'
+  description: >-
+    Shared schemas and security scheme definitions reused across the
+    edX Platform authentication OpenAPI specs (authn-openapi.yaml,
+    third-party-auth-openapi.yaml, oauth2-openapi.yaml). This file is not
+    meant to be served on its own; it is referenced via local `$ref`s.
+paths: {}
+components:
+  securitySchemes:
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+      description: >-
+        Django session cookie, established after a successful call to
+        `/api/user/v1/account/login_session/`. Required for endpoints that act
+        on behalf of a logged-in browser session.
+    CsrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRFToken
+      description: >-
+        CSRF token required on unsafe (POST/PUT/PATCH/DELETE) requests made
+        with session authentication. Obtain via `GET /csrf/api/v1/token`; the
+        token is also available in the `csrftoken` cookie.
+    JwtAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: >-
+        JWT bearer token issued by the edX OAuth2 bridge
+        (`POST /oauth2/access_token/` with `token_type=jwt`). Send as
+        `Authorization: JWT <token>`.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Opaque OAuth2 access token issued by the edX OAuth2 bridge. Send as
+        `Authorization: Bearer <token>`.
+    OAuth2:
+      type: oauth2
+      description: edX OAuth2 bridge (django-oauth-toolkit), see oauth2-openapi.yaml.
+      flows:
+        authorizationCode:
+          authorizationUrl: /oauth2/authorize/
+          tokenUrl: /oauth2/access_token/
+          refreshUrl: /oauth2/access_token/
+          scopes:
+            read: Read access to user resources.
+            write: Write access to user resources.
+            email: Include the user's email address in issued JWTs.
+            profile: Include profile claims (name, given_name, family_name) in issued JWTs.
+            user_id: Include the numeric edX user id in issued JWTs (password grant only).
+            tpa:read: Read access to third-party-auth user mapping data (server-to-server).
+        password:
+          tokenUrl: /oauth2/access_token/
+          refreshUrl: /oauth2/access_token/
+          scopes:
+            read: Read access to user resources.
+            write: Write access to user resources.
+            email: Include the user's email address in issued JWTs.
+            profile: Include profile claims in issued JWTs.
+            user_id: Include the numeric edX user id in issued JWTs.
+        clientCredentials:
+          tokenUrl: /oauth2/access_token/
+          scopes:
+            read: Read access to user resources.
+            write: Write access to user resources.
+            tpa:read: Read access to third-party-auth user mapping data.
+  schemas:
+    FieldErrorDetail:
+      type: object
+      properties:
+        user_message:
+          type: string
+          description: Human-readable, user-facing error message for this field.
+      required: [user_message]
+    FieldErrors:
+      type: object
+      description: >-
+        Map of form field name to a list of error detail objects for that
+        field. Present on 400/409 responses from form-processing endpoints.
+      additionalProperties:
+        type: array
+        items:
+          $ref: '#/components/schemas/FieldErrorDetail'
+    RegistrationErrorResponse:
+      type: object
+      description: Validation or conflict error response from the registration endpoint.
+      properties:
+        error_code:
+          type: string
+          description: Machine-readable error code.
+          enum:
+            - validation
+            - duplicate-email
+            - duplicate-username
+            - duplicate-email-username
+            - user-not-authorized
+            - forbidden-request
+            - outdated-terms-of-service
+            - rate-limit-exceeded
+        username_suggestions:
+          type: array
+          items:
+            type: string
+          description: Suggested alternative usernames, present on duplicate-username conflicts.
+      allOf:
+        - $ref: '#/components/schemas/FieldErrors'
+    ValidationErrorDecision:
+      type: object
+      nullable: true
+      description: 'Null if the field is valid, otherwise an error detail.'
+      properties:
+        user_message:
+          type: string
+    FormFieldRestriction:
+      type: object
+      properties:
+        min_length:
+          type: integer
+        max_length:
+          type: integer
+    FormField:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          description: HTML input type, e.g. text, email, password, checkbox, select.
+        label:
+          type: string
+        instructions:
+          type: string
+        placeholder:
+          type: string
+        required:
+          type: boolean
+        default:
+          nullable: true
+        restrictions:
+          $ref: '#/components/schemas/FormFieldRestriction'
+        errorMessages:
+          type: object
+          additionalProperties:
+            type: string
+        options:
+          type: array
+          items:
+            type: object
+    FormDescription:
+      type: object
+      description: >-
+        Machine-readable description of an HTML form, used by client
+        applications (e.g. the logistration MFE) to render login/registration
+        forms dynamically.
+      properties:
+        method:
+          type: string
+          example: post
+        submit_url:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormField'
+    AuthenticatedUser:
+      type: object
+      properties:
+        username:
+          type: string
+        full_name:
+          type: string
+        user_id:
+          type: integer
+    LoginSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        redirect_url:
+          type: string
+          nullable: true
+    LoginErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        value:
+          type: string
+          description: Human-readable error message.
+        error_code:
+          type: string
+          enum:
+            - account-locked-out
+            - failed-login-attempt
+            - incorrect-email-or-password
+            - inactive-user
+            - require-password-change
+            - nudge-password-change
+            - third-party-auth-with-no-linked-account
+            - forbidden-request
+        email:
+          type: string
+          description: Echoes the email that was submitted, when applicable.
+    JsonWebKey:
+      type: object
+      description: RFC 7517 JSON Web Key.
+      properties:
+        kid:
+          type: string
+        kty:
+          type: string
+          example: RSA
+        use:
+          type: string
+          example: sig
+        alg:
+          type: string
+          example: RS512
+        'n':
+          type: string
+        e:
+          type: string
+    JsonWebKeySet:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonWebKey'
+    JwtAccessTokenClaims:
+      type: object
+      description: >-
+        Decoded payload of a JWT access token issued by the edX OAuth2
+        bridge. See oauth2-openapi.yaml for issuance details.
+      properties:
+        aud:
+          type: string
+          description: JWT audience (configured client audience).
+        iss:
+          type: string
+          description: JWT issuer.
+        exp:
+          type: integer
+          description: Expiration, Unix timestamp.
+        iat:
+          type: integer
+          description: Issued-at, Unix timestamp.
+        sub:
+          type: string
+          description: Anonymized/hashed subject identifier for the user.
+        preferred_username:
+          type: string
+        grant_type:
+          type: string
+          enum: [authorization_code, password, client_credentials, refresh_token]
+        scopes:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+        is_restricted:
+          type: boolean
+        email_verified:
+          type: boolean
+        filters:
+          type: array
+          items:
+            type: string
+          description: Content-organization filters, e.g. `content_org:OrgX`.
+        email:
+          type: string
+          description: Present when the `email` scope was granted.
+        name:
+          type: string
+          description: Present when the `profile` scope was granted.
+        given_name:
+          type: string
+        family_name:
+          type: string
+        administrator:
+          type: boolean
+        superuser:
+          type: boolean
+        user_id:
+          type: integer
+          description: Present when the `user_id` scope was granted (password grant only).
+        roles:
+          type: array
+          items:
+            type: string
+          description: edx-rbac role assignments, if any.
+    OAuthTokenResponse:
+      type: object
+      description: RFC 6749 Section 5.1 access token response.
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum: [Bearer, JWT]
+        expires_in:
+          type: integer
+          description: Lifetime of the access token in seconds.
+        refresh_token:
+          type: string
+        scope:
+          type: string
+          description: Space-separated list of granted scopes.
+      required: [access_token, token_type, expires_in]
+    OAuthErrorResponse:
+      type: object
+      description: RFC 6749 Section 5.2 error response.
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_client
+            - invalid_grant
+            - invalid_scope
+            - unauthorized_client
+            - unsupported_grant_type
+            - unsupported_token_type
+            - access_denied
+            - server_error
+        error_description:
+          type: string
+      required: [error]
+    ThirdPartyAuthProvider:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Provider backend identifier, e.g. `oa2-google-oauth2`, `saml-default`.
+        name:
+          type: string
+        iconClass:
+          type: string
+          nullable: true
+        iconImage:
+          type: string
+          nullable: true
+        skipHintedLogin:
+          type: boolean
+        skipRegistrationForm:
+          type: boolean
+        loginUrl:
+          type: string
+        registerUrl:
+          type: string
+    ThirdPartyAuthProviderStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        connected:
+          type: boolean
+        accepts_logins:
+          type: boolean
+        connect_url:
+          type: string
+        disconnect_url:
+          type: string
+    UserSocialAuthAssociation:
+      type: object
+      properties:
+        provider_id:
+          type: string
+        name:
+          type: string
+        remote_id:
+          type: string
+          description: Omitted from the response when the requester is unprivileged.
