@@ -165,6 +165,15 @@ urlpatterns = [
     # Update session view
     path('lang_pref/update_language', lang_pref_views.update_language, name='update_language'),
 
+    # Site language list, used by the language pickers in the frontends
+    path(
+        'api/lang_pref/',
+        include(
+            ('openedx.core.djangoapps.lang_pref.rest_api.urls', 'openedx.core.djangoapps.lang_pref'),
+            namespace='lang_pref_api',
+        )
+    ),
+
     # Multiple course modes and identity verification
     path(
         'course_modes/',
