@@ -215,7 +215,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
         self._assert_response(response, success=True)
         self._assert_redirect_url(response, expected_redirect)
 
-    @patch.dict("django.conf.settings.FEATURES", {'SQUELCH_PII_IN_LOGS': True})
+    @override_settings(SQUELCH_PII_IN_LOGS=True)
     def test_login_success_no_pii(self):
         response, mock_audit_log = self._login_response(
             self.user_email, self.password, patched_audit_log='common.djangoapps.student.models.user.AUDIT_LOG'
@@ -247,7 +247,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
         )
         self._assert_audit_log(mock_audit_log, 'warning', ['Login failed', 'Unknown user email', email_hash])
 
-    @patch.dict("django.conf.settings.FEATURES", {'SQUELCH_PII_IN_LOGS': True})
+    @override_settings(SQUELCH_PII_IN_LOGS=True)
     def test_login_fail_no_user_exists_no_pii(self):
         nonexistent_email = 'not_a_user@edx.org'
         response, mock_audit_log = self._login_response(
@@ -267,7 +267,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
         self._assert_audit_log(mock_audit_log, 'warning',
                                ['Login failed', 'password for', str(self.user.id), 'invalid'])
 
-    @patch.dict("django.conf.settings.FEATURES", {'SQUELCH_PII_IN_LOGS': True})
+    @override_settings(SQUELCH_PII_IN_LOGS=True)
     def test_login_fail_wrong_password_no_pii(self):
         response, mock_audit_log = self._login_response(self.user_email, 'wrong_password')
         self._assert_response(response, success=False, value=self.LOGIN_FAILED_WARNING)
@@ -437,7 +437,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
         }
         self.assertDictContainsSubset(expected, response.context_data)
 
-    @patch.dict("django.conf.settings.FEATURES", {'SQUELCH_PII_IN_LOGS': True})
+    @override_settings(SQUELCH_PII_IN_LOGS=True)
     def test_logout_logging_no_pii(self):
         response, _ = self._login_response(self.user_email, self.password)
         self._assert_response(response, success=True)
