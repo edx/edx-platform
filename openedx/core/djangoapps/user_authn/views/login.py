@@ -12,6 +12,8 @@ from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth import login as django_login
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -56,6 +58,7 @@ from openedx.core.djangoapps.user_authn.toggles import (
 from openedx.core.djangoapps.user_authn.utils import is_safe_login_or_logout_redirect
 from openedx.core.djangoapps.user_authn.views.login_form import get_login_session_form
 from openedx.core.djangoapps.user_authn.views.password_reset import send_password_reset_email_for_user
+from openedx.core.djangoapps.user_authn.views.registration_form import validate_username
 from openedx.core.djangoapps.user_authn.views.utils import API_V1
 from openedx.core.djangoapps.util.user_messages import PageLevelMessages
 from openedx.core.djangolib.markup import HTML, Text
@@ -64,6 +67,46 @@ log = logging.getLogger("edx.student")
 AUDIT_LOG = logging.getLogger("audit")
 USER_MODEL = get_user_model()
 PASSWORD_RESET_INITIATED = "edx.user.passwordreset.initiated"
+
+
+def _raise_generic_auth_failed_error():
+    """Raise the generic login failure used for invalid credentials."""
+    raise AuthFailedError(
+        _("Email or password is incorrect."),
+        error_code="incorrect-email-or-password",
+        context={"failure_count": 0},
+    )
+
+
+def _is_valid_email_identifier(email):
+    """Validate a login identifier using existing account email constraints."""
+    if not isinstance(email, str):
+        return False
+
+    if not accounts.EMAIL_MIN_LENGTH <= len(email) <= accounts.EMAIL_MAX_LENGTH:
+        return False
+
+    try:
+        validate_email.message = accounts.AUTHN_EMAIL_INVALID_MSG
+        validate_email(email)
+        return True
+    except ValidationError:
+        return False
+
+
+def _is_valid_username_identifier(username):
+    """Validate a login identifier using existing username constraints."""
+    if not isinstance(username, str):
+        return False
+
+    if not accounts.USERNAME_MIN_LENGTH <= len(username) <= accounts.USERNAME_MAX_LENGTH:
+        return False
+
+    try:
+        validate_username(username)
+        return True
+    except ValidationError:
+        return False
 
 
 def _do_third_party_auth(request):
@@ -136,6 +179,20 @@ def _get_user_by_email_or_username(request, api_version):
         raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
 
     email_or_username = request.POST.get("email", None) or request.POST.get("email_or_username", None)
+
+    if not email_or_username:
+        _raise_generic_auth_failed_error()
+
+    if is_api_v2:
+        is_valid_identifier = (
+            _is_valid_email_identifier(email_or_username) or _is_valid_username_identifier(email_or_username)
+        )
+    else:
+        is_valid_identifier = _is_valid_email_identifier(email_or_username)
+
+    if not is_valid_identifier:
+        _raise_generic_auth_failed_error()
+
     user = _get_user_by_email(email_or_username)
 
     if not user and is_api_v2:
@@ -693,10 +750,7 @@ def login_user(request, api_version="v1"):  # pylint: disable=too-many-statement
         error_code = response_content.get("error_code")
         if error_code:
             set_custom_attribute("login_error_code", error_code)
-        email_or_username_key = "email" if api_version == API_V1 else "email_or_username"
-        email_or_username = request.POST.get(email_or_username_key, None)
-        email_or_username = possibly_authenticated_user.email if possibly_authenticated_user else email_or_username
-        response_content["email"] = email_or_username
+        response_content["email"] = ""
     except VulnerablePasswordError as error:
         response_content = error.get_response()
         log.exception(response_content)

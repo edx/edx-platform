@@ -6,6 +6,7 @@ Registration related views.
 import datetime
 import json
 import logging
+import math
 
 from django.conf import settings
 from django.contrib.auth import login as django_login
@@ -112,6 +113,35 @@ REGISTER_USER = Signal()
 
 
 REAL_IP_KEY = 'openedx.core.djangoapps.util.ratelimit.real_ip'
+MAX_TOTAL_REGISTRATION_TIME_SECONDS = 86400
+
+
+def _get_validated_total_registration_time(params):
+    """
+    Validate registration duration input and return a normalized float value.
+
+    Accepts either `total_registration_time` or `totalRegistrationTime` as optional inputs.
+    """
+    registration_time = params.get('total_registration_time')
+    if registration_time in (None, ''):
+        registration_time = params.get('totalRegistrationTime')
+
+    if registration_time in (None, ''):
+        return None
+
+    try:
+        registration_time = float(registration_time)
+    except (TypeError, ValueError):
+        raise ValidationError({'total_registration_time': [_('Enter a valid registration time.')]})
+
+    if (
+        not math.isfinite(registration_time) or
+        registration_time < 0 or
+        registration_time > MAX_TOTAL_REGISTRATION_TIME_SECONDS
+    ):
+        raise ValidationError({'total_registration_time': [_('Enter a valid registration time.')]})
+
+    return registration_time
 
 
 @transaction.non_atomic_requests
@@ -588,6 +618,19 @@ class RegistrationView(APIView):
 
         data = request.POST.copy()
         self._handle_terms_of_service(data)
+
+        # Validate analytics registration duration at the request boundary.
+        try:
+            total_registration_time = _get_validated_total_registration_time(data)
+        except ValidationError as err:
+            errors = {
+                field: [{"user_message": error} for error in error_list]
+                for field, error_list in err.message_dict.items()
+            }
+            return self._create_response(request, errors, status_code=400, error_code='validation-error')
+
+        if total_registration_time is not None:
+            data['total_registration_time'] = total_registration_time
 
         if is_auto_generated_username_enabled() and 'username' not in data:
             data['username'] = get_auto_generated_username(data)

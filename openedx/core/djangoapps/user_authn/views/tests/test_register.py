@@ -64,6 +64,7 @@ from openedx.core.djangoapps.user_api.accounts.tests.retirement_helpers import (
 from openedx.core.djangoapps.user_api.tests.test_constants import SORTED_COUNTRIES
 from openedx.core.djangoapps.user_api.tests.test_helpers import TestCaseForm
 from openedx.core.djangoapps.user_api.tests.test_views import UserAPITestCase
+from openedx.core.djangoapps.user_authn.views.register import MAX_TOTAL_REGISTRATION_TIME_SECONDS, RegistrationView
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
 from openedx.core.lib.api import test_utils
 
@@ -2091,6 +2092,66 @@ class RegistrationViewTestV2(RegistrationViewTestV1):
     def setUp(self):  # pylint: disable=arguments-differ
         super(RegistrationViewTestV1, self).setUp()  # lint-amnesty, pylint: disable=bad-super-call
         self.url = reverse("user_api_registration_v2")
+
+    def _valid_registration_payload(self):
+        return {
+            "email": self.EMAIL,
+            "name": self.NAME,
+            "username": self.USERNAME,
+            "password": self.PASSWORD,
+            "honor_code": "true",
+        }
+
+    def test_register_with_valid_total_registration_time_decimal(self):
+        payload = self._valid_registration_payload()
+        payload["total_registration_time"] = "57.664"
+
+        response = self.client.post(self.url, payload)
+        self.assertHttpOK(response)
+
+    def test_register_with_valid_total_registration_time_integer(self):
+        payload = self._valid_registration_payload()
+        payload["totalRegistrationTime"] = "58"
+
+        response = self.client.post(self.url, payload)
+        self.assertHttpOK(response)
+
+    def test_register_with_missing_total_registration_time(self):
+        response = self.client.post(self.url, self._valid_registration_payload())
+        self.assertHttpOK(response)
+
+    @ddt.data(
+        "not-a-number",
+        '57.664" AND "1"="1" --',
+        "-1",
+        str(MAX_TOTAL_REGISTRATION_TIME_SECONDS + 1),
+        "inf",
+    )
+    def test_register_rejects_invalid_total_registration_time(self, invalid_registration_time):
+        payload = self._valid_registration_payload()
+        payload["total_registration_time"] = invalid_registration_time
+
+        response = self.client.post(self.url, payload)
+        self.assertHttpBadRequest(response)
+        response_json = json.loads(response.content.decode('utf-8'))
+
+        self.assertDictEqual(
+            response_json,
+            {
+                "total_registration_time": [{"user_message": "Enter a valid registration time."}],
+                "error_code": "validation-error",
+            }
+        )
+        assert not User.objects.filter(username=self.USERNAME).exists()
+
+    def test_register_request_protection_remains_functional(self):
+        request = RequestFactory().post(self.url, self._valid_registration_payload())
+        request.limited = True
+
+        response = RegistrationView.as_view()(request)
+        assert response.status_code == 403
+        response_json = json.loads(response.content.decode('utf-8'))
+        self.assertDictEqual(response_json, {'error_code': 'forbidden-request'})
 
     @override_settings(
         REGISTRATION_EXTRA_FIELDS={

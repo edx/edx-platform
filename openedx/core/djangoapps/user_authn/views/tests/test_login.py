@@ -1108,3 +1108,47 @@ class LoginSessionViewTest(ApiTestCase, OpenEdxEventsTestMixin):
         # Missing both email and password
         response = self.client.post(url, {})
         self.assertHttpBadRequest(response)
+
+    def _assert_generic_login_failure_response(self, response):
+        self.assertHttpBadRequest(response)
+        response_json = json.loads(response.content.decode('utf-8'))
+        assert response_json['success'] is False
+        assert response_json['error_code'] == 'incorrect-email-or-password'
+        assert 'Email or password is incorrect.' in response_json['value']
+        assert response_json.get('email', '') == ''
+
+    @ddt.data(
+        '',
+        'a' * (EMAIL_MAX_LENGTH + 1),
+        'invalid@@example.com',
+        'invalid username',
+        "trtrtrdfdf' AND '1'='1' --",
+        "invalid'quote",
+    )
+    def test_invalid_email_or_username_rejected_without_reflection(self, email_or_username):
+        with patch('openedx.core.djangoapps.user_authn.views.login._get_user_by_email') as mock_get_by_email:
+            with patch('openedx.core.djangoapps.user_authn.views.login._get_user_by_username') as mock_get_by_username:
+                response = self.client.post(self.url_v2, {
+                    'email_or_username': email_or_username,
+                    'password': self.PASSWORD,
+                })
+
+        self._assert_generic_login_failure_response(response)
+        assert not mock_get_by_email.called
+        assert not mock_get_by_username.called
+
+        if email_or_username:
+            assert email_or_username not in response.content.decode('utf-8')
+
+    def test_missing_email_or_username_is_not_reflected(self):
+        with patch('openedx.core.djangoapps.user_authn.views.login._get_user_by_email') as mock_get_by_email:
+            with patch('openedx.core.djangoapps.user_authn.views.login._get_user_by_username') as mock_get_by_username:
+                response = self.client.post(self.url_v2, {
+                    'password': self.PASSWORD,
+                })
+
+        self.assertHttpBadRequest(response)
+        response_json = json.loads(response.content.decode('utf-8'))
+        assert response_json.get('email', '') == ''
+        assert not mock_get_by_email.called
+        assert not mock_get_by_username.called
