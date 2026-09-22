@@ -455,6 +455,28 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase):
             preference = UserOrgTag.objects.get(user=self.user, org=self.course.id.org, key="email-optin")
             assert preference.value == pref_value
 
+    def test_email_opt_in_recorded_for_enrolled_user_not_caller(self):
+        """
+        Regression test: when a staff user enrolls a different learner and passes
+        email_opt_in, the preference must be recorded against the enrolled learner,
+        not against the staff caller who made the request.
+        """
+        self.client.logout()
+        staff_user = AdminFactory.create(
+            username='global_staff', email='global_staff@example.com', password=self.PASSWORD
+        )
+        self.client.login(username='global_staff', password=self.PASSWORD)
+
+        self.assert_enrollment_status(username=self.other_user.username, email_opt_in=True)
+
+        # The preference should be recorded against the enrolled learner...
+        preference = UserOrgTag.objects.get(user=self.other_user, org=self.course.id.org, key="email-optin")
+        assert preference.value == "True"
+
+        # ...and never against the staff user who made the API call.
+        with pytest.raises(UserOrgTag.DoesNotExist):
+            UserOrgTag.objects.get(user=staff_user, org=self.course.id.org, key="email-optin")
+
     def test_enroll_prof_ed(self):
         # Create the prod ed mode.
         CourseModeFactory.create(
