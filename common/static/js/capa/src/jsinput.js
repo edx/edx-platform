@@ -29,6 +29,258 @@ var JSInput = (function($, undefined) {
         return obj;
     }
 
+    // Course assets are served with `Content-Security-Policy: sandbox` (see
+    // contentserver/views.py) so an uploaded HTML file can never script
+    // against the LMS/Studio session. That also disables scripts in a
+    // same-origin html_file, so its grade/state functions never exist and
+    // submitting the problem hangs silently.
+    //
+    // For such a file, re-load its markup via srcdoc in an iframe WITHOUT
+    // `allow-same-origin`. Its scripts run again, but in an opaque origin: it
+    // cannot reach this page's DOM, cookies, storage or same-origin APIs,
+    // which is the isolation the sandbox header exists to provide. The
+    // problem then talks to it only through postMessage.
+    // Only scripts are re-enabled, and only in an opaque origin; forms,
+    // popups, downloads and navigation stay blocked as under the asset's
+    // own CSP sandbox.
+    var OPAQUE_SANDBOX_FLAGS = 'allow-scripts';
+    var BRIDGE_TIMEOUT_MS = 1000;
+
+    // Runs inside the opaque html_file and answers the grade/state calls a
+    // same-origin (sop) problem used to make by reaching into its window.
+    function _bridgeScript(parentOrigin) {
+        return '(function() {' +
+            'var parentOrigin = ' + JSON.stringify(parentOrigin) + ';' +
+            'window.addEventListener("message", function(e) {' +
+                'var msg = e.data, reply, fn, i, p, result;' +
+                'if (e.source !== window.parent || e.origin !== parentOrigin ||' +
+                    ' !msg || msg.jsinputBridge !== "call") { return; }' +
+                'reply = {jsinputBridge: "reply", id: msg.id};' +
+                'try {' +
+                    'fn = window;' +
+                    'for (i = 0, p = msg.fn.split("."); i < p.length; i++) { fn = fn[p[i]]; }' +
+                    'result = fn.apply(null, msg.args || []);' +
+                    'reply.ok = true;' +
+                    'reply.result = (result === undefined || result === null) ? result : String(result);' +
+                '} catch (err) {' +
+                    'reply.ok = false;' +
+                    'reply.error = String(err);' +
+                '}' +
+                'window.parent.postMessage(reply, parentOrigin);' +
+            '});' +
+        '}());';
+    }
+
+    // Also runs inside the opaque html_file, before any of its own scripts.
+    // Many html_files read or fill the problem's own fields through
+    // `window.parent.document`, which the opaque origin (correctly) blocks.
+    // Give them a stand-in `parent` whose `document` is an inert copy of just
+    // this problem's markup and field values, sent by the page before each
+    // call; field values the file writes are sent back. The real page, its
+    // cookies and session stay unreachable: this is a convenience, not the
+    // security boundary (the opaque origin is).
+    function _parentShimScript(parentOrigin) {
+        return '(function() {' +
+            'var parentOrigin = ' + JSON.stringify(parentOrigin) + ';' +
+            'var realParent = window.parent;' +
+            'var doc = document.implementation.createHTMLDocument("");' +
+            'var fields = [];' +
+            'function values() {' +
+                'return fields.map(function(f) {' +
+                    'return (f.type === "checkbox" || f.type === "radio") ? f.checked : f.value;' +
+                '});' +
+            '}' +
+            'var sent = "[]";' +
+            'var fakeParent = new Proxy({' +
+                'document: doc,' +
+                'postMessage: function() { return realParent.postMessage.apply(realParent, arguments); }' +
+            '}, {' +
+                'get: function(t, k) {' +
+                    'if (k in t) { return t[k]; }' +
+                    // Functions on the real page can't be called from here.
+                    'return function() {};' +
+                '}' +
+            '});' +
+            'try { window.parent = fakeParent; } catch (e) { return; }' +
+            // JSChannel matches replies by window identity, so it must be
+            // handed the real parent window, not the stand-in.
+            'var RealChannel;' +
+            'Object.defineProperty(window, "Channel", {' +
+                'configurable: true,' +
+                'get: function() { return RealChannel; },' +
+                'set: function(v) {' +
+                    'RealChannel = Object.create(v);' +
+                    'RealChannel.build = function(cfg) {' +
+                        'if (cfg && cfg.window === fakeParent) { cfg.window = realParent; }' +
+                        'return v.build(cfg);' +
+                    '};' +
+                '}' +
+            '});' +
+            'window.addEventListener("message", function(e) {' +
+                'var msg = e.data;' +
+                'if (e.source !== realParent || e.origin !== parentOrigin) { return; }' +
+                'if (msg && msg.jsinputPage === "snapshot") {' +
+                    'doc.body.innerHTML = msg.html;' +
+                    'fields = Array.prototype.slice.call(doc.querySelectorAll("input, textarea, select"));' +
+                    'fields.forEach(function(f, i) {' +
+                        'if (f.type === "checkbox" || f.type === "radio") { f.checked = msg.values[i] === true; }' +
+                        'else if (typeof msg.values[i] === "string") { f.value = msg.values[i]; }' +
+                    '});' +
+                    'sent = JSON.stringify(values());' +
+                    'return;' +
+                '}' +
+                // After any call from the page, send back fields it changed.
+                'setTimeout(function() {' +
+                    'var now = JSON.stringify(values());' +
+                    'if (now !== sent) {' +
+                        'sent = now;' +
+                        'realParent.postMessage({jsinputPage: "values", values: values()}, parentOrigin);' +
+                    '}' +
+                '}, 0);' +
+            '});' +
+        '}());';
+    }
+
+    // The live fields of the problem `elem` belongs to, in document order.
+    function _problemOf(elem) {
+        return $(elem).closest('.problems-wrapper').get(0) || $(elem).parent().get(0);
+    }
+
+    function _problemFields(problem) {
+        return $(problem).find('input, textarea, select').not('.jsinput iframe').get();
+    }
+
+    // Returns sendSnapshot(): posts the problem's markup and field values to
+    // the shim above, and applies field values the shim sends back.
+    function _pageShim(iframe, problem) {
+        var loads = 0;
+
+        // The first load is the srcdoc set up above. Any later load means the
+        // html_file navigated its frame elsewhere; never send page data there.
+        iframe.addEventListener('load', function() { loads += 1; });
+
+        window.addEventListener('message', function(e) {
+            var msg = e.data;
+            if (e.source !== iframe.contentWindow || !msg || msg.jsinputPage !== 'values'
+                || !Array.isArray(msg.values)) {
+                return;
+            }
+            _problemFields(problem).forEach(function(f, i) {
+                if (f.type === 'checkbox' || f.type === 'radio') {
+                    if (typeof msg.values[i] === 'boolean') {
+                        f.checked = msg.values[i];
+                    }
+                } else if (typeof msg.values[i] === 'string') {
+                    f.value = msg.values[i];
+                }
+            });
+        });
+
+        return function() {
+            var copy;
+            if (loads > 1) {
+                return;
+            }
+            copy = problem.cloneNode(true);
+            // Never hand over other frames (including this html_file's own
+            // srcdoc) or scripts; only markup and the learner's field values.
+            $(copy).find('iframe, script').remove();
+            $(copy).find('[data-content]').addBack('[data-content]').removeAttr('data-content');
+            iframe.contentWindow.postMessage({
+                jsinputPage: 'snapshot',
+                html: copy.innerHTML,
+                values: _problemFields(problem).map(function(f) {
+                    return (f.type === 'checkbox' || f.type === 'radio') ? f.checked : f.value;
+                })
+            }, '*');
+        };
+    }
+
+    // Returns call(fnPath, args) -> Promise, talking to the bridge above.
+    function _bridgeCaller(iframe) {
+        var pending = {},
+            nextId = 0;
+
+        window.addEventListener('message', function(e) {
+            var msg = e.data;
+            if (e.source !== iframe.contentWindow || !msg || msg.jsinputBridge !== 'reply'
+                || !pending[msg.id]) {
+                return;
+            }
+            clearTimeout(pending[msg.id].timer);
+            if (msg.ok) {
+                pending[msg.id].resolve(msg.result);
+            } else {
+                pending[msg.id].reject(new Error(msg.error));
+            }
+            delete pending[msg.id];
+        });
+
+        return function(fn, args) {
+            return new Promise(function(resolve, reject) {
+                var id = ++nextId;
+                pending[id] = {
+                    resolve: resolve,
+                    reject: reject,
+                    timer: setTimeout(function() {
+                        delete pending[id];
+                        reject(new Error('JSInput: no reply from html_file for ' + fn));
+                    }, BRIDGE_TIMEOUT_MS)
+                };
+                // An opaque origin can't be named as a targetOrigin; the
+                // recipient is pinned by posting to this iframe's window.
+                iframe.contentWindow.postMessage(
+                    {jsinputBridge: 'call', id: id, fn: fn, args: args || []}, '*'
+                );
+            });
+        };
+    }
+
+    // Resolves to true if the html_file is a sandboxed course asset and has
+    // been re-loaded in an opaque origin, false if the iframe was left alone.
+    function _loadSandboxedHtmlFile(iframe, path, sop) {
+        var src = new URL(iframe.src, window.location.href);
+
+        if (src.origin !== window.location.origin || !window.fetch || !window.DOMParser) {
+            return Promise.resolve(false);
+        }
+
+        return window.fetch(src.href, {credentials: 'same-origin'}).then(function(response) {
+            var csp = response.headers.get('Content-Security-Policy') || '';
+            if (!response.ok || !/(^|[\s;,])sandbox([\s;,]|$)/i.test(csp)) {
+                return null;
+            }
+            return response.text();
+        }).then(function(html) {
+            var doc, base, shim, bridge;
+            if (html === null) {
+                return false;
+            }
+            doc = new DOMParser().parseFromString(html, 'text/html');
+            // srcdoc documents resolve relative URLs against the parent page,
+            // so point them back at the asset's directory.
+            base = doc.createElement('base');
+            base.setAttribute('href', path);
+            doc.head.insertBefore(base, doc.head.firstChild);
+            shim = doc.createElement('script');
+            shim.textContent = _parentShimScript(window.location.origin);
+            doc.head.insertBefore(shim, base.nextSibling);
+            if (sop) {
+                bridge = doc.createElement('script');
+                bridge.textContent = _bridgeScript(window.location.origin);
+                doc.head.insertBefore(bridge, shim.nextSibling);
+            }
+            // Sandbox flags apply at the next navigation, which setting
+            // srcdoc triggers, so this must come first.
+            iframe.setAttribute('sandbox', OPAQUE_SANDBOX_FLAGS);
+            iframe.srcdoc = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+            return true;
+        }).catch(function(err) {
+            console.debug('JSInput: could not load html_file', err);
+            return false;
+        });
+    }
+
     /*      END     Utils                                   */
 
     function jsinputConstructor(elem) {
@@ -57,16 +309,44 @@ var JSInput = (function($, undefined) {
             // Bypass single-origin policy only if this attribute is "false"
             // In that case, use JSChannel to do so.
             sop = jsinputAttr('data-sop'),
-            channel;
+            channel,
+            // Set when the html_file runs in an opaque origin and a sop
+            // problem has to reach it through postMessage.
+            bridgeCall,
+            // Set when the html_file runs in an opaque origin; sends it a
+            // copy of this problem's markup and field values.
+            sendSnapshot = function() {},
+            isReady = false,
+            ready;
 
         sop = (sop !== 'false');
 
-        if (!sop) {
-            channel = Channel.build({
-                window: cWindow,
-                origin: path,
-                scope: 'JSInput'
-            });
+        // Only once we know whether the html_file had to be re-loaded in an
+        // opaque origin can we choose how to talk to it.
+        ready = _loadSandboxedHtmlFile(iframe, path, sop).then(function(opaque) {
+            if (opaque) {
+                sendSnapshot = _pageShim(iframe, _problemOf(elem));
+                iframe.addEventListener('load', function() { sendSnapshot(); });
+            }
+            if (opaque && sop) {
+                bridgeCall = _bridgeCaller(iframe);
+            } else if (!sop) {
+                channel = Channel.build({
+                    window: cWindow,
+                    // An opaque html_file posts from origin "null"; jschannel
+                    // still only accepts messages from this iframe's window.
+                    origin: opaque ? '*' : path,
+                    scope: 'JSInput'
+                });
+            }
+            isReady = true;
+        });
+
+        // Called when the html_file's grade/state function fails (e.g. it
+        // tries to reach into this page from its sandbox). The submission is
+        // not sent; the reason is only logged.
+        function gradeFailed(err, message) {
+            console.debug('JSInput: html_file could not be graded', err, message || '');
         }
 
         /*                       Public methods                     */
@@ -75,7 +355,26 @@ var JSInput = (function($, undefined) {
         var update = function(callback) {
             var answer, state, store;
 
-            if (sop) {
+            if (!isReady) {
+                ready.then(function() { update(callback); });
+                return;
+            }
+
+            sendSnapshot();
+
+            if (bridgeCall) {
+                bridgeCall(gradeFn).then(function(val) {
+                    answer = val;
+                    if (stateGetter && stateSetter) {
+                        return bridgeCall(stateGetter).then(function(val) { // eslint-disable-line no-shadow
+                            state = unescape(val); // xss-lint: disable=javascript-escape
+                            inputField.val(JSON.stringify({answer: answer, state: state}));
+                        });
+                    }
+                    inputField.val(answer);
+                    return undefined;
+                }).then(callback, gradeFailed);
+            } else if (sop) {
                 answer = _deepKey(cWindow, gradeFn)();
                 // Setting state presumes getting state, so don't get state
                 // unless set state is defined.
@@ -112,13 +411,15 @@ var JSInput = (function($, undefined) {
                                     };
                                     inputField.val(JSON.stringify(store));
                                     callback();
-                                }
+                                },
+                                error: gradeFailed
                             });
                         } else {
                             inputField.val(answer);
                             callback();
                         }
-                    }
+                    },
+                    error: gradeFailed
                 });
             }
         };
@@ -165,13 +466,21 @@ var JSInput = (function($, undefined) {
             function whileloop(n) {
                 if (n > 0) {
                     try {
-                        if (sop) {
+                        sendSnapshot();
+                        if (bridgeCall) {
+                            bridgeCall(stateSetter, [stateValue]).catch(function() {
+                                setTimeout(function() { whileloop(n - 1); }, 200);
+                            });
+                        } else if (sop) {
                             _deepKey(cWindow, stateSetter)(stateValue);
                         } else {
                             channel.call({
                                 method: 'setState',
                                 params: stateValue,
                                 success: function() {
+                                },
+                                error: function(err, message) {
+                                    console.debug('JSInput: could not set state', err, message || '');
                                 }
                             });
                         }
@@ -182,7 +491,7 @@ var JSInput = (function($, undefined) {
                     console.debug('Error: could not set state');
                 }
             }
-            whileloop(5);
+            ready.then(function() { whileloop(5); });
         }
     }
 
