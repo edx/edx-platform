@@ -51,9 +51,12 @@ var JSInput = (function($, undefined) {
     function _bridgeScript(parentOrigin) {
         return '(function() {' +
             'var parentOrigin = ' + JSON.stringify(parentOrigin) + ';' +
+            // Keep the real parent: the parent shim later replaces
+            // `window.parent` with its stand-in.
+            'var realParent = window.parent;' +
             'window.addEventListener("message", function(e) {' +
                 'var msg = e.data, reply, fn, i, p, result;' +
-                'if (e.source !== window.parent || e.origin !== parentOrigin ||' +
+                'if (e.source !== realParent || e.origin !== parentOrigin ||' +
                     ' !msg || msg.jsinputBridge !== "call") { return; }' +
                 'reply = {jsinputBridge: "reply", id: msg.id};' +
                 'try {' +
@@ -66,7 +69,7 @@ var JSInput = (function($, undefined) {
                     'reply.ok = false;' +
                     'reply.error = String(err);' +
                 '}' +
-                'window.parent.postMessage(reply, parentOrigin);' +
+                'realParent.postMessage(reply, parentOrigin);' +
             '});' +
         '}());';
     }
@@ -261,18 +264,25 @@ var JSInput = (function($, undefined) {
             // so point them back at the asset's directory.
             base = doc.createElement('base');
             base.setAttribute('href', path);
+            // Only createElement nodes go into this detached, parsed document.
+            // xss-lint: disable=javascript-jquery-insert-into-target
             doc.head.insertBefore(base, doc.head.firstChild);
             shim = doc.createElement('script');
             shim.textContent = _parentShimScript(window.location.origin);
+            // xss-lint: disable=javascript-jquery-insert-into-target
             doc.head.insertBefore(shim, base.nextSibling);
             if (sop) {
+                // The bridge must run before the shim swaps out `window.parent`.
                 bridge = doc.createElement('script');
                 bridge.textContent = _bridgeScript(window.location.origin);
-                doc.head.insertBefore(bridge, shim.nextSibling);
+                // xss-lint: disable=javascript-jquery-insert-into-target
+                doc.head.insertBefore(bridge, shim);
             }
             // Sandbox flags apply at the next navigation, which setting
             // srcdoc triggers, so this must come first.
             iframe.setAttribute('sandbox', OPAQUE_SANDBOX_FLAGS);
+            // The asset's own markup, serialized back into the opaque iframe.
+            // xss-lint: disable=javascript-concat-html
             iframe.srcdoc = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
             return true;
         }).catch(function(err) {
@@ -367,7 +377,8 @@ var JSInput = (function($, undefined) {
                     answer = val;
                     if (stateGetter && stateSetter) {
                         return bridgeCall(stateGetter).then(function(val) { // eslint-disable-line no-shadow
-                            state = unescape(val); // xss-lint: disable=javascript-escape
+                            // xss-lint: disable=javascript-escape
+                            state = unescape(val);
                             inputField.val(JSON.stringify({answer: answer, state: state}));
                         });
                     }
@@ -379,7 +390,8 @@ var JSInput = (function($, undefined) {
                 // Setting state presumes getting state, so don't get state
                 // unless set state is defined.
                 if (stateGetter && stateSetter) {
-                    state = unescape(_deepKey(cWindow, stateGetter)()); // xss-lint: disable=javascript-escape
+                    // xss-lint: disable=javascript-escape
+                    state = unescape(_deepKey(cWindow, stateGetter)());
                     store = {
                         answer: answer,
                         state: state

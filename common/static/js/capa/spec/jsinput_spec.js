@@ -1,3 +1,14 @@
+// JSChannel isn't a global in the Karma run, but JSInput builds a channel
+// (asynchronously) for every sop=false problem, so provide a minimal one. It
+// stays for the whole run: a build can land after a spec has finished.
+if (typeof window.Channel === 'undefined') {
+    window.Channel = {
+        build: function() {
+            return {call: function() {}, bind: function() {}, destroy: function() {}};
+        }
+    };
+}
+
 describe('JSInput', function() {
     var $jsinputContainers;
     var $inputFields;
@@ -29,18 +40,25 @@ describe('JSInput', function() {
 
 describe('JSInput sandboxed html_file', function() {
     var assetDir = window.location.origin + '/asset-v1:edX+DemoX+Demo+type@asset+block/';
-    // getGrade reports whether it could reach the parent page: under the
+    // getGrade reports whether it could reach the real page: under the
     // LP-1255 asset sandbox it must never run same-origin with the LMS.
+    // (`window.parent.document` is the shim's inert copy, so probe `top`.)
     var html = '<html><head></head><body><script src="grade.js"></script><script>' +
         'window.getGrade = function() {' +
-        '  try { return window.parent.document ? "leaked" : "leaked"; } catch (e) { return "isolated"; }' +
+        '  try { return window.top.document ? "leaked" : "leaked"; } catch (e) { return "isolated"; }' +
         '};' +
         '</script></body></html>';
-    var iframe, $inputField;
+    var iframe, $inputField, channelConfigs;
 
     function loadWith(headers, done) {
+        var build = Channel.build;
         spyOn(window, 'fetch').and.returnValue(Promise.resolve(new Response(html, {headers: headers})));
-        spyOn(Channel, 'build').and.callThrough();
+        // jschannel rewrites the config it is given, so record it as passed.
+        channelConfigs = [];
+        spyOn(Channel, 'build').and.callFake(function(cfg) {
+            channelConfigs.push({window: cfg.window, origin: cfg.origin});
+            return build.apply(Channel, arguments);
+        });
         JSInput.walkDOM();
         // Let the fetch/text promise chain settle and the srcdoc load.
         setTimeout(done, 300);
@@ -95,10 +113,10 @@ describe('JSInput sandboxed html_file', function() {
             });
 
             it('accepts messages from the opaque origin, pinned to the iframe window', function() {
-                expect(Channel.build).toHaveBeenCalledWith(jasmine.objectContaining({
-                    window: iframe.contentWindow,
-                    origin: '*'
-                }));
+                expect(channelConfigs.length).toEqual(1);
+                // Compared by identity: matchers can't inspect a cross-origin window.
+                expect(channelConfigs[0].window === iframe.contentWindow).toBe(true);
+                expect(channelConfigs[0].origin).toEqual('*');
             });
 
             it('does not inject the sop bridge', function() {
@@ -117,9 +135,8 @@ describe('JSInput sandboxed html_file', function() {
         });
 
         it('builds the channel against the asset origin as before', function() {
-            expect(Channel.build).toHaveBeenCalledWith(jasmine.objectContaining({
-                origin: assetDir
-            }));
+            expect(channelConfigs.length).toEqual(1);
+            expect(channelConfigs[0].origin).toEqual(assetDir);
         });
     });
 });
