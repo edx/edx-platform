@@ -6,6 +6,7 @@ Registration related views.
 import datetime
 import json
 import logging
+import math
 
 from django.conf import settings
 from django.contrib.auth import login as django_login
@@ -161,6 +162,24 @@ def create_account_with_params(request, params):  # pylint: disable=too-many-sta
     if is_registration_api_v1(request):
         if 'confirm_email' in extra_fields:
             del extra_fields['confirm_email']
+
+    # Strict type validation for registration metrics: ensure total_registration_time is numeric and finite
+    total_registration_time = params.get('total_registration_time') or params.get('totalRegistrationTime')
+    if total_registration_time is not None:
+        try:
+            time_float = float(total_registration_time)
+            # Reject non-finite values (NaN, Inf, -Inf) which would cause 500 errors downstream
+            if not math.isfinite(time_float) or time_float < 0 or time_float > 86400:  # Max 24 hours
+                raise ValueError()
+        except (ValueError, TypeError) as exc:
+            raise ValidationError(
+                {
+                    'total_registration_time': [
+                        _('total_registration_time must be a number between 0 and 86400 (seconds)')
+                    ],
+                    'error_code': 'invalid-registration-metric',
+                }
+            ) from exc
 
     if settings.ENABLE_COPPA_COMPLIANCE and 'year_of_birth' in params:
         params['year_of_birth'] = ''
@@ -904,16 +923,31 @@ class RegistrationValidationView(APIView):
             """
             Updates the validation decisions
             """
+            if not isinstance(field_name, str) or field_name not in self.validation_handlers:
+                return
             validation = self.validation_handlers[field_name](self, request)
             validation_decisions[field_name] = validation
 
-        if field_key and field_key in self.validation_handlers:
-            update_validations(field_key)
+        # Use getlist() to detect multi-valued form_field_key; require exactly one value
+        field_keys = request.data.getlist('form_field_key')
+        if field_keys and len(field_keys) == 1:
+            field_key = field_keys[0]
+            if isinstance(field_key, str) and field_key in self.validation_handlers:
+                update_validations(field_key)
+            else:
+                # Invalid field_key: validate only submitted fields
+                # (same behavior as no field_key case)
+                for form_field_key in self.validation_handlers:
+                    # For every field requiring validation from the client,
+                    # request a decision for it from the appropriate handler.
+                    if isinstance(form_field_key, str) and form_field_key in request.data:
+                        update_validations(form_field_key)
         else:
+            # No field_key or multi-valued: validate submitted fields
             for form_field_key in self.validation_handlers:
                 # For every field requiring validation from the client,
                 # request a decision for it from the appropriate handler.
-                if form_field_key in request.data:
+                if isinstance(form_field_key, str) and form_field_key in request.data:
                     update_validations(form_field_key)
 
         response_dict = {'validation_decisions': validation_decisions}
