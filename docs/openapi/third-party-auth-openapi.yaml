@@ -1,0 +1,637 @@
+openapi: 3.0.3
+info:
+  title: edX Platform - Third-Party Authentication (TPA) Pipeline API
+  version: '1.0'
+  description: >-
+    Federated login/registration pipeline for SAML, OAuth2, and LTI identity
+    providers, owned by `common/djangoapps/third_party_auth/`. Built on
+    `python-social-auth` (`social_django`), with edX-specific overrides for
+    account linking, SAML metadata, and LTI launches.
+
+
+    Most pipeline endpoints are browser-redirect flows (not JSON APIs); they
+    are documented here primarily for their request/response *shape*
+    (redirects, status codes, error conditions) rather than as JSON
+    request/response contracts. A small REST API
+    (`/api/third_party_auth/v0/...`) is also provided for server-to-server
+    and account-settings use cases and is fully JSON.
+
+
+    See also: `authn-openapi.yaml` (core login/registration) and
+    `oauth2-openapi.yaml` (edX-native OAuth2 bridge).
+  contact:
+    name: edX Authentication Team
+  license:
+    name: AGPL-3.0
+servers:
+  - url: /
+tags:
+  - name: tpa-pipeline
+    description: Browser-redirect SAML/OAuth2/LTI login, registration, and account-linking flows.
+  - name: tpa-config
+    description: SAML service-provider metadata and configuration discovery.
+  - name: tpa-rest-api
+    description: JSON REST API for provider status and user-provider mapping.
+paths:
+  /auth/login/{backend}/:
+    get:
+      operationId: tpa_login_start
+      summary: Begin a federated login with a configured identity provider.
+      description: >-
+        Entry point into the `python-social-auth` pipeline for the given
+        backend (e.g. `google-oauth2`, `tpa-saml`, `lti`). Redirects the
+        browser to the provider's authorization/login endpoint.
+      tags: [tpa-pipeline]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Backend'
+        - name: auth_entry
+          in: query
+          schema:
+            type: string
+            enum: [login, register, account_settings]
+          description: What flow the pipeline should resume as after the provider redirects back.
+        - name: next
+          in: query
+          schema:
+            type: string
+          description: URL to redirect to after the pipeline completes successfully.
+        - name: idp
+          in: query
+          schema:
+            type: string
+          description: SAML identity-provider slug (SAML backend only).
+      responses:
+        '302':
+          description: Redirect to the identity provider's login/consent page.
+        '404':
+          description: Unknown or unconfigured backend.
+  /auth/complete/{backend}/:
+    get:
+      operationId: tpa_complete_get
+      summary: Complete a federated login (provider callback, redirect-based flows).
+      tags: [tpa-pipeline]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Backend'
+      responses:
+        '302':
+          description: >-
+            Redirect to the dashboard (existing linked account), the
+            registration/login form (new account, pipeline paused for
+            additional info), or `/auth/exception/` on failure.
+        '400':
+          description: Invalid provider response (e.g. bad OAuth `state`, expired SAML assertion).
+    post:
+      operationId: tpa_complete_post
+      summary: Complete a federated login (provider callback, form-post flows e.g. SAML/LTI).
+      description: >-
+        Invokes the configured `SOCIAL_AUTH_PIPELINE`. On the first login
+        for a given remote identity, the pipeline pauses and control
+        returns to the logistration MFE (via `/api/mfe_context`) to collect
+        any missing registration fields before finishing account creation.
+      tags: [tpa-pipeline]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Backend'
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              description: Provider-specific payload (OAuth `code`/`state`, SAML `SAMLResponse`, LTI signed parameters, etc.).
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect to dashboard, pending-registration form, or the error handler.
+        '200':
+          description: Pipeline paused; registration/login form rendered inline.
+        '400':
+          description: Invalid or unverifiable provider response.
+        '401':
+          description: Authentication with the provider failed.
+  /auth/login/lti/:
+    post:
+      operationId: tpa_lti_login
+      summary: Begin/complete an LTI 1.0/1.1 launch-based login.
+      description: >-
+        Validates the signed LTI launch parameters (OAuth 1.0a signature)
+        against a configured `LTIAuthBackend` and feeds the result into the
+        third-party-auth pipeline.
+      tags: [tpa-pipeline]
+      security: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                oauth_consumer_key:
+                  type: string
+                oauth_signature:
+                  type: string
+                user_id:
+                  type: string
+                custom_tpa_auth_entry:
+                  type: string
+                custom_tpa_next:
+                  type: string
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect to dashboard or the login/registration form.
+        '400':
+          description: Request method was not POST.
+        '401':
+          description: LTI OAuth signature validation failed.
+  /auth/idp_redirect/{provider_slug}/:
+    get:
+      operationId: tpa_idp_redirect
+      summary: Redirect helper that resolves a provider slug to its `/auth/login/<backend>/` URL.
+      description: >-
+        Convenience URL that lets links reference a stable provider slug
+        (e.g. from an email or bookmark) instead of hard-coding the
+        underlying backend name.
+      tags: [tpa-pipeline]
+      security: []
+      parameters:
+        - name: provider_slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: next
+          in: query
+          schema:
+            type: string
+        - name: auth_entry
+          in: query
+          schema:
+            type: string
+            enum: [login, register, account_settings]
+      responses:
+        '302':
+          description: Redirect to `/auth/login/<backend>/?...`.
+        '404':
+          description: Unknown or disabled provider slug.
+  /auth/inactive:
+    get:
+      operationId: tpa_inactive_user
+      summary: Landing page for a newly-linked but not-yet-active account.
+      tags: [tpa-pipeline]
+      security:
+        - SessionAuth: []
+      parameters:
+        - name: next
+          in: query
+          schema:
+            type: string
+        - name: client_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '302':
+          description: >-
+            Redirect to `next` (if safe) or the dashboard. If the provider
+            is configured with `skip_email_verification`, the account is
+            auto-activated as a side effect; otherwise an activation email
+            is (re-)sent.
+  /auth/disconnect_json/{backend}/:
+    post:
+      operationId: tpa_disconnect_json
+      summary: Unlink a third-party-auth provider from the current account (JSON API).
+      description: >-
+        Preferred, CORS-friendly JSON alternative to
+        `/auth/disconnect/{backend}/`. Used by the account-settings MFE.
+      tags: [tpa-pipeline]
+      security:
+        - SessionAuth: []
+        - CsrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Backend'
+        - name: association_id
+          in: query
+          schema:
+            type: integer
+          description: Specific social-auth association to remove, if the account has more than one for this backend.
+      responses:
+        '200':
+          description: Disconnected successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                  backend:
+                    type: string
+                  association_id:
+                    type: integer
+                    nullable: true
+        '400':
+          description: Invalid request parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TpaJsonError'
+        '403':
+          description: Not permitted to disconnect this association.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TpaJsonError'
+        '404':
+          description: Association not found or already disconnected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TpaJsonError'
+  /auth/disconnect_json/{backend}/{association_id}/:
+    post:
+      operationId: tpa_disconnect_json_with_id
+      summary: Unlink a specific third-party-auth association by id (JSON API).
+      tags: [tpa-pipeline]
+      security:
+        - SessionAuth: []
+        - CsrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Backend'
+        - name: association_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Disconnected successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  backend:
+                    type: string
+                  association_id:
+                    type: integer
+        '400':
+          description: Invalid request parameters.
+        '403':
+          description: Not permitted to disconnect this association.
+        '404':
+          description: Association not found.
+  /auth/disconnect/{backend}/:
+    post:
+      operationId: tpa_disconnect
+      summary: Unlink a third-party-auth provider from the current account (redirect-based).
+      description: >-
+        Legacy `social_django` disconnect view. Prefer
+        `/auth/disconnect_json/{backend}/` for new integrations to avoid
+        CORS issues.
+      tags: [tpa-pipeline]
+      security:
+        - SessionAuth: []
+        - CsrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Backend'
+      responses:
+        '302':
+          description: Redirect to account settings on success.
+        '403':
+          description: Not permitted.
+        '404':
+          description: Association not found.
+  /auth/exception/:
+    get:
+      operationId: tpa_exception_handler
+      summary: Error handler for pipeline exceptions.
+      description: >-
+        Reached (via middleware) whenever the third-party-auth pipeline
+        raises an `AuthException`. Surfaces a user-facing message via
+        Django messages and redirects back to `/login`, `/register`, or
+        `/account/settings` depending on the `auth_entry` recorded in the
+        session.
+      tags: [tpa-pipeline]
+      security: []
+      responses:
+        '302':
+          description: Redirect to the appropriate entry point with an error message queued.
+  /auth/custom_auth_entry:
+    post:
+      operationId: tpa_custom_auth_entry
+      summary: Render an auto-submitting form used by custom auth-entry integrations.
+      tags: [tpa-pipeline]
+      security: []
+      responses:
+        '200':
+          description: HTML page containing an auto-submitting form.
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Expected session data (`tpa_custom_auth_entry_data`) was missing.
+  /auth/saml/metadata.xml:
+    get:
+      operationId: tpa_saml_metadata
+      summary: Get this instance's SAML 2.0 Service Provider metadata.
+      tags: [tpa-config]
+      security: []
+      parameters:
+        - name: tpa_hint
+          in: query
+          schema:
+            type: string
+          description: Restrict the metadata to a single configured SAML identity provider slug.
+      responses:
+        '200':
+          description: SAML SP metadata document.
+          content:
+            text/xml:
+              schema:
+                type: string
+        '404':
+          description: SAML is not enabled on this site.
+        '500':
+          description: Metadata could not be generated (e.g. missing signing keys).
+  /auth/saml/v0/saml_configuration/:
+    get:
+      operationId: tpa_saml_configuration_list
+      summary: List public SAML configuration records.
+      description: Returns only configuration records marked `is_public=true`.
+      tags: [tpa-config]
+      security:
+        - SessionAuth: []
+      responses:
+        '200':
+          description: List of SAML configurations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    slug:
+                      type: string
+                    is_public:
+                      type: boolean
+        '401':
+          description: Authentication required.
+  /api/third_party_auth/v0/users/:
+    get:
+      operationId: tpa_user_view_v2_get
+      summary: Look up a user's linked third-party-auth providers.
+      tags: [tpa-rest-api]
+      security:
+        - JwtAuth: []
+        - BearerAuth: []
+        - SessionAuth: []
+      parameters:
+        - name: username
+          in: query
+          schema:
+            type: string
+          description: Exactly one of `username` or `email` must be provided.
+        - name: email
+          in: query
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          description: Linked provider associations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: array
+                    items:
+                      $ref: 'components.yaml#/components/schemas/UserSocialAuthAssociation'
+        '400':
+          description: Missing or invalid identifier - or both `username` and `email` were supplied.
+        '403':
+          description: Unprivileged caller attempted to query another user's associations.
+        '404':
+          description: User not found.
+    delete:
+      operationId: tpa_user_view_v2_delete
+      summary: Delete a specific third-party-auth association (admin only).
+      tags: [tpa-rest-api]
+      security:
+        - JwtAuth: []
+      parameters:
+        - name: username
+          in: query
+          schema:
+            type: string
+        - name: email
+          in: query
+          schema:
+            type: string
+            format: email
+        - name: uid
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The `UserSocialAuth` record's provider-side UID to delete.
+      responses:
+        '204':
+          description: Deleted.
+        '400':
+          description: Missing `username`/`email` or `uid`.
+        '403':
+          description: Unprivileged caller attempted to delete another user's association.
+        '404':
+          description: User or association not found.
+  /api/third_party_auth/v0/users/{username_or_email}:
+    get:
+      operationId: tpa_user_view_v1_get
+      summary: (Deprecated) Look up a user's linked third-party-auth providers.
+      description: Deprecated in favor of `GET /api/third_party_auth/v0/users/`.
+      deprecated: true
+      tags: [tpa-rest-api]
+      security:
+        - JwtAuth: []
+        - BearerAuth: []
+        - SessionAuth: []
+      parameters:
+        - name: username_or_email
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Linked provider associations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: array
+                    items:
+                      $ref: 'components.yaml#/components/schemas/UserSocialAuthAssociation'
+        '403':
+          description: Unprivileged caller attempted to query another user's associations.
+        '404':
+          description: User not found.
+  /api/third_party_auth/v0/providers/{provider_id}/users:
+    get:
+      operationId: tpa_user_mapping
+      summary: Server-to-server lookup mapping edX usernames to a provider's remote user ids (or vice versa).
+      description: >-
+        Intended for trusted backend services (e.g. reporting, support
+        tooling) to translate between edX usernames and identity-provider
+        remote ids in bulk.
+      tags: [tpa-rest-api]
+      security:
+        - JwtAuth: []
+        - OAuth2: [tpa:read]
+      parameters:
+        - name: provider_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 'Format: `saml-<slug>` or `oa2-<backend>`, e.g. `saml-test`, `oa2-google-oauth2`.'
+        - name: username
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - name: remote_id
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - name: remote_id_field_name
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated username/remote-id mapping.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                    nullable: true
+                  previous:
+                    type: string
+                    nullable: true
+                  num_pages:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        username:
+                          type: string
+                        remote_id:
+                          type: string
+        '401':
+          description: Missing or invalid credentials.
+        '404':
+          description: Unknown `provider_id`.
+  /api/third_party_auth/v0/providers/user_status:
+    get:
+      operationId: tpa_provider_user_status
+      summary: List configured providers with the current user's connection status.
+      description: >-
+        Used by the account-settings MFE to render "Connect"/"Disconnect"
+        controls for each configured provider.
+      tags: [tpa-rest-api]
+      security:
+        - SessionAuth: []
+        - JwtAuth: []
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Provider list with connection status.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: 'components.yaml#/components/schemas/ThirdPartyAuthProviderStatus'
+        '401':
+          description: Authentication required.
+components:
+  parameters:
+    Backend:
+      name: backend
+      in: path
+      required: true
+      schema:
+        type: string
+      description: >-
+        social-auth backend name, e.g. `google-oauth2`, `facebook`,
+        `azuread-oauth2`, `tpa-saml`, `lti`.
+  schemas:
+    TpaJsonError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+  securitySchemes:
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    CsrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRFToken
+    JwtAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'Send as `Authorization: JWT <token>`.'
+    BearerAuth:
+      type: http
+      scheme: bearer
+    OAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: /oauth2/access_token/
+          scopes:
+            tpa:read: Read access to third-party-auth user mapping data.
