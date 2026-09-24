@@ -853,7 +853,7 @@ class EnrollmentListView(APIView, ApiKeyPermissionMixIn):
             email_opt_in = request.data.get("email_opt_in", None)
             if email_opt_in is not None:
                 org = course_id.org
-                update_email_opt_in(request.user, org, email_opt_in)
+                update_email_opt_in(user, org, email_opt_in)
 
             log.info("The user [%s] has already been enrolled in course run [%s].", username, course_id)
             return Response(response)
