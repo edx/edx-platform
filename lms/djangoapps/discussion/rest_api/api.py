@@ -2567,6 +2567,13 @@ def get_course_discussion_user_stats(
 
     course_stats_response = get_course_user_stats(course_key, params)
 
+    # Add matched users with no stats before filtering, so muted/banned users are not added back.
+    if comma_separated_usernames:
+        course_stats_response["user_stats"] = add_stats_for_users_with_no_discussion_content(
+            course_stats_response["user_stats"],
+            comma_separated_usernames,
+        )
+
     # Filter out muted users from regular learner list (user-specific filtering)
     if request.user.is_authenticated:
         # Reuse filter_muted_content logic to get muted user IDs
@@ -2614,13 +2621,6 @@ def get_course_discussion_user_stats(
         ]
         # Update count to reflect filtered results
         course_stats_response["count"] = len(course_stats_response["user_stats"])
-
-    if comma_separated_usernames:
-        updated_course_stats = add_stats_for_users_with_no_discussion_content(
-            course_stats_response["user_stats"],
-            comma_separated_usernames,
-        )
-        course_stats_response["user_stats"] = updated_course_stats
 
     # Course-wide muted users should only be visible to staff and privileged users
     if not is_privileged:
