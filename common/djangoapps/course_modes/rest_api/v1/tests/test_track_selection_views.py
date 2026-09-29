@@ -5,8 +5,10 @@ Tests for Track Selection API in the course_modes REST API.
 from datetime import datetime
 
 import ddt
+from django.test import override_settings
 from django.urls import reverse
 from edx_toggles.toggles.testutils import override_waffle_flag
+from openedx_filters import PipelineStep
 from rest_framework.test import APITestCase
 
 from cms.djangoapps.contentstore.outlines import update_outline_from_modulestore
@@ -21,6 +23,29 @@ from openedx.core.djangoapps.content.course_overviews.tests.factories import (
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
+
+
+TEST_LIST_PRICE = 149
+TEST_DISCOUNTED_PRICE = 99
+
+
+class TestCourseModePriceRequestedPipelineStep(PipelineStep):
+    """
+    Utility pipeline step that overrides a course mode price with a fixed discounted price.
+    """
+
+    def run_filter(self, user, course_mode_data, price):  # pylint: disable=arguments-differ
+        """Pipeline step that returns a discounted price for the given course mode."""
+        return {
+            "user": user,
+            "course_mode_data": course_mode_data,
+            "price": TEST_DISCOUNTED_PRICE,
+        }
+
+
+# Built from the module and class names rather than hardcoded, so the dotted path stays
+# correct if this test module is moved or the step class is renamed.
+TEST_STEP_PATH = f"{__name__}.{TestCourseModePriceRequestedPipelineStep.__name__}"
 
 
 @ddt.ddt
@@ -50,7 +75,7 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
             course_id=self.course.id,
             mode_slug=CourseMode.VERIFIED,
             expiration_datetime=datetime(2028, 1, 1),
-            min_price=149,
+            min_price=TEST_LIST_PRICE,
             sku="ABCD1234",
         )
         VerificationDeadline.objects.create(
@@ -63,6 +88,34 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         self.user, password = self.create_non_staff_user()
         self.client.login(username=self.user.username, password=password)
         self.url = reverse("course_modes_api:v1:track-selection", args=[self.course.id])
+
+    def test_verified_price_is_list_price_without_filter_step(self):
+        """
+        With no pipeline step configured, the verified mode price is the unmodified list price.
+        """
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        assert response.data["verified_mode"]["min_price"] == str(TEST_LIST_PRICE)
+
+    @override_settings(
+        OPEN_EDX_FILTERS_CONFIG={
+            "org.openedx.learning.course_mode.price.requested.v1": {
+                "pipeline": [
+                    TEST_STEP_PATH,
+                ],
+                "fail_silently": False,
+            },
+        },
+    )
+    def test_verified_price_uses_course_mode_price_requested_filter(self):
+        """
+        A configured CourseModePriceRequested step overrides the verified mode price.
+
+        This is the hook edx-enterprise uses to apply enterprise-negotiated pricing.
+        """
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        assert response.data["verified_mode"]["min_price"] == str(TEST_DISCOUNTED_PRICE)
 
     def test_post_loads_track_selection_page_data(self):
         response = self.client.post(self.url, {}, format="json")
