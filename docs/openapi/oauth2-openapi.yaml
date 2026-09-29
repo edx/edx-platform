@@ -1,0 +1,428 @@
+openapi: 3.0.3
+info:
+  title: edX OAuth2 Bridge API
+  version: '1.0'
+  description: >-
+    edX's OAuth 2.0 authorization server, built on
+    [django-oauth-toolkit](https://github.com/jazzband/django-oauth-toolkit)
+    (DOT) with edX-specific overrides, owned by
+    `openedx/core/djangoapps/oauth_dispatch/` (and
+    `openedx/core/djangoapps/auth_exchange/` for third-party token
+    exchange). This is the contract other IDAs (Independently Deployable
+    Applications) and external integrators use to obtain access tokens for
+    calling edX Platform REST APIs.
+
+
+    Tokens can be issued as opaque bearer tokens (default, DOT-native) or as
+    self-contained JWTs carrying edX-specific claims (`token_type=jwt`).
+    JWTs are validated by other IDAs via the public JWKS at
+    `/auth/jwks.json` (see `authn-openapi.yaml`).
+
+
+    See also: `authn-openapi.yaml` (session login) and
+    `third-party-auth-openapi.yaml` (federated identity providers, which can
+    feed into `/oauth2/exchange_access_token/{backend}/` below).
+  contact:
+    name: edX Authentication Team
+  license:
+    name: AGPL-3.0
+servers:
+  - url: /
+tags:
+  - name: oauth2
+    description: RFC 6749 authorization/token/revocation endpoints.
+  - name: oauth2-exchange
+    description: Exchange third-party or opaque tokens for edX-native credentials.
+paths:
+  /oauth2/authorize/:
+    get:
+      operationId: oauth2_authorize_get
+      summary: OAuth2 authorization endpoint (authorization code / implicit grant).
+      description: >-
+        RFC 6749 Section 3.1 authorization endpoint. Requires an
+        authenticated browser session. On first use for a given
+        client+scope combination, renders a consent ("Allow access?")
+        page; on subsequent requests the edX override
+        (`EdxOAuth2AuthorizationView`) can skip re-prompting via
+        `approval_prompt=auto_even_if_expired`.
+      tags: [oauth2]
+      security:
+        - SessionAuth: []
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code, token]
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+        - name: scope
+          in: query
+          schema:
+            type: string
+          description: Space-separated scopes, e.g. `read write email profile`.
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: Opaque value echoed back to protect against CSRF; strongly recommended.
+        - name: approval_prompt
+          in: query
+          schema:
+            type: string
+            enum: [auto, force, auto_even_if_expired]
+          description: >-
+            edX extension. `auto_even_if_expired` skips the consent
+            screen if the user previously approved this client for the
+            same scopes, even if that prior grant's token has expired.
+      responses:
+        '200':
+          description: Consent page rendered (user has not yet approved this client/scope combination).
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: >-
+            Redirect to `redirect_uri` with either `?code=...&state=...`
+            (authorization_code) or `#access_token=...` (implicit) on
+            approval, or `?error=...` per RFC 6749 Section 4.1.2.1 on
+            denial/error.
+        '400':
+          description: Malformed request (missing/invalid `client_id`, `redirect_uri`, or `response_type`).
+    post:
+      operationId: oauth2_authorize_post
+      summary: Submit the OAuth2 consent decision.
+      description: >-
+        Submits the consent form rendered by `GET /oauth2/authorize/`.
+        Parameters mirror the `GET` request plus an `allow` field
+        indicating whether the user approved or denied access.
+      tags: [oauth2]
+      security:
+        - SessionAuth: []
+        - CsrfToken: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                client_id:
+                  type: string
+                response_type:
+                  type: string
+                  enum: [code, token]
+                redirect_uri:
+                  type: string
+                  format: uri
+                scope:
+                  type: string
+                state:
+                  type: string
+                allow:
+                  type: boolean
+                  description: 'True if the user clicked "Allow", false/absent if "Deny".'
+              required: [client_id, response_type, redirect_uri]
+      responses:
+        '302':
+          description: Redirect to `redirect_uri` with the authorization result.
+  /oauth2/access_token/:
+    post:
+      operationId: oauth2_token
+      summary: OAuth2 token endpoint (all grant types).
+      description: >-
+        RFC 6749 Section 3.2 token endpoint. Supports
+        `authorization_code`, `password`, `client_credentials`, and
+        `refresh_token` grants. Pass `token_type=jwt` to receive a
+        self-contained JWT access token (with edX-specific claims) instead
+        of the DOT-native opaque bearer token; pass `asymmetric_jwt=true`
+        to force asymmetric (RSA) signing (implied for restricted
+        applications).
+      tags: [oauth2]
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/AuthorizationCodeGrant'
+                - $ref: '#/components/schemas/PasswordGrant'
+                - $ref: '#/components/schemas/ClientCredentialsGrant'
+                - $ref: '#/components/schemas/RefreshTokenGrant'
+            examples:
+              client_credentials:
+                value:
+                  grant_type: client_credentials
+                  client_id: my-service-client
+                  client_secret: '********'
+                  token_type: jwt
+      responses:
+        '200':
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/OAuthTokenResponse'
+              examples:
+                opaque:
+                  value:
+                    access_token: 8xLOxBtZp8...
+                    token_type: Bearer
+                    expires_in: 36000
+                    refresh_token: FlKk1MFH1...
+                    scope: profile email
+                jwt:
+                  value:
+                    access_token: eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9...
+                    token_type: JWT
+                    expires_in: 3600
+                    refresh_token: FlKk1MFH1...
+                    scope: profile email user_id
+        '400':
+          description: Malformed request per RFC 6749 Section 5.2.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/OAuthErrorResponse'
+        '401':
+          description: Client authentication failed (`invalid_client`).
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/OAuthErrorResponse'
+  /oauth2/revoke_token/:
+    post:
+      operationId: oauth2_revoke_token
+      summary: Revoke an access or refresh token (RFC 7009).
+      description: >-
+        Note that self-contained JWT access tokens cannot themselves be
+        revoked (they are validated purely by signature/expiry); revoking
+        the associated refresh token prevents further tokens from being
+        minted.
+      tags: [oauth2]
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                token_type_hint:
+                  type: string
+                  enum: [access_token, refresh_token]
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+              required: [token, client_id]
+      responses:
+        '200':
+          description: Token revoked (or was already invalid) - empty body per RFC 7009.
+        '400':
+          description: Unsupported token type or malformed request.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/OAuthErrorResponse'
+        '401':
+          description: Client authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/OAuthErrorResponse'
+  /oauth2/exchange_access_token/{backend}/:
+    post:
+      operationId: oauth2_exchange_access_token
+      summary: Exchange a third-party OAuth2 access token for an edX-native access token.
+      description: >-
+        Only available when `ENABLE_THIRD_PARTY_AUTH` is on. Lets a client
+        that already holds an access token from an external provider (e.g.
+        a mobile app that used native Google Sign-In) trade it for an
+        edX-native token without a browser redirect round-trip, provided
+        the backend's `social_django` pipeline can resolve the third-party
+        token to a linked edX account.
+      tags: [oauth2-exchange]
+      security:
+        - {}
+      parameters:
+        - name: backend
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 'social-auth backend id, e.g. `google-oauth2`, `facebook`.'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                access_token:
+                  type: string
+                  description: Third-party provider's access token.
+                token_type:
+                  type: string
+                  enum: [jwt]
+                asymmetric_jwt:
+                  type: boolean
+                scope:
+                  type: string
+              required: [access_token]
+      responses:
+        '200':
+          description: edX-native token issued.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/OAuthTokenResponse'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/OAuthErrorResponse'
+        '401':
+          description: The third-party access token could not be verified with the provider.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/components/schemas/OAuthErrorResponse'
+  /oauth2/login/:
+    post:
+      operationId: oauth2_login_with_access_token
+      summary: Exchange an OAuth2 access token for a Django session cookie.
+      description: >-
+        Converts a previously-issued access token (opaque or asymmetric
+        JWT) into a browser session, for clients that need to switch from
+        token-based to cookie/session-based auth. Restricted to tokens
+        issued via the `password` grant, or applications configured with
+        `skip_authorization`; symmetric JWTs are rejected.
+      tags: [oauth2-exchange]
+      security:
+        - BearerAuth: []
+        - JwtAuth: []
+      responses:
+        '204':
+          description: Session established; `Set-Cookie` headers included in the response.
+        '401':
+          description: Token not eligible for session exchange.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error_code:
+                    type: string
+                    enum: [non_supported_token, non_asymmetric_token, account_disabled]
+                  developer_message:
+                    type: string
+components:
+  securitySchemes:
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    CsrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRFToken
+    JwtAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'Send as `Authorization: JWT <token>`.'
+    BearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    AuthorizationCodeGrant:
+      type: object
+      properties:
+        grant_type:
+          type: string
+          enum: [authorization_code]
+        client_id:
+          type: string
+        client_secret:
+          type: string
+          description: Required for confidential clients.
+        code:
+          type: string
+        redirect_uri:
+          type: string
+          format: uri
+        token_type:
+          type: string
+          enum: [jwt]
+        asymmetric_jwt:
+          type: boolean
+      required: [grant_type, client_id, code, redirect_uri]
+    PasswordGrant:
+      type: object
+      properties:
+        grant_type:
+          type: string
+          enum: [password]
+        client_id:
+          type: string
+        client_secret:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        scope:
+          type: string
+        token_type:
+          type: string
+          enum: [jwt]
+      required: [grant_type, client_id, username, password]
+    ClientCredentialsGrant:
+      type: object
+      properties:
+        grant_type:
+          type: string
+          enum: [client_credentials]
+        client_id:
+          type: string
+        client_secret:
+          type: string
+        scope:
+          type: string
+        token_type:
+          type: string
+          enum: [jwt]
+      required: [grant_type, client_id, client_secret]
+    RefreshTokenGrant:
+      type: object
+      properties:
+        grant_type:
+          type: string
+          enum: [refresh_token]
+        client_id:
+          type: string
+        client_secret:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          enum: [jwt]
+      required: [grant_type, client_id, refresh_token]
