@@ -2040,6 +2040,50 @@ class CourseActivityStatsTest(UrlResetMixin, ForumMockUtilsMixin, APITestCase,
         response = get_usernames_from_search_string(self.course_key, username_search_string, 1, 1)
         assert response == (username_search_string.lower(), 1, 1)
 
+    @mock.patch.dict("django.conf.settings.FEATURES", {'ENABLE_DISCUSSION_SERVICE': True})
+    def test_with_username_param_includes_unenrolled_posters(self):
+        """
+        Test user search includes users who have posted in the course but are not enrolled.
+        """
+        UserFactory.create(username='poster-not-enrolled')
+        with mock.patch(
+            'lms.djangoapps.discussion.rest_api.utils.forum_api.get_usernames_with_course_stats',
+            return_value=['poster-not-enrolled'],
+            create=True,
+        ) as mock_forum_search:
+            response = get_usernames_from_search_string(self.course_key, 'poster', 1, 10)
+        mock_forum_search.assert_called_once_with(self.course_key, 'poster')
+        assert response[:2] == ('poster-not-enrolled', 1)
+
+    @mock.patch.dict("django.conf.settings.FEATURES", {'ENABLE_DISCUSSION_SERVICE': True})
+    def test_with_username_param_forum_search_error(self):
+        """
+        Test user search still returns enrolled users when the forum search fails.
+        """
+        with mock.patch(
+            'lms.djangoapps.discussion.rest_api.utils.forum_api.get_usernames_with_course_stats',
+            side_effect=Exception('forum unavailable'),
+            create=True,
+        ):
+            response = get_usernames_from_search_string(self.course_key, 'user-1', 1, 10)
+        assert response[:2] == ('user-1', 1)
+
+    @mock.patch.dict("django.conf.settings.FEATURES", {'ENABLE_DISCUSSION_SERVICE': True})
+    def test_with_username_param_excludes_banned_user(self):
+        """
+        Test banned users matched by the search are not added back with empty stats.
+        """
+        self.client.login(username=self.moderator.username, password=self.TEST_PASSWORD)
+        with mock.patch(
+            'lms.djangoapps.discussion.rest_api.api.ENABLE_DISCUSSION_BAN.is_enabled', return_value=True
+        ), mock.patch(
+            'lms.djangoapps.discussion.rest_api.api.forum_api.get_banned_usernames',
+            return_value=['user-1'],
+            create=True,
+        ):
+            response = self.client.get(self.url, {'username': 'user-1'})
+        assert 'user-1' not in [stat['username'] for stat in response.json()['results']]
+
 
 @httpretty.activate
 @mock.patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
