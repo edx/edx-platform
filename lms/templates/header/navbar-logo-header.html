@@ -17,7 +17,11 @@ header_logo = branding_api.get_header_logo(is_secure)
 
 <h1 class="header-logo">
   <a href="${header_logo['url']}">
-    <img class="logo" src="${header_logo['image']}" alt="${header_logo['alt']}"/>
+    ## The navigation_logo block allows comprehensive themes to override the logo.
+    <%block name="navigation_logo">
+      <% header_logo = branding_api.get_header_logo(is_secure) %>
+      <img class="logo" src="${header_logo['image']}" alt="${header_logo['alt']}"/>
+    </%block>
     % if settings.LOGO_IMAGE_EXTRA_TEXT == 'edge':
         <span class="font-italic"> | EDGE</span>
     % endif
