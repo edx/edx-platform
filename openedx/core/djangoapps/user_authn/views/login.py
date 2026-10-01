@@ -7,11 +7,15 @@ Much of this file was broken out from views.py, previous history can be found th
 import hashlib
 import json
 import logging
+import re
+import unicodedata
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth import login as django_login
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -123,6 +127,166 @@ def _get_user_by_username(username):
         return None
 
 
+def _validate_internationalized_email(email):
+    """
+    Validate an internationalized email address that Django's validate_email may reject.
+    Implements permissive validation for RFC 6531 (SMTPUTF8) compliant emails.
+
+    This fallback is used when Django's validate_email() rejects an email that may be
+    a valid internationalized email. It's intentionally restrictive to only accept
+    common Latin-based accented characters and common scripts used in email addresses.
+
+    Returns True if the email is valid, False otherwise.
+    Rejects emails with:
+    - Multiple @ symbols
+    - Empty local part or domain
+    - Control characters or other dangerous chars
+    - CJK characters and other rare scripts
+    - Invalid domain structure
+    """
+    # Must have exactly one @ symbol
+    if email.count('@') != 1:
+        return False
+
+    local_part, domain = email.rsplit('@', 1)
+
+    # Both parts must be non-empty
+    if not local_part or not domain:
+        return False
+
+    # Reject control characters (ASCII 0-31, 127)
+    for char in email:
+        if ord(char) < 32 or ord(char) == 127:
+            return False
+
+    # Reject some dangerous characters even if they appear in valid emails
+    # (quotes, angle brackets, space, etc.)
+    dangerous_chars = set('"<>\\,; \t\n\r')
+    if any(char in dangerous_chars for char in email):
+        return False
+
+    # Validate Unicode characters: be restrictive to only allow common email-friendly characters
+    # Allow: ASCII alphanumeric, common Latin accented characters, and common punctuation
+    # Reject: CJK, other non-Latin scripts, and problematic Unicode blocks
+    for char in email:
+        code_point = ord(char)
+
+        if code_point <= 127:
+            # ASCII characters - allow alphanumeric and common email chars
+            # (@ . _ - + handled by dangerous_chars check above)
+            continue
+        elif 0xC0 <= code_point <= 0x17F:
+            # Latin Extended-A and Latin Extended-B (accented characters like é, ñ, etc.)
+            # This is the most common range for internationalized emails
+            category = unicodedata.category(char)
+            if category[0] not in ('L', 'M'):
+                return False
+        elif 0x0370 <= code_point <= 0x03FF:
+            # Greek letters (common in internationalized emails)
+            category = unicodedata.category(char)
+            if category[0] not in ('L', 'M'):
+                return False
+        elif 0x0400 <= code_point <= 0x04FF:
+            # Cyrillic letters (common in internationalized emails)
+            category = unicodedata.category(char)
+            if category[0] not in ('L', 'M'):
+                return False
+        else:
+            # Reject all other Unicode blocks including CJK (U+4E00-U+9FFF)
+            # This is very restrictive but safer for email validation
+            return False
+
+    # Domain must contain at least one dot OR be localhost
+    if '.' not in domain and domain != 'localhost':
+        return False
+
+    # For internationalized domains, try IDNA encoding to validate structure
+    if domain != 'localhost':
+        try:
+            # IDNA encoding will raise an exception for invalid domain names
+            domain.encode('idna').decode('ascii')
+        except (UnicodeError, UnicodeDecodeError):
+            # Invalid internationalized domain name
+            return False
+
+    return True
+
+
+def _validate_email_or_username_format(email_or_username):
+    """
+    Validate email_or_username against allowlist format.
+    Returns True if valid, False otherwise.
+
+    Allows either:
+    - Valid email format (up to 254 chars) - RFC-compliant with character allowlist
+    - Valid username charset: depends on ENABLE_UNICODE_USERNAME setting
+        - ASCII mode: alphanumeric + {._@+-} (up to 150 chars)
+        - Unicode mode: USERNAME_REGEX_PARTIAL with re.UNICODE flag
+    """
+    if not email_or_username or not isinstance(email_or_username, str):
+        return False
+
+    # Try email format validation
+    if '@' in email_or_username:
+        # Email format validation: use Django's validate_email for RFC-compliant validation
+        # with proper character allowlist. Max 254 chars per RFC 5321.
+        if len(email_or_username) > 254:
+            return False
+        try:
+            # Django's validate_email performs:
+            # - Proper RFC 5321/5322 structural validation
+            # - Character allowlist validation (rejects control chars, quotes, angle brackets, etc.)
+            # - Supports Unicode local parts per RFC 6531
+            validate_email(email_or_username)
+            return True
+        except ValidationError:
+            # Fallback: Django's validate_email may reject valid internationalized emails.
+            # Try a permissive validation for Unicode emails (RFC 6531).
+            return _validate_internationalized_email(email_or_username)
+    else:
+        # Username format validation: honor ENABLE_UNICODE_USERNAME setting
+        if len(email_or_username) > 150:
+            return False
+
+        if settings.FEATURES.get("ENABLE_UNICODE_USERNAME"):
+            # Unicode mode: use USERNAME_REGEX_PARTIAL pattern (same as registration)
+            # Use fullmatch() to ensure entire string matches (avoids $ newline gotcha)
+            username_pattern = settings.USERNAME_REGEX_PARTIAL
+            return bool(re.fullmatch(username_pattern, email_or_username, re.UNICODE))
+        else:
+            # ASCII mode: allow only alphanumeric, dots, underscores, @, +, -
+            # Use fullmatch() to ensure entire string matches (avoids $ newline gotcha)
+            username_pattern = r'[a-zA-Z0-9_.@+-]+'
+            return bool(re.fullmatch(username_pattern, email_or_username))
+
+
+def _get_request_value(request, field_name):
+    """Return a trusted scalar string from the request payload or raise a login error.
+
+    Rejects multi-valued form parameters (e.g., email=val1&email=val2) by requiring exactly one value.
+    Supports both Django QueryDict and plain dict payloads.
+    """
+    payload = request.POST
+    # Support both Django QueryDict (with getlist) and plain dict payloads
+    if hasattr(payload, 'getlist'):
+        values = payload.getlist(field_name)
+    else:
+        # Plain dict: convert to list format for consistent handling
+        value = payload.get(field_name)
+        values = value if isinstance(value, (list, tuple)) else [value]
+
+    if not values:
+        return None
+    if len(values) > 1:
+        # Reject requests with repeated parameters (e.g., email=val1&email=val2)
+        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+
+    value = values[0]
+    if isinstance(value, str):
+        return value
+    raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+
+
 def _get_user_by_email_or_username(request, api_version):
     """
     Finds a user object in the database based on the given request, ignores all fields except for email and username.
@@ -135,7 +299,17 @@ def _get_user_by_email_or_username(request, api_version):
     if any(f not in request.POST.keys() for f in login_fields):
         raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
 
-    email_or_username = request.POST.get("email", None) or request.POST.get("email_or_username", None)
+    email_or_username = _get_request_value(request, "email") or _get_request_value(request, "email_or_username")
+    if email_or_username is None:
+        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+
+    # Strict allowlist validation: reject malformed input early with 400
+    if not _validate_email_or_username_format(email_or_username):
+        # Log hashed value for audit trail / pentest detection (without raw value)
+        digest = hashlib.shake_128(email_or_username.encode("utf-8")).hexdigest(16)
+        AUDIT_LOG.warning(f"Login failed - malformed email_or_username format {digest}")
+        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+
     user = _get_user_by_email(email_or_username)
 
     if not user and is_api_v2:
@@ -252,7 +426,10 @@ def _authenticate_first_party(request, unauthenticated_user, third_party_auth_re
     if not third_party_auth_requested:
         _check_user_auth_flow(request.site, unauthenticated_user)
 
-    password = normalize_password(request.POST["password"])
+    password = _get_request_value(request, "password")
+    if password is None:
+        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+    password = normalize_password(password)
     return authenticate(username=username, password=password, request=request)
 
 
@@ -694,10 +871,8 @@ def login_user(request, api_version="v1"):  # pylint: disable=too-many-statement
         error_code = response_content.get("error_code")
         if error_code:
             set_custom_attribute("login_error_code", error_code)
-        email_or_username_key = "email" if api_version == API_V1 else "email_or_username"
-        email_or_username = request.POST.get(email_or_username_key, None)
-        email_or_username = possibly_authenticated_user.email if possibly_authenticated_user else email_or_username
-        response_content["email"] = email_or_username
+        # Do not reflect raw user input in error responses; omit the email field for security
+        # If a field is needed for compatibility, only include authenticated user email (not request input)
     except VulnerablePasswordError as error:
         response_content = error.get_response()
         log.exception(response_content)
