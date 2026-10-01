@@ -5,6 +5,7 @@ Progress Tab Views
 from django.contrib.auth import get_user_model
 from django.http.response import Http404
 from edx_django_utils import monitoring as monitoring_utils
+from edx_django_utils.plugins import pluggable_override
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from opaque_keys.edx.keys import CourseKey
@@ -39,9 +40,21 @@ from openedx.core.djangoapps.content.course_overviews.models import CourseOvervi
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.features.content_type_gating.block_transformers import ContentTypeGateTransformer
 from openedx.features.course_duration_limits.access import get_access_expiration_data
-from openedx.features.enterprise_support.utils import get_enterprise_learner_generic_name
 
 User = get_user_model()
+
+
+@pluggable_override('OVERRIDE_COURSE_HOME_PROGRESS_USERNAME')
+def obfuscated_username(request, student):
+    """
+    Return an obfuscated username for the student, or None (indicating student's
+    real name should be used).
+
+    This function can be overridden by an installed plugin via the
+    OVERRIDE_COURSE_HOME_PROGRESS_USERNAME setting to return a generic name
+    for learners who should not have their real username exposed.
+    """
+    return None
 
 
 class ProgressTabView(RetrieveAPIView):
@@ -206,7 +219,7 @@ class ProgressTabView(RetrieveAPIView):
         is_staff = bool(has_access(request.user, 'staff', course_key))
 
         student = self._get_student_user(request, course_key, student_id, is_staff)
-        username = get_enterprise_learner_generic_name(request) or student.username
+        username = obfuscated_username(request, student) or student.username
 
         course = get_course_or_403(student, 'load', course_key, check_if_enrolled=False)
 
