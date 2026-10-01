@@ -481,6 +481,9 @@ class UnitTestLibraries(CourseTestCase):
         are a staff member of. Else, with creator groups enabled, the user should be able to select
         organizations they are course creator for.
         """
+        # Role-based access only applies to non-staff users; global staff get every org.
+        self.user.is_staff = False
+        self.user.save()
         course_creator = CourseCreator.objects.create(user=self.user, all_organizations=True)
         with patch('cms.djangoapps.course_creators.models.CourseCreator.objects.filter') as mock_filter:
             mock_filter.return_value.first.return_value = course_creator
@@ -515,3 +518,19 @@ class UnitTestLibraries(CourseTestCase):
                     ):
                         organizations = get_allowed_organizations_for_libraries(self.user)
                         self.assertEqual(organizations, ['org3'])
+
+    @ddt.data(True, False)
+    def test_allowed_organizations_for_library_global_staff(self, org_staff_access_enabled):
+        """
+        Global staff should be able to select any organization when creating a library,
+        regardless of the roles they hold or which Feature Flags are enabled.
+        """
+        assert self.user.is_staff
+        with patch('organizations.models.Organization.objects.all') as mock_all:
+            mock_all.return_value.values_list.return_value = ['org1', 'org2']
+            with mock.patch.dict('django.conf.settings.FEATURES', {
+                "ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES": org_staff_access_enabled,
+                "ENABLE_CREATOR_GROUP": True,
+            }):
+                organizations = get_allowed_organizations_for_libraries(self.user)
+        self.assertEqual(organizations, ['org1', 'org2'])

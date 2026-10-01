@@ -92,6 +92,17 @@ class HomePageViewTest(CourseTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertDictEqual(expected_response, response.data)
 
+    @override_settings(ORGANIZATIONS_AUTOCREATE=False)
+    def test_home_page_staff_sees_all_orgs_for_libraries(self):
+        """Global staff can pick any org for a new library, even when org autocreate is disabled"""
+        OrganizationFactory.create(short_name="org1")
+        OrganizationFactory.create(short_name="org2")
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertCountEqual(response.data["allowed_organizations_for_libraries"], ["org1", "org2"])
+
     def test_taxonomy_list_link(self):
         response = self.client.get(self.url)
         self.assertTrue(response.data['taxonomies_enabled'])

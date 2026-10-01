@@ -1851,6 +1851,11 @@ def get_allowed_organizations_for_libraries(user):
     """
     Helper method for returning the list of organizations for which the user is allowed to create libraries.
     """
+    # Global staff may create libraries in any organization, so offer all of them. Without this,
+    # when ORGANIZATIONS_AUTOCREATE is disabled the Authoring MFE only shows staff the orgs they
+    # hold a role in.
+    if user.is_staff:
+        return list(Organization.objects.all().values_list('short_name', flat=True))
     if settings.FEATURES.get('ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES', False):
         return get_organizations_for_non_course_creators(user)
     elif settings.FEATURES.get('ENABLE_CREATOR_GROUP', False):
