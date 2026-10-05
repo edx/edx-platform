@@ -249,7 +249,7 @@ def certificate_status_for_student(student, course_id):
         from lms.djangoapps.certificates.proctoring_block import get_certificate_proctoring_status
 
         proctoring_status = get_certificate_proctoring_status(
-            student, _safe_course_key(course_id), generated_certificate.created_date
+            student, _safe_course_key(course_id), generated_certificate
         )
         if proctoring_status['blocked']:
             cert_status.pop('download_url', None)

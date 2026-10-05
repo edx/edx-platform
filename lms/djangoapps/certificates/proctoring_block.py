@@ -73,11 +73,46 @@ def _reason_for_status(status):
     return 'proctored_exam_incomplete'
 
 
+def _certificate_was_downloadable_at_policy_start(certificate, effective_at):
+    """Return whether a certificate was downloadable before the policy started.
+
+    ``created_date`` identifies when the certificate row was first created, not
+    necessarily when it became downloadable.  Certificate rows are reused, so
+    consult their status history before treating an older row as legacy.
+    """
+    if certificate is None or effective_at is None:
+        return False
+
+    created_at = getattr(certificate, 'created_date', None)
+    if created_at is None:
+        return False
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=effective_at.tzinfo)
+    if created_at >= effective_at:
+        return False
+
+    from lms.djangoapps.certificates.data import CertificateStatuses
+
+    history = certificate.history.all()
+    latest_before_cutoff = history.filter(
+        history_date__lt=effective_at,
+    ).order_by('-history_date').first()
+    if (
+        latest_before_cutoff is not None
+        and latest_before_cutoff.status != CertificateStatuses.downloadable
+    ):
+        return False
+
+    return not history.filter(
+        history_date__gte=effective_at,
+    ).exclude(status=CertificateStatuses.downloadable).exists()
+
+
 @request_cached(
     namespace='certificates.proctoring_block',
     arg_map_function=_cache_key_part,
 )
-def get_certificate_proctoring_status(user, course_key, certificate_created_at=None):
+def get_certificate_proctoring_status(user, course_key, certificate=None):
     """Return whether certificate access is blocked for a learner/course.
 
     The result is calculated from the current status on every request.  The
@@ -101,17 +136,7 @@ def get_certificate_proctoring_status(user, course_key, certificate_created_at=N
         return _result()
 
     effective_at = get_certificate_proctoring_review_block_effective_at()
-    if (
-        certificate_created_at is not None
-        and effective_at is not None
-        and certificate_created_at.tzinfo is None
-    ):
-        certificate_created_at = certificate_created_at.replace(tzinfo=effective_at.tzinfo)
-    if (
-        certificate_created_at is not None
-        and effective_at is not None
-        and certificate_created_at < effective_at
-    ):
+    if _certificate_was_downloadable_at_policy_start(certificate, effective_at):
         return _result()
 
     try:

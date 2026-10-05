@@ -521,7 +521,7 @@ def render_html_view(request, course_id, certificate=None):  # pylint: disable=t
         return _render_invalid_certificate(request, course_id, platform_name, configuration)
 
     if not preview_mode:
-        proctoring_status = get_certificate_proctoring_status(user, course_key, user_certificate.created_date)
+        proctoring_status = get_certificate_proctoring_status(user, course_key, user_certificate)
         if proctoring_status['blocked']:
             log.info(
                 "Certificate view blocked by proctoring status for user %d in course %s: %s",
@@ -898,7 +898,7 @@ def download_cert_by_uuid(request, certificate_uuid):
         raise Http404 from exc
 
     proctoring_status = get_certificate_proctoring_status(
-        request.user, certificate.course_id, certificate.created_date
+        request.user, certificate.course_id, certificate
     )
     if proctoring_status['blocked']:
         platform_name = configuration_helpers.get_value("platform_name", settings.PLATFORM_NAME)

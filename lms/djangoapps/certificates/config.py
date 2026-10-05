@@ -1,10 +1,14 @@
 """Configuration settings for the Certificates app."""
 
-from datetime import datetime, timezone
+import logging
+from datetime import date, datetime, time, timezone
 
 from django.conf import settings
 from django.utils.dateparse import parse_datetime
+from edx_django_utils.monitoring.utils import increment
 from edx_toggles.toggles import SettingToggle, WaffleSwitch
+
+log = logging.getLogger(__name__)
 
 # Namespace
 WAFFLE_NAMESPACE = 'certificates'
@@ -32,6 +36,17 @@ CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT_SETTING = (
 )
 
 
+def _invalid_certificate_proctoring_review_block_effective_at(value):
+    """Log and record an invalid certificate proctoring cutoff setting."""
+    log.error(
+        'Invalid %s certificate proctoring policy setting: %r',
+        CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT_SETTING,
+        value,
+    )
+    increment('certificates.proctoring_block.invalid_effective_at')
+    return None
+
+
 def get_certificate_proctoring_review_block_effective_at():
     """Return the configured UTC timestamp when certificate blocking began."""
     configured_value = getattr(
@@ -39,16 +54,35 @@ def get_certificate_proctoring_review_block_effective_at():
         CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT_SETTING,
         None,
     )
-    if isinstance(configured_value, str):
-        configured_value = parse_datetime(configured_value)
-
-    if not isinstance(configured_value, datetime):
+    if configured_value is None:
         return None
+
+    if isinstance(configured_value, str):
+        original_value = configured_value
+        try:
+            configured_value = parse_datetime(configured_value)
+        except (TypeError, ValueError):
+            return _invalid_certificate_proctoring_review_block_effective_at(original_value)
+        if configured_value is None:
+            try:
+                configured_value = datetime.combine(
+                    date.fromisoformat(original_value),
+                    time.min,
+                    tzinfo=timezone.utc,
+                )
+            except (TypeError, ValueError):
+                return _invalid_certificate_proctoring_review_block_effective_at(original_value)
+    elif isinstance(configured_value, date) and not isinstance(configured_value, datetime):
+        configured_value = datetime.combine(configured_value, time.min, tzinfo=timezone.utc)
+
+    elif not isinstance(configured_value, datetime):
+        return _invalid_certificate_proctoring_review_block_effective_at(configured_value)
 
     if configured_value.tzinfo is None:
         configured_value = configured_value.replace(tzinfo=timezone.utc)
 
     return configured_value.astimezone(timezone.utc)
+
 
 # .. toggle_name: REDACT_CERTIFICATES_HISTORICAL_PII
 # .. toggle_implementation: SettingToggle
