@@ -65,12 +65,11 @@ class CertificateProctoringBlockTests(SimpleTestCase):
         self.assertFalse(result['blocked'])
         self.assertEqual(result['blocking_statuses'], [])
 
-    def test_eligible_is_derived_not_attempted(self):
+    def test_eligible_no_attempt_is_non_blocking(self):
         result = self._check('eligible')
 
-        self.assertTrue(result['blocked'])
-        self.assertEqual(result['reason'], 'proctored_exam_not_attempted')
-        self.assertEqual(result['blocking_statuses'], ['not_attempted'])
+        self.assertFalse(result['blocked'])
+        self.assertEqual(result['blocking_statuses'], [])
 
     @ddt.data(
         {'is_proctored': False},
@@ -102,6 +101,27 @@ class CertificateProctoringBlockTests(SimpleTestCase):
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['blocking_statuses'], ['started'])
+
+    def test_no_attempt_does_not_mask_review_pending_exam(self):
+        second_exam = {
+            **self.exam,
+            'content_id': 'block-v1:edX+DemoX+Demo_Course+type@proctored_exam+block@second',
+        }
+        with mock.patch.object(
+            proctoring_block.CERTIFICATE_PROCTORING_REVIEW_BLOCK,
+            'is_enabled',
+            return_value=True,
+        ), mock.patch(
+            'edx_proctoring.api.get_all_exams_for_course',
+            return_value=[self.exam, second_exam],
+        ), mock.patch(
+            'edx_proctoring.api.get_attempt_status_summary',
+            side_effect=[{'status': 'eligible'}, {'status': 'submitted'}],
+        ):
+            result = proctoring_block.get_certificate_proctoring_status(self.user, self.COURSE_KEY)
+
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['blocking_statuses'], ['submitted'])
 
     def test_lookup_failure_blocks_and_is_not_silent(self):
         with mock.patch.object(

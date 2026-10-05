@@ -27,7 +27,6 @@ BLOCKING_ATTEMPT_STATUSES = frozenset({
     'submitted',
     'second_review_required',
     'error',
-    'not_attempted',
 })
 
 ALLOWED_ATTEMPT_STATUSES = frozenset({
@@ -68,8 +67,6 @@ def _reason_for_status(status):
         return 'proctoring_review_pending'
     if status == 'error':
         return 'proctoring_error'
-    if status == 'not_attempted':
-        return 'proctored_exam_not_attempted'
     return 'proctored_exam_incomplete'
 
 
@@ -155,9 +152,11 @@ def get_certificate_proctoring_status(user, course_key):
 
         status = summary['status']
         # ``eligible`` is the edx-proctoring representation for no attempt.
+        # A missing attempt is not a review-required state and must not block a
+        # learner who otherwise meets the normal certificate requirements.
         # ``expired`` is returned separately once the course-end date passes.
         if status == ProctoredExamStudentAttemptStatus.eligible:
-            status = 'not_attempted'
+            continue
 
         if status in BLOCKING_ATTEMPT_STATUSES:
             return _result(True, _reason_for_status(status), [status])
