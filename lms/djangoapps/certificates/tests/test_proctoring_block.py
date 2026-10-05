@@ -1,9 +1,10 @@
 """Tests for the centralized certificate/proctoring access policy."""
 
+from datetime import datetime, timezone
 from unittest import mock
 
 import ddt
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from edx_django_utils.cache import RequestCache
 
 from lms.djangoapps.certificates import proctoring_block
@@ -27,7 +28,7 @@ class CertificateProctoringBlockTests(SimpleTestCase):
             'is_practice_exam': False,
         }
 
-    def _check(self, status, **exam_overrides):
+    def _check(self, status, certificate_created_at=None, **exam_overrides):
         """Return the block decision for a single mocked exam status."""
         exam = {**self.exam, **exam_overrides}
         with mock.patch.object(
@@ -41,7 +42,35 @@ class CertificateProctoringBlockTests(SimpleTestCase):
             'edx_proctoring.api.get_attempt_status_summary',
             return_value={'status': status},
         ):
-            return proctoring_block.get_certificate_proctoring_status(self.user, self.COURSE_KEY)
+            return proctoring_block.get_certificate_proctoring_status(
+                self.user, self.COURSE_KEY, certificate_created_at
+            )
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_certificate_created_before_policy_is_not_blocked(self):
+        with mock.patch.object(
+            proctoring_block.CERTIFICATE_PROCTORING_REVIEW_BLOCK,
+            'is_enabled',
+            return_value=True,
+        ), mock.patch('edx_proctoring.api.get_all_exams_for_course') as get_exams:
+            result = proctoring_block.get_certificate_proctoring_status(
+                self.user,
+                self.COURSE_KEY,
+                datetime(2021, 1, 1, tzinfo=timezone.utc),
+            )
+
+        self.assertFalse(result['blocked'])
+        get_exams.assert_not_called()
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_certificate_created_at_policy_start_is_evaluated(self):
+        result = self._check(
+            'submitted',
+            certificate_created_at=datetime(2026, 9, 25, tzinfo=timezone.utc),
+        )
+
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['blocking_statuses'], ['submitted'])
 
     @ddt.data(
         'created',

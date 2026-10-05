@@ -9,7 +9,10 @@ import logging
 
 from edx_django_utils.monitoring.utils import increment
 
-from lms.djangoapps.certificates.config import CERTIFICATE_PROCTORING_REVIEW_BLOCK
+from lms.djangoapps.certificates.config import (
+    CERTIFICATE_PROCTORING_REVIEW_BLOCK,
+    get_certificate_proctoring_review_block_effective_at,
+)
 from openedx.core.lib.cache_utils import request_cached
 
 log = logging.getLogger(__name__)
@@ -74,13 +77,18 @@ def _reason_for_status(status):
     namespace='certificates.proctoring_block',
     arg_map_function=_cache_key_part,
 )
-def get_certificate_proctoring_status(user, course_key):
+def get_certificate_proctoring_status(user, course_key, certificate_created_at=None):
     """Return whether certificate access is blocked for a learner/course.
 
     The result is calculated from the current status on every request.  The
     platform request cache prevents duplicate checks within that request.  No
     cross-request cache is used so a provider callback automatically restores
     access on the next request.
+
+    Certificates created before the configured policy effective time retain
+    the access they had when they were awarded.  This prevents a newly
+    enabled access-time policy from retroactively blocking historical
+    certificates.
 
     A status lookup failure is treated conservatively as blocked when the
     feature is enabled.  The failure is logged and exposed through the
@@ -90,6 +98,20 @@ def get_certificate_proctoring_status(user, course_key):
         return _result()
 
     if not user or not getattr(user, 'is_authenticated', False):
+        return _result()
+
+    effective_at = get_certificate_proctoring_review_block_effective_at()
+    if (
+        certificate_created_at is not None
+        and effective_at is not None
+        and certificate_created_at.tzinfo is None
+    ):
+        certificate_created_at = certificate_created_at.replace(tzinfo=effective_at.tzinfo)
+    if (
+        certificate_created_at is not None
+        and effective_at is not None
+        and certificate_created_at < effective_at
+    ):
         return _result()
 
     try:
