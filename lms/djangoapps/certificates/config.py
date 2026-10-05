@@ -44,7 +44,6 @@ def _invalid_certificate_proctoring_review_block_effective_at(value):
         value,
     )
     increment('certificates.proctoring_block.invalid_effective_at')
-    return None
 
 
 def get_certificate_proctoring_review_block_effective_at():
