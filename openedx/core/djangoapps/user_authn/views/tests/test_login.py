@@ -14,7 +14,7 @@ from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.core import mail
 from django.core.cache import cache
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.test.client import Client
 from django.test.utils import override_settings
 from django.urls import NoReverseMatch, reverse
@@ -32,10 +32,12 @@ from openedx.core.djangoapps.user_api.accounts import EMAIL_MIN_LENGTH, EMAIL_MA
 from openedx.core.djangoapps.user_authn.config.waffle import ENABLE_PWNED_PASSWORD_API
 from openedx.core.djangoapps.user_authn.cookies import jwt_cookies
 from openedx.core.djangoapps.user_authn.tests.utils import setup_login_oauth_client
+from openedx.core.djangoapps.user_authn.exceptions import AuthFailedError
 from openedx.core.djangoapps.user_authn.views.login import (
     ENABLE_LOGIN_USING_THIRDPARTY_AUTH_ONLY,
     AllowedAuthUser,
-    _check_user_auth_flow
+    _check_user_auth_flow,
+    _get_request_value,
 )
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
 from openedx.core.djangoapps.site_configuration.tests.mixins import SiteMixin
@@ -225,7 +227,7 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
         self._assert_not_in_audit_log(mock_audit_log, 'info', [self.user_email])
 
     def test_login_success_unicode_email(self):
-        unicode_email = 'test' + chr(40960) + '@edx.org'
+        unicode_email = 'tést@edx.org'
         self.user.email = unicode_email
         self.user.save()
 
@@ -234,6 +236,13 @@ class LoginTest(SiteMixin, CacheIsolationTestCase, OpenEdxEventsTestMixin):
         )
         self._assert_response(response, success=True)
         self._assert_audit_log(mock_audit_log, 'info', ['Login success', unicode_email])
+
+    def test_login_rejects_invalid_unicode_email(self):
+        invalid_email = 'test' + chr(40960) + '@edx.org'
+
+        response, _ = self._login_response(invalid_email, self.password)
+
+        self._assert_response(response, success=False, status_code=400)
 
     def test_login_fail_no_user_exists(self):
         nonexistent_email = 'not_a_user@edx.org'
@@ -1087,6 +1096,61 @@ class LoginSessionViewTest(ApiTestCase, OpenEdxEventsTestMixin):
             "email": "invalid@example.com",
             "password": self.PASSWORD,
         })
+        self.assertHttpBadRequest(response)
+
+    def test_login_rejects_non_string_credentials(self):
+        # Unit test: _get_request_value() should reject non-string values
+        request = Mock()
+        request.POST = {
+            "email": object(),
+        }
+
+        with self.assertRaises(AuthFailedError):
+            _get_request_value(request, "email")
+
+    def test_login_rejects_malformed_email(self):
+        sql_injection_payload = "test' AND '1'='1' -- "
+        response = self.client.post(self.url, {
+            "email": sql_injection_payload,
+            "password": self.PASSWORD,
+        })
+        self.assertHttpBadRequest(response)
+        # Verify the payload is not reflected in the response (prevents log injection/downstream XSS)
+        self.assertNotIn(sql_injection_payload.encode(), response.content)
+
+    def test_login_rejects_malformed_username(self):
+        xss_payload = "user<script>alert(1)</script>"
+        response = self.client.post(self.url_v2, {
+            "email_or_username": xss_payload,
+            "password": self.PASSWORD,
+        })
+        self.assertHttpBadRequest(response)
+        # Verify the payload is not reflected in the response (prevents downstream XSS)
+        self.assertNotIn(xss_payload.encode(), response.content)
+
+    def test_login_accepts_scalar_dict_payload(self):
+        """Test that login works with plain dict payloads (not just QueryDict).
+
+        Regression test for integration tests that submit plain dicts instead of FormData,
+        which ensures _get_request_value() supports both dict and QueryDict.
+        """
+        response = self.client.post(self.url, {
+            "email": self.EMAIL,
+            "password": self.PASSWORD,
+        })
+        self.assertHttpOK(response)
+
+    def test_login_rejects_multi_valued_email(self):
+        """Test that multi-valued email parameters are still rejected.
+
+        Security test: ensures _get_request_value() rejects repeated parameters
+        even when the payload is a plain dict with list values.
+        """
+        # Use QueryDict to preserve list values
+        post_data = QueryDict(mutable=True)
+        post_data.setlist('email', ['first@example.com', 'second@example.com'])
+        post_data.setlist('password', [self.PASSWORD])
+        response = self.client.post(self.url, post_data)
         self.assertHttpBadRequest(response)
 
     @ddt.data(True, False)
