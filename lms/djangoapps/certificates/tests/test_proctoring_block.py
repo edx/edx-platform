@@ -59,7 +59,7 @@ class CertificateProctoringBlockTests(SimpleTestCase):
         self.assertTrue(result['blocked'])
         self.assertEqual(result['blocking_statuses'], [status])
 
-    @ddt.data('verified', 'rejected', 'declined', 'timed_out', 'expired')
+    @ddt.data('verified', 'rejected', 'timed_out', 'expired')
     def test_allowed_statuses(self, status):
         result = self._check(status)
 
@@ -118,27 +118,6 @@ class CertificateProctoringBlockTests(SimpleTestCase):
         ), mock.patch(
             'edx_proctoring.api.get_attempt_status_summary',
             side_effect=[{'status': 'eligible'}, {'status': 'submitted'}],
-        ):
-            result = proctoring_block.get_certificate_proctoring_status(self.user, self.COURSE_KEY)
-
-        self.assertTrue(result['blocked'])
-        self.assertEqual(result['blocking_statuses'], ['submitted'])
-
-    def test_declined_does_not_mask_review_pending_exam(self):
-        second_exam = {
-            **self.exam,
-            'content_id': 'block-v1:edX+DemoX+Demo_Course+type@proctored_exam+block@second',
-        }
-        with mock.patch.object(
-            proctoring_block.CERTIFICATE_PROCTORING_REVIEW_BLOCK,
-            'is_enabled',
-            return_value=True,
-        ), mock.patch(
-            'edx_proctoring.api.get_all_exams_for_course',
-            return_value=[self.exam, second_exam],
-        ), mock.patch(
-            'edx_proctoring.api.get_attempt_status_summary',
-            side_effect=[{'status': 'declined'}, {'status': 'submitted'}],
         ):
             result = proctoring_block.get_certificate_proctoring_status(self.user, self.COURSE_KEY)
 
@@ -218,13 +197,13 @@ class CertificateProctoringBlockTests(SimpleTestCase):
             return_value=[self.exam],
         ), mock.patch(
             'edx_proctoring.api.get_attempt_status_summary',
-            return_value={'status': 'future_status'},
+            return_value={'status': 'declined'},
         ), self.assertLogs(proctoring_block.log, level='ERROR'):
             result = proctoring_block.get_certificate_proctoring_status(self.user, self.COURSE_KEY)
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['reason'], 'proctoring_status_unavailable')
-        self.assertEqual(result['blocking_statuses'], ['future_status'])
+        self.assertEqual(result['blocking_statuses'], ['declined'])
 
     def test_result_is_cached_for_the_request(self):
         with mock.patch.object(

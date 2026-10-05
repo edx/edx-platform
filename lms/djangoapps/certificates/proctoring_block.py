@@ -32,7 +32,6 @@ BLOCKING_ATTEMPT_STATUSES = frozenset({
 ALLOWED_ATTEMPT_STATUSES = frozenset({
     'verified',
     'rejected',
-    'declined',
     'timed_out',
     'expired',
 })

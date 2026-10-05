@@ -18,7 +18,6 @@ from openedx.core.djangoapps.api_admin.tests.factories import (
     CatalogFactory
 )
 from openedx.core.djangoapps.api_admin.tests.utils import VALID_DATA
-from openedx.core.djangoapps.catalog.utils import get_catalog_api_base_url
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from common.djangoapps.student.tests.factories import UserFactory
 
@@ -236,7 +235,7 @@ class CatalogTest(ApiAdminTest):
         """ Mock the Course Catalog API's catalog endpoint. """
         assert httpretty.is_enabled(), 'httpretty must be enabled to mock Catalog API calls.'
 
-        url = '{root}/catalogs/'.format(root=get_catalog_api_base_url().rstrip('/'))
+        url = '{root}/catalogs/'.format(root=settings.COURSE_CATALOG_API_URL.rstrip('/'))
         if catalog_id:
             url += f'{catalog_id}/'
 
