@@ -98,8 +98,8 @@ def _certificate_was_downloadable_at_policy_start(certificate, effective_at):
         history_date__lt=effective_at,
     ).order_by('-history_date').first()
     if (
-        latest_before_cutoff is not None
-        and latest_before_cutoff.status != CertificateStatuses.downloadable
+        latest_before_cutoff is None
+        or latest_before_cutoff.status != CertificateStatuses.downloadable
     ):
         return False
 
@@ -120,8 +120,8 @@ def get_certificate_proctoring_status(user, course_key, certificate=None):
     cross-request cache is used so a provider callback automatically restores
     access on the next request.
 
-    Certificates created before the configured policy effective time retain
-    the access they had when they were awarded.  This prevents a newly
+    Certificates downloadable before the configured policy effective time
+    retain the access they had when they were awarded.  This prevents a newly
     enabled access-time policy from retroactively blocking historical
     certificates.
 

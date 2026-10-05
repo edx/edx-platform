@@ -97,6 +97,15 @@ class CertificateProctoringBlockTests(SimpleTestCase):
         self.assertTrue(result['blocked'])
 
     @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_pre_cutoff_certificate_without_history_is_evaluated(self):
+        certificate = self._certificate(
+            datetime(2021, 1, 1, tzinfo=timezone.utc),
+        )
+        result = self._check('submitted', certificate=certificate)
+
+        self.assertTrue(result['blocked'])
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
     def test_pre_cutoff_certificate_revoked_after_policy_start_is_evaluated(self):
         certificate = self._certificate(
             datetime(2021, 1, 1, tzinfo=timezone.utc),
