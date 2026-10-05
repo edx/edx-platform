@@ -1,12 +1,14 @@
 """Tests for the centralized certificate/proctoring access policy."""
 
+from datetime import date, datetime, timezone
 from unittest import mock
 
 import ddt
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from edx_django_utils.cache import RequestCache
 
 from lms.djangoapps.certificates import proctoring_block
+from lms.djangoapps.certificates.config import get_certificate_proctoring_review_block_effective_at
 
 
 @ddt.ddt
@@ -27,7 +29,26 @@ class CertificateProctoringBlockTests(SimpleTestCase):
             'is_practice_exam': False,
         }
 
-    def _check(self, status, **exam_overrides):
+    def _certificate(
+        self,
+        created_date,
+        status_before_cutoff=None,
+        has_non_downloadable_after_cutoff=False,
+    ):
+        """Build a certificate mock with the status history used by the cutoff policy."""
+        certificate = mock.Mock(id=123, created_date=created_date)
+        before_cutoff = mock.MagicMock()
+        before_cutoff.order_by.return_value.first.return_value = (
+            mock.Mock(status=status_before_cutoff) if status_before_cutoff is not None else None
+        )
+        after_cutoff = mock.MagicMock()
+        after_cutoff.exclude.return_value.exists.return_value = has_non_downloadable_after_cutoff
+        history = mock.MagicMock()
+        history.filter.side_effect = [before_cutoff, after_cutoff]
+        certificate.history.all.return_value = history
+        return certificate
+
+    def _check(self, status, certificate=None, **exam_overrides):
         """Return the block decision for a single mocked exam status."""
         exam = {**self.exam, **exam_overrides}
         with mock.patch.object(
@@ -41,7 +62,82 @@ class CertificateProctoringBlockTests(SimpleTestCase):
             'edx_proctoring.api.get_attempt_status_summary',
             return_value={'status': status},
         ):
-            return proctoring_block.get_certificate_proctoring_status(self.user, self.COURSE_KEY)
+            return proctoring_block.get_certificate_proctoring_status(
+                self.user, self.COURSE_KEY, certificate
+            )
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_certificate_created_before_policy_is_not_blocked(self):
+        certificate = self._certificate(
+            datetime(2021, 1, 1, tzinfo=timezone.utc),
+            status_before_cutoff='downloadable',
+        )
+        with mock.patch.object(
+            proctoring_block.CERTIFICATE_PROCTORING_REVIEW_BLOCK,
+            'is_enabled',
+            return_value=True,
+        ), mock.patch('edx_proctoring.api.get_all_exams_for_course') as get_exams:
+            result = proctoring_block.get_certificate_proctoring_status(
+                self.user,
+                self.COURSE_KEY,
+                certificate,
+            )
+
+        self.assertFalse(result['blocked'])
+        get_exams.assert_not_called()
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_pre_cutoff_certificate_that_was_not_downloadable_is_evaluated(self):
+        certificate = self._certificate(
+            datetime(2021, 1, 1, tzinfo=timezone.utc),
+            status_before_cutoff='unavailable',
+        )
+        result = self._check('submitted', certificate=certificate)
+
+        self.assertTrue(result['blocked'])
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_pre_cutoff_certificate_without_history_is_evaluated(self):
+        certificate = self._certificate(
+            datetime(2021, 1, 1, tzinfo=timezone.utc),
+        )
+        result = self._check('submitted', certificate=certificate)
+
+        self.assertTrue(result['blocked'])
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_pre_cutoff_certificate_revoked_after_policy_start_is_evaluated(self):
+        certificate = self._certificate(
+            datetime(2021, 1, 1, tzinfo=timezone.utc),
+            status_before_cutoff='downloadable',
+            has_non_downloadable_after_cutoff=True,
+        )
+        result = self._check('submitted', certificate=certificate)
+
+        self.assertTrue(result['blocked'])
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_pre_cutoff_certificate_with_downloadable_history_is_not_blocked(self):
+        certificate = self._certificate(
+            datetime(2021, 1, 1, tzinfo=timezone.utc),
+            status_before_cutoff='downloadable',
+        )
+        result = self._check('submitted', certificate=certificate)
+
+        self.assertFalse(result['blocked'])
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T00:00:00+00:00')
+    def test_certificate_created_at_policy_start_is_evaluated(self):
+        certificate = self._certificate(
+            datetime(2026, 9, 25, tzinfo=timezone.utc),
+        )
+        result = self._check(
+            'submitted',
+            certificate=certificate,
+        )
+
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['blocking_statuses'], ['submitted'])
 
     @ddt.data(
         'created',
@@ -234,3 +330,47 @@ class CertificateProctoringBlockTests(SimpleTestCase):
 
         self.assertFalse(result['blocked'])
         get_exams.assert_not_called()
+
+
+@ddt.ddt
+class CertificateProctoringConfigurationTests(SimpleTestCase):
+    """Verify safe parsing of the certificate proctoring cutoff setting."""
+
+    SETTING = 'CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT'
+    METRIC = 'certificates.proctoring_block.invalid_effective_at'
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT=None)
+    def test_missing_cutoff_is_disabled_without_error(self):
+        self.assertIsNone(get_certificate_proctoring_review_block_effective_at())
+
+    @ddt.data('', 'not-a-date', '2026-09-31T00:00:00+00:00')
+    def test_invalid_cutoff_is_ignored_and_recorded(self, value):
+        with mock.patch(
+            'lms.djangoapps.certificates.config.increment'
+        ) as increment, self.assertLogs('lms.djangoapps.certificates.config', level='ERROR'):
+            with override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT=value):
+                result = get_certificate_proctoring_review_block_effective_at()
+
+        self.assertIsNone(result)
+        increment.assert_called_once_with(self.METRIC)
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25')
+    def test_date_only_cutoff_uses_utc_midnight(self):
+        self.assertEqual(
+            get_certificate_proctoring_review_block_effective_at(),
+            datetime(2026, 9, 25, tzinfo=timezone.utc),
+        )
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT='2026-09-25T05:30:00+05:30')
+    def test_cutoff_is_normalized_to_utc(self):
+        self.assertEqual(
+            get_certificate_proctoring_review_block_effective_at(),
+            datetime(2026, 9, 25, tzinfo=timezone.utc),
+        )
+
+    @override_settings(CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT=date(2026, 9, 25))
+    def test_date_object_cutoff_uses_utc_midnight(self):
+        self.assertEqual(
+            get_certificate_proctoring_review_block_effective_at(),
+            datetime(2026, 9, 25, tzinfo=timezone.utc),
+        )

@@ -71,7 +71,7 @@ def _format_certificate_for_user(username, cert):
     """
     course_overview = get_course_overview_or_none(cert.course_id)
     proctoring_status = (
-        get_certificate_proctoring_status(cert.user, cert.course_id)
+        get_certificate_proctoring_status(cert.user, cert.course_id, cert)
         if cert.status == CertificateStatuses.downloadable
         else {'blocked': False, 'reason': None, 'blocking_statuses': []}
     )

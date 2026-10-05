@@ -1032,6 +1032,10 @@ MAINTENANCE_BANNER_TEXT = None
 # `common.djangoapps.util.date_utils.strftime_localized`.
 CERTIFICATE_DATE_FORMAT = "%B %-d, %Y"
 
+# UTC timestamp when access-time proctoring certificate blocking became
+# effective. Production deployment configuration supplies the rollout value.
+CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT = None
+
 ### Dark code. Should be enabled in local settings for devel.
 
 ENABLE_MULTICOURSE = False  # set to False to disable multicourse display (see lib.util.views.edXhome)

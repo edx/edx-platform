@@ -9,7 +9,10 @@ import logging
 
 from edx_django_utils.monitoring.utils import increment
 
-from lms.djangoapps.certificates.config import CERTIFICATE_PROCTORING_REVIEW_BLOCK
+from lms.djangoapps.certificates.config import (
+    CERTIFICATE_PROCTORING_REVIEW_BLOCK,
+    get_certificate_proctoring_review_block_effective_at,
+)
 from openedx.core.lib.cache_utils import request_cached
 
 log = logging.getLogger(__name__)
@@ -70,17 +73,57 @@ def _reason_for_status(status):
     return 'proctored_exam_incomplete'
 
 
+def _certificate_was_downloadable_at_policy_start(certificate, effective_at):
+    """Return whether a certificate was downloadable before the policy started.
+
+    ``created_date`` identifies when the certificate row was first created, not
+    necessarily when it became downloadable.  Certificate rows are reused, so
+    consult their status history before treating an older row as legacy.
+    """
+    if certificate is None or effective_at is None:
+        return False
+
+    created_at = getattr(certificate, 'created_date', None)
+    if created_at is None:
+        return False
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=effective_at.tzinfo)
+    if created_at >= effective_at:
+        return False
+
+    from lms.djangoapps.certificates.data import CertificateStatuses
+
+    history = certificate.history.all()
+    latest_before_cutoff = history.filter(
+        history_date__lt=effective_at,
+    ).order_by('-history_date').first()
+    if (
+        latest_before_cutoff is None
+        or latest_before_cutoff.status != CertificateStatuses.downloadable
+    ):
+        return False
+
+    return not history.filter(
+        history_date__gte=effective_at,
+    ).exclude(status=CertificateStatuses.downloadable).exists()
+
+
 @request_cached(
     namespace='certificates.proctoring_block',
     arg_map_function=_cache_key_part,
 )
-def get_certificate_proctoring_status(user, course_key):
+def get_certificate_proctoring_status(user, course_key, certificate=None):
     """Return whether certificate access is blocked for a learner/course.
 
     The result is calculated from the current status on every request.  The
     platform request cache prevents duplicate checks within that request.  No
     cross-request cache is used so a provider callback automatically restores
     access on the next request.
+
+    Certificates downloadable before the configured policy effective time
+    retain the access they had when they were awarded.  This prevents a newly
+    enabled access-time policy from retroactively blocking historical
+    certificates.
 
     A status lookup failure is treated conservatively as blocked when the
     feature is enabled.  The failure is logged and exposed through the
@@ -90,6 +133,10 @@ def get_certificate_proctoring_status(user, course_key):
         return _result()
 
     if not user or not getattr(user, 'is_authenticated', False):
+        return _result()
+
+    effective_at = get_certificate_proctoring_review_block_effective_at()
+    if _certificate_was_downloadable_at_policy_start(certificate, effective_at):
         return _result()
 
     try:
