@@ -32,6 +32,7 @@ BLOCKING_ATTEMPT_STATUSES = frozenset({
 ALLOWED_ATTEMPT_STATUSES = frozenset({
     'verified',
     'rejected',
+    'declined',
     'timed_out',
     'expired',
 })
@@ -143,14 +144,42 @@ def get_certificate_proctoring_status(user, course_key):
             )
             return _lookup_error_result()
 
-        if not summary or not summary.get('status'):
+        if summary is None:
+            # edx-proctoring returns None both when the learner is not eligible
+            # to take the exam and when the exam lookup fails.  Revalidate the
+            # exam before treating a missing attempt as non-blocking so a
+            # provider lookup failure remains fail-closed.  If an attempt
+            # exists, apply its status directly so a permission change cannot
+            # hide a review-pending attempt.
+            try:
+                from edx_proctoring.api import get_current_exam_attempt, get_exam_by_content_id
+
+                get_exam_by_content_id(str(course_key), content_id)
+                exam_id = exam.get('id')
+                if exam_id is None:
+                    raise ValueError('Proctoring exam is missing id')
+                attempt = get_current_exam_attempt(exam_id, user.id)
+            except Exception:  # pylint: disable=broad-exception-caught
+                log.exception(
+                    'Unable to resolve a missing proctoring status summary. '
+                    'user_id=%s course_key=%s content_id=%s', user.id, course_key, content_id
+                )
+                return _lookup_error_result()
+
+            if not attempt:
+                continue
+
+            status = attempt.get('status')
+        else:
+            status = summary.get('status')
+
+        if not status:
             log.error(
                 'Proctoring returned no status while checking certificate access. '
                 'user_id=%s course_key=%s content_id=%s', user.id, course_key, content_id
             )
             return _lookup_error_result()
 
-        status = summary['status']
         # ``eligible`` is the edx-proctoring representation for no attempt.
         # A missing attempt is not a review-required state and must not block a
         # learner who otherwise meets the normal certificate requirements.
