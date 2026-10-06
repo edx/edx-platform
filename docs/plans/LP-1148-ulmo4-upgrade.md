@@ -111,4 +111,6 @@ To be completed before step 8. Points already known:
 - Optionally re-add the fork-only IPv6 and reserved-address cases to `TestValidateSAMLMetadataURL`. This is coverage only; the validator code is unchanged.
 - Feed the methodology into the edx-internal playbook (v0.2): the hunk-level survival check, the revert trap, and the moved-files class of silent merge loss.
 - Retitle LP-1148 to reflect ulmo.4+.
+- Remove the Open edX tutorial workflow `.github/workflows/check-for-tutorial-prs.yml` from `release-ulmo` (it comments on any PR touching `lms/templates/dashboard.html`, including this one). Tracked in a separate PR.
+- Report upstream that openedx-learning 0.30.2's `PublishableEntityVersionDependency` docstring says `.. no_pii` without the colon (fixed on openedx-learning main).
 - Report the two pycodestyle errors upstream (E302 in `openedx/core/lib/tests/test_extract_archive.py`, E303 in `cms/djangoapps/contentstore/rest_api/v1/views/tests/test_videos.py`, on `openedx/release/ulmo`), so the next upstream merge doesn't conflict with our whitespace fix.
