@@ -11,6 +11,7 @@ import HTML5Video from './02_html5_video.js';
 import HLS from 'hls';
 
 let HLSVideo = {};
+const MAX_HLS_NETWORK_ERROR_RETRIES = 3;
 
 HLSVideo.Player = (function() {
     /**
@@ -23,6 +24,7 @@ HLSVideo.Player = (function() {
         let self = this;
 
         this.config = config;
+        this.hlsNetworkErrorRetries = Object.create(null);
 
         // do common initialization independent of player type
         this.init(el, config);
@@ -111,6 +113,13 @@ HLSVideo.Player = (function() {
         this.config.events.onReady(null);
     };
 
+    Player.prototype.getHlsNetworkErrorKey = function(data) {
+        if (data.frag && data.frag.url) {
+            return data.frag.url;
+        }
+        return data.details;
+    };
+
     /**
      * Handler for HLS video errors. This only takes care of fatal erros, non-fatal errors
      * are automatically handled by hls.js
@@ -119,14 +128,31 @@ HLSVideo.Player = (function() {
      * @param {Object} data  Contains the information regarding error occurred.
      */
     Player.prototype.onError = function(event, data) {
+        let errorKey,
+            retryCount;
+
         if (data.fatal) {
             switch (data.type) {
             case HLS.ErrorTypes.NETWORK_ERROR:
-                console.error(
-                    '[HLS Video]: Fatal network error encountered, try to recover. Details: %s',
-                    data.details
-                );
-                this.hls.startLoad();
+                errorKey = this.getHlsNetworkErrorKey(data);
+                retryCount = this.hlsNetworkErrorRetries[errorKey] || 0;
+                if (retryCount < MAX_HLS_NETWORK_ERROR_RETRIES) {
+                    this.hlsNetworkErrorRetries[errorKey] = retryCount + 1;
+                    console.error(
+                        '[HLS Video]: Fatal network error encountered, try to recover. Details: %s',
+                        data.details
+                    );
+                    this.hls.startLoad();
+                } else if (retryCount === MAX_HLS_NETWORK_ERROR_RETRIES) {
+                    this.hlsNetworkErrorRetries[errorKey] = retryCount + 1;
+                    console.warn(
+                        '[HLS Video]: Stopped retrying repeated fatal network error. Details: %s',
+                        data.details
+                    );
+                    if (typeof this.hls.stopLoad === 'function') {
+                        this.hls.stopLoad();
+                    }
+                }
                 break;
             case HLS.ErrorTypes.MEDIA_ERROR:
                 console.error(

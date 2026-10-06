@@ -985,7 +985,7 @@ import _ from 'underscore';
                             makeFatalNetworkError = function(url) {
                                 return {
                                     fatal: true,
-                                    type: Hls.ErrorTypes.NETWORK_ERROR,
+                                    type: HLS.ErrorTypes.NETWORK_ERROR,
                                     details: 'fragLoadError',
                                     frag: {
                                         url: url
