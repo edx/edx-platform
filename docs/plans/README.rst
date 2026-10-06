@@ -9,9 +9,10 @@ infrastructure that is expected to be removed again.
 Lifecycle
 *********
 
-* **A plan lives exactly as long as the thing it describes.** Finishing or
-  dismantling the thing includes deleting its plan, in the same pull request
-  where practical.
+* **A plan lives exactly as long as the thing it describes.** A plan may ship
+  in the same pull request as the work it describes, and is updated there as
+  the work progresses. Once the work is finished (or dismantled), delete the
+  plan, in the same pull request where practical, otherwise in a follow-up.
 * Name the file after its ticket, for example ``LP-1148-ulmo4-upgrade.md``.
   Supporting material for the same ticket (such as an audit) uses the same
   prefix, for example ``LP-1148-ulmo4-merge-audit.md``.
@@ -28,6 +29,7 @@ Current plans
 *************
 
 * ``LP-1148-ulmo4-upgrade.md`` -- landing the ulmo.4+ upgrade (Django 5.2) on
-  ``release-ulmo``. Delete when the upgrade is in production and stable.
+  ``release-ulmo``; ships with the upgrade PR. Delete when the upgrade is in
+  production and stable.
 * ``LP-1148-ulmo4-merge-audit.md`` -- merge audit of the upgrade branch,
   including the scripts used. Delete together with the plan.

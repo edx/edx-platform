@@ -2,7 +2,7 @@
 
 Ticket: [LP-1148](https://2u-internal.atlassian.net/browse/LP-1148) ("Prepare and test edxapp Ulmo.1 branch" — the title is stale; the target is now ulmo.4+). Parent epic: [LP-1309](https://2u-internal.atlassian.net/browse/LP-1309) ("Ulmo.3 Deployment").
 
-Delete this document, and `LP-1148-ulmo4-merge-audit.md`, once the upgrade is in production and stable — see `docs/plans/README.rst`.
+This plan, and `LP-1148-ulmo4-merge-audit.md`, ship in the upgrade PR itself: [edx/edx-platform#505](https://github.com/edx/edx-platform/pull/505), branch `robrap/lp1148-ulmo4-continue`. Keep both up to date in that branch as the work progresses; they land on `release-ulmo` with the upgrade. Delete both in a small follow-up PR once the upgrade is in production and stable — see `docs/plans/README.rst`.
 
 Related: the upgrade-process playbook in edx-internal ([PR #14962](https://github.com/edx/edx-internal/pull/14962), `docs/openedx-upgrade-process/`, especially `05-edx-platform-ulmo3-batch.md` and the Django pre-flight item in `04-...` section B). That playbook treated this landing as a case study; this plan and the audit are the concrete execution of it.
 
@@ -30,11 +30,11 @@ The same trap applies to rollback: see [Rollout and rollback](#rollout-and-rollb
 | Base | Continue from `edx/edx/ulmo.3`, not from scratch, because of the revert trap. A history-independent "from scratch" merge (explicit base `242a69d06b`) has 48 conflicted files; those were used as the audit's high-risk list instead of being hand-resolved twice. |
 | PDF textbook viewer | Upstream pdf.js 5.7.284 plus the fork's guards (relative-URL only, dangerous-scheme sanitizing). All six options considered are in the commit message of `fc8f1f0a8c`; to be reviewed by the owners of fork PRs #51/#64/#86. |
 | Branch naming | `robrap/` prefix. |
-| Testing | CI on the PR, plus devstack for what CI cannot cover (see [Verification](#verification)). |
+| Testing | CI on the PR, plus devstack for what CI cannot cover (see [Next steps](#next-steps)). |
 
 ## Current state
 
-Upgrade branch: **`robrap/lp1148-ulmo4-continue`** (`edx/edx-platform`). First-parent history on top of `edx/edx/ulmo.3`:
+Upgrade branch: **`robrap/lp1148-ulmo4-continue`** (`edx/edx-platform`), draft PR [#505](https://github.com/edx/edx-platform/pull/505). First-parent history on top of `edx/edx/ulmo.3`:
 
 | Commit | What |
 |---|---|
@@ -44,12 +44,13 @@ Upgrade branch: **`robrap/lp1148-ulmo4-continue`** (`edx/edx-platform`). First-p
 | `687065c198` | Port the HLS fragment retry limit to the migrated video JS, and fix its spec. |
 | `c56841c5e4` | Port the video language menu sizing (#215, JS half) to the migrated video JS. |
 | `91b8e72823` | Drop the studio-frontend translations pull from the Makefile (upstream 28ab2ceb67). |
+| `49b7adc344` + later docs commits | This plan, the merge audit, and the `docs/plans/` README. |
 
 Status on 2026-10-06:
 
 - Merges are complete and audited. See `LP-1148-ulmo4-merge-audit.md`: 4 real merge losses were found and fixed, nothing else was lost, and landing on `release-ulmo` is conflict-free and yields the branch's tree exactly.
 - Django is at 5.2.11. The 5.2.18 bump has not been done.
-- No tests have been run yet. There was no local Python environment; CI has not run.
+- No tests have been run locally (no local Python environment). Draft PR #505 is open, so CI is running on this state, pre-Django-bump.
 
 ## Next steps
 
@@ -66,7 +67,7 @@ Status on 2026-10-06:
    - Do not run `make upgrade`: it re-downloads `common_constraints.txt` and recompiles everything.
    - The `compile-python-requirements.yml` workflow cannot do a single-package bump.
    - Review the diff (expect only `django==5.2.18` across `requirements/edx/*.txt` and `scripts/user_retirement/requirements/*.txt`), and say in the PR that this deviates from upstream ulmo.4.
-3. **Push the branch and open a draft PR to `release-ulmo`** (the edx fork's default branch). Link this plan; do not duplicate it.
+3. ~~Push the branch and open a draft PR to `release-ulmo`.~~ Done: [#505](https://github.com/edx/edx-platform/pull/505). The PR description links this plan; do not duplicate the plan there.
 4. **CI.** Fix failures as separate commits. Pay particular attention to:
    - `lms/djangoapps/courseware/tests/test_fields.py`
    - the video tests
@@ -81,6 +82,8 @@ Status on 2026-10-06:
 6. **Pre-flight items** from the edx-internal playbook (PR #14962 doc `04`, section B, Django 4.2→5.2) and its deployed-settings checks against `argocd/applications/edxapp-*/` in edx-internal. That repo, not Datadog, is the real deploy inventory.
 7. **Owner reviews** (open items below), before merging.
 8. **Write the rollout and rollback plan** (next section) into this document, then deploy to stage, then prod.
+9. **Mark #505 ready for review and merge it.** The plan docs land with it.
+10. **Once stable in production**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`'s list.
 
 ## Rollout and rollback
 

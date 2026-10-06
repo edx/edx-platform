@@ -1,8 +1,8 @@
 # Merge audit: `robrap/lp1148-ulmo4-continue` (ulmo.4+ upgrade)
 
-Ticket: [LP-1148](https://2u-internal.atlassian.net/browse/LP-1148). Companion to `LP-1148-ulmo4-upgrade.md`; delete together with it.
+Ticket: [LP-1148](https://2u-internal.atlassian.net/browse/LP-1148). Companion to `LP-1148-ulmo4-upgrade.md`, in the same PR ([#505](https://github.com/edx/edx-platform/pull/505)); delete together with it.
 
-Audit date: 2026-10-06, at branch tip `91b8e72823`.
+Audit date: 2026-10-06, at branch tip `91b8e72823`, the last code commit before the docs were added.
 
 Inputs:
 
