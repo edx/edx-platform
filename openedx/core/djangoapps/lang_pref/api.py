@@ -13,6 +13,11 @@ from openedx.core.djangoapps.site_configuration.helpers import get_value
 # eliminating the need to see the context of the tuple packing.
 Language = namedtuple('Language', 'code name')
 
+# A site language as the site language pickers need it: the code and name, plus
+# whether the language is fully released. An available language that is not fully
+# released is a beta language.
+SiteLanguage = namedtuple('SiteLanguage', 'code name released')
+
 
 def header_language_selector_is_enabled():
     """Return true if the header language selector has been enabled via settings or site-specific configuration."""
@@ -67,6 +72,47 @@ def released_languages():
         for language_info in settings.LANGUAGES
         if language_info[0] in released_language_codes
     ]
+
+
+def site_languages():
+    """Retrieve the languages a user may select as their site language.
+
+    This is the same set of languages as :func:`released_languages`, but each entry also
+    records whether the language is *fully* released. An available language that is not
+    fully released is a beta language, and site language pickers are expected to label
+    beta languages or leave them out.
+
+    A language listed in both ``DarkLangConfig.released_languages`` and
+    ``DarkLangConfig.beta_languages`` is treated as fully released.
+
+    Returns:
+        list of SiteLanguage: Languages available for selection.
+
+    Example:
+
+        >>> print(site_languages())
+        [SiteLanguage(code='en', name='English', released=True),
+         SiteLanguage(code='lt-lt', name='Lietuvių (Lietuva)', released=False)]
+
+    """
+    fully_released_codes = set(DarkLangConfig.current().released_languages_list)
+    fully_released_codes.add(settings.LANGUAGE_CODE)
+
+    return [
+        SiteLanguage(language.code, language.name, language.code in fully_released_codes)
+        for language in released_languages()
+    ]
+
+
+def site_languages_cache_version():
+    """Return a token that changes whenever the site language configuration changes.
+
+    Callers that cache the output of :func:`site_languages` should include this token in
+    their cache key, so that saving a new ``DarkLangConfig`` takes effect immediately
+    instead of waiting for the cache entry to expire.
+    """
+    change_date = DarkLangConfig.current().change_date
+    return change_date.isoformat() if change_date else 'default'
 
 
 def all_languages():

@@ -332,12 +332,37 @@ class TranscriptUploadTest(CourseTestCase):
             video_id='123',
             language_code='en',
             metadata={
-                'language_code': 'es',
+                'language_code': 'es-419',
                 'file_format': 'sjson',
                 'provider': 'Custom'
             },
             file_data=ANY,
         )
+
+    @patch('cms.djangoapps.contentstore.transcript_storage_handlers.create_or_update_video_transcript')
+    @patch(
+        'cms.djangoapps.contentstore.transcript_storage_handlers.get_available_transcript_languages',
+        Mock(return_value=['en']),
+    )
+    def test_transcript_upload_handler_returns_200_on_replace(self, mock_create_or_update_video_transcript):
+        """
+        Verify that uploading a transcript for a language that already has a
+        transcript returns 200 (replace) instead of 201 (create).
+        """
+        transcript_file_stream = StringIO('0\n00:00:00,010 --> 00:00:00,100\nHello, edX greets you.\n\n')
+        response = self.client.post(
+            self.view_url,
+            {
+                'edx_video_id': '123',
+                'language_code': 'en',
+                'new_language_code': 'en',
+                'file': transcript_file_stream,
+            },
+            format='multipart'
+        )
+
+        self.assertEqual(response.status_code, 200)  # noqa: PT009
+        mock_create_or_update_video_transcript.assert_called_once()
 
     @ddt.data(
         (
@@ -386,7 +411,7 @@ class TranscriptUploadTest(CourseTestCase):
 
     @patch(
         'cms.djangoapps.contentstore.transcript_storage_handlers.get_available_transcript_languages',
-        Mock(return_value=['en', 'es'])
+        Mock(return_value=['en', 'es-419'])
     )
     def test_transcript_upload_handler_existing_transcript(self):
         """
@@ -403,7 +428,7 @@ class TranscriptUploadTest(CourseTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             json.loads(response.content.decode('utf-8'))['error'],
-            'A transcript with the "es" language code already exists.'
+            'A transcript with the "es-419" language code already exists.'
         )
 
     @patch(
@@ -617,7 +642,7 @@ class TranscriptUploadApiTest(CourseTestCase):
             video_id='123',
             language_code='en',
             metadata={
-                'language_code': 'es',
+                'language_code': 'es-419',
                 'file_format': 'sjson',
                 'provider': 'Custom'
             },
@@ -671,7 +696,7 @@ class TranscriptUploadApiTest(CourseTestCase):
 
     @patch(
         'cms.djangoapps.contentstore.transcript_storage_handlers.get_available_transcript_languages',
-        Mock(return_value=['en', 'es'])
+        Mock(return_value=['en', 'es-419'])
     )
     def test_transcript_upload_handler_existing_transcript(self):
         """
@@ -688,7 +713,7 @@ class TranscriptUploadApiTest(CourseTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             json.loads(response.content.decode('utf-8'))['error'],
-            'A transcript with the "es" language code already exists.'
+            'A transcript with the "es-419" language code already exists.'
         )
 
     @patch(

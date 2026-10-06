@@ -2840,6 +2840,35 @@ class RegistrationValidationViewTests(test_utils.ApiTestCase, OpenEdxEventsTestM
             {}
         )
 
+    def test_no_decision_for_invalid_form_field_key_value(self):
+        response = self.client.post(
+            self.path,
+            {'form_field_key': ['email', 'username']},
+        )
+        assert response.status_code == 200
+        assert self.get_validation_decision(response) == {}
+
+    def test_invalid_form_field_key_with_submitted_field(self):
+        """
+        Test that invalid form_field_key only validates submitted fields,
+        not all handlers. When submitting email + invalid form_field_key,
+        only email should be validated (not password/country/etc).
+        """
+        valid_email = 'test@example.com'
+        response = self.client.post(
+            self.path,
+            {'email': valid_email, 'form_field_key': 'invalid_key'},
+        )
+        assert response.status_code == 200
+        validation_decisions = self.get_validation_decision(response)
+        # Only email should be in decisions, not unsubmitted fields
+        assert 'email' in validation_decisions
+        assert 'password' not in validation_decisions
+        assert 'country' not in validation_decisions
+        assert 'username' not in validation_decisions
+        # Email should validate as OK
+        assert validation_decisions['email'] == ''
+
     @ddt.data(
         ['name', list(testutils.VALID_NAMES)],
         ['email', list(testutils.VALID_EMAILS)],
@@ -3040,6 +3069,25 @@ class RegistrationValidationViewTests(test_utils.ApiTestCase, OpenEdxEventsTestM
             {'username': 'user', 'email': 'user@email.com', 'is_authn_mfe': True, 'form_field_key': 'email'},
             {'email': AUTHN_EMAIL_CONFLICT_MSG}
         )
+
+    def test_registration_rejects_non_numeric_total_registration_time(self):
+        """
+        Test that registration rejects non-numeric total_registration_time values.
+        """
+        response = self.client.post(
+            reverse('user_api_registration'),
+            {
+                'email': 'test_metric@example.com',
+                'username': 'testmetricuser',
+                'password': 'Valid_Password_123',
+                'name': 'Test User',
+                'honor_code': 'true',
+                'total_registration_time': '57.664" AND "1"="1" -- ',
+            },
+        )
+        assert response.status_code == 400
+        response_data = response.json()
+        assert 'total_registration_time' in response_data or 'error_code' in response_data
 
     @mock.patch('eventtracking.tracker.emit')
     @mock.patch(

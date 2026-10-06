@@ -25,6 +25,12 @@ urlpatterns = [
 
     # Certificates HTML view end point to render web certs by certificate_uuid
     re_path(
+        r'^(?P<certificate_uuid>[0-9a-f]{32})/download$',
+        views.download_cert_by_uuid,
+        name='download_cert_by_uuid'
+    ),
+
+    re_path(
         r'^(?P<certificate_uuid>[0-9a-f]{32})$',
         views.render_cert_by_uuid,
         name='render_cert_by_uuid'

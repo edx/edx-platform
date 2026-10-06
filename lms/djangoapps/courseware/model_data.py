@@ -27,7 +27,9 @@ import logging
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict, namedtuple
 
+from django.conf import settings
 from django.db import DatabaseError, IntegrityError, transaction
+from opaque_keys import InvalidKeyError
 from opaque_keys.edx.asides import AsideUsageKeyV1, AsideUsageKeyV2
 from opaque_keys.edx.block_types import BlockTypeKeyV1
 from opaque_keys.edx.keys import LearningContextKey
@@ -404,9 +406,13 @@ class UserStateCache:
                 self.user.username,
                 pending_updates
             )
-        except DatabaseError:
-            log.exception("Saving user state failed for %s", self.user.username)
-            raise KeyValueMultiSaveError([])  # lint-amnesty, pylint: disable=raise-missing-from
+        except DatabaseError as err:
+            user_identifier_for_log = (
+                self.user.id if getattr(settings, 'SQUELCH_PII_IN_LOGS', False)
+                else self.user.username
+            )
+            log.exception("Saving user state failed for %s", user_identifier_for_log)
+            raise KeyValueMultiSaveError([]) from err
         finally:
             self._cache.update(pending_updates)
 
@@ -731,6 +737,24 @@ class FieldDataCache:
                 should be cached
         """
 
+        self.add_block_descendents_batch([block], depth=depth, block_filter=block_filter)
+
+    def add_block_descendents_batch(self, blocks, depth=None, block_filter=lambda block: True):
+        """
+        Add descendants of several blocks in one state-cache population operation.
+
+        This is the batch equivalent of :meth:`add_block_descendents`. It is useful for
+        endpoints that render several sibling blocks independently: walking each sibling
+        separately and calling ``add_blocks_to_cache`` each time causes one user-state
+        lookup per sibling even though all of the data belongs to the same request.
+
+        The supplied blocks must belong to the same course as this cache. Duplicate usage
+        keys are removed before the fields are read so shared required descriptors do not
+        cause duplicate work.
+        """
+        if not blocks:
+            return
+
         def get_child_blocks(block, depth, block_filter):
             """
             Return a list of all child blocks down to the specified depth
@@ -749,15 +773,103 @@ class FieldDataCache:
             if depth is None or depth > 0:
                 new_depth = depth - 1 if depth is not None else depth
 
-                for child in block.get_children() + block.get_required_block_descriptors():
+                for child in self._children_to_prefetch(block):
                     blocks.extend(get_child_blocks(child, new_depth, block_filter))
 
             return blocks
 
-        with modulestore().bulk_operations(block.location.course_key):
-            blocks = get_child_blocks(block, depth, block_filter)
+        blocks_to_cache = []
+        seen_locations = set()
+        with modulestore().bulk_operations(blocks[0].location.course_key):
+            for block in blocks:
+                for descendant in get_child_blocks(block, depth, block_filter):
+                    if descendant.location not in seen_locations:
+                        seen_locations.add(descendant.location)
+                        blocks_to_cache.append(descendant)
 
-        self.add_blocks_to_cache(blocks)
+        self.add_blocks_to_cache(blocks_to_cache)
+
+    def _children_to_prefetch(self, block):
+        """
+        Return the children of `block` whose saved state we should load ahead of
+        rendering.
+
+        A randomized question bank (library_content / item_bank) picks a subset
+        of its problem pool per learner. `get_children()` on this kind of block
+        returns the whole pool, not the learner's picks, so using it here would
+        load saved state for every candidate problem instead of just the ones
+        that will render.
+
+        We can't fix that by calling the block's own `get_child_blocks()`
+        instead: at this point `block` isn't bound to a learner yet (that
+        happens after this whole prefetch step finishes), and without a bound
+        learner `get_child_blocks()` can't tell "no picks yet" apart from "not
+        bound yet" -- it would either come back empty or invent a fresh
+        selection and fire an "assigned" analytics event, neither of which is
+        safe to trigger while just warming a cache.
+
+        So instead we read the learner's already-saved picks directly out of
+        the database (`_persisted_selection_usage_keys` below), and only narrow
+        down to them when we actually find some saved. If none are saved yet
+        (first visit), we fall back to loading the whole pool, same as before --
+        harmless in that case, since there's no saved state to load either way.
+        """
+        has_dynamic_children = getattr(block, 'has_dynamic_children', None)
+        if callable(has_dynamic_children) and has_dynamic_children():
+            selected_keys = self._persisted_selection_usage_keys(block)
+            if selected_keys is not None:
+                selected_children = [
+                    child for child in (block.get_child(key) for key in selected_keys)
+                    if child is not None
+                ]
+                return selected_children + block.get_required_block_descriptors()
+
+        return block.get_children() + block.get_required_block_descriptors()
+
+    def _persisted_selection_usage_keys(self, block):
+        """
+        Look up which problems this learner was already assigned from `block`'s
+        question pool, by reading their saved row directly out of the database --
+        the same table (`StudentModule`) that stores every learner's saved answers.
+
+        Returns the list of those problems' keys, or None if we don't find a saved
+        row for this learner and this block yet (meaning: they haven't visited
+        this question bank before, so no pick has been made or saved).
+        """
+        if not self.user.is_authenticated:
+            return None
+
+        try:
+            module = StudentModule.objects.get(
+                student=self.user,
+                course_id=block.location.course_key,
+                module_state_key=block.location,
+            )
+        except StudentModule.DoesNotExist:
+            return None
+
+        try:
+            state = json.loads(module.state)
+        except (TypeError, ValueError):
+            log.warning(
+                "Could not parse saved state for %s / %s while narrowing FieldDataCache prefetch",
+                self.user.id, block.location,
+            )
+            return None
+
+        selected = state.get('selected')
+        if not selected:
+            return None
+
+        course_key = block.location.course_key
+        try:
+            return [course_key.make_usage_key(block_type, block_id) for block_type, block_id in selected]
+        except (TypeError, ValueError, InvalidKeyError):
+            log.warning(
+                "Malformed 'selected' state for %s / %s while narrowing FieldDataCache prefetch",
+                self.user.id, block.location,
+            )
+            return None
 
     @classmethod
     def cache_for_block_descendents(cls, course_id, user, block, depth=None,

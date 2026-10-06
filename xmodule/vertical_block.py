@@ -99,19 +99,29 @@ class VerticalBlock(
 
         child_blocks = self.get_children()  # lint-amnesty, pylint: disable=no-member
 
+        # Large assessment units render only the first `incremental_load_eager_count`
+        # children here; the rest are left as placeholders (`lazy_children`) for the page's
+        # own JS to fill in via batched calls to XBlockChildren. Absent that context key,
+        # every child renders inline, exactly as before.
+        eager_count = (context or {}).get('incremental_load_eager_count')
+        if eager_count is not None and eager_count < len(child_blocks):
+            eager_blocks = child_blocks[:eager_count]
+            lazy_blocks = child_blocks[eager_count:]
+        else:
+            eager_blocks = child_blocks
+            lazy_blocks = []
+
         child_blocks_to_complete_on_view = set()
         completion_service = self.runtime.service(self, 'completion')
         if completion_service and completion_service.completion_tracking_enabled():
-            child_blocks_to_complete_on_view = completion_service.blocks_to_mark_complete_on_view(child_blocks)
+            child_blocks_to_complete_on_view = completion_service.blocks_to_mark_complete_on_view(eager_blocks)
             complete_on_view_delay = completion_service.get_complete_on_view_delay_ms()
 
         child_context['child_of_vertical'] = True
         is_child_of_vertical = context.get('child_of_vertical', False)
 
-        # pylint: disable=no-member
-        for child in child_blocks:
-            child_has_access_error = self.block_has_access_error(child)
-            if context.get('hide_access_error_blocks') and child_has_access_error:
+        for child in eager_blocks:
+            if context.get('hide_access_error_blocks') and self.block_has_access_error(child):
                 continue
             child_block_context = copy(child_context)
             if child in list(child_blocks_to_complete_on_view):
@@ -141,6 +151,8 @@ class VerticalBlock(
         cta_service = self.runtime.service(self, 'call_to_action')
         vertical_banner_ctas = cta_service.get_ctas(self, 'vertical_banner', completed) if cta_service else []
 
+        lazy_children = [str(child.location) for child in lazy_blocks]
+
         fragment_context = {
             'items': contents,
             'xblock_context': context,
@@ -151,6 +163,8 @@ class VerticalBlock(
             'has_assignments': completed is not None,
             'subsection_format': context.get('format', ''),
             'vertical_banner_ctas': vertical_banner_ctas,
+            'lazy_children': lazy_children,
+            'parent_usage_key': str(self.location) if lazy_children else None,
         }
 
         if view == STUDENT_VIEW:
@@ -189,8 +203,16 @@ class VerticalBlock(
         if has_access_error:
             return True
 
-        # Check child nodes if they exist (e.g. randomized library question aka LegacyLibraryContentBlock)
-        for child in block.get_children():
+        # Dynamic blocks, such as randomized library content, should only
+        # inspect the child blocks selected for the learner.
+        has_dynamic_children = getattr(block, 'has_dynamic_children', None)
+        get_child_blocks = getattr(block, 'get_child_blocks', None)
+        if callable(has_dynamic_children) and has_dynamic_children() and callable(get_child_blocks):
+            child_blocks = get_child_blocks()
+        else:
+            child_blocks = block.get_children()
+
+        for child in child_blocks:
             has_access_error = getattr(child, 'has_access_error', False)
             if has_access_error:
                 return True

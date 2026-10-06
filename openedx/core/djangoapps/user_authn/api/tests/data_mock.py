@@ -38,7 +38,6 @@ MFE_CONTEXT_WITH_TPA_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
-        'enterpriseBranding': None,
         'pipeline_user_details': {
             'username': 'test123',
             'email': 'test123@edx.com',
@@ -62,7 +61,6 @@ SERIALIZED_MFE_CONTEXT_WITH_TPA_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
-        'enterpriseBranding': None,
         'pipelineUserDetails': {
             'username': 'test123',
             'email': 'test123@edx.com',
@@ -90,7 +88,6 @@ MFE_CONTEXT_WITHOUT_TPA_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
-        'enterpriseBranding': None,
         'pipeline_user_details': {}
     }
 }
@@ -108,7 +105,6 @@ SERIALIZED_MFE_CONTEXT_WITHOUT_TPA_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
-        'enterpriseBranding': None,
         'pipelineUserDetails': {}
     },
     'registrationFields': {},
@@ -117,15 +113,18 @@ SERIALIZED_MFE_CONTEXT_WITHOUT_TPA_DATA = {
     }
 }
 
-ENTERPRISE_BRANDING_DATA = {
-    'enterpriseName': 'Acme Corp',
-    'enterpriseLogoUrl': 'https://example.com/acme-logo.png',
-    'enterpriseBrandedWelcomeString': 'Welcome, Acme learners!',
-    'platformWelcomeString': 'Welcome to edX',
-    'enterpriseSlug': 'acme-corp',
+# Entries a plugin may contribute through the AuthnMFEContextGenerated filter. The
+# serializer declares no fields for these, so they are merged into the response as-is,
+# at whatever depth the contributor chose.
+EXTRA_CONTEXT_DATA = {
+    'brandingName': 'Acme Corp',
+    'brandingLogoUrl': 'https://example.com/acme-logo.png',
+    'brandingStrings': {
+        'welcome': 'Welcome, Acme learners!',
+    },
 }
 
-MFE_CONTEXT_WITH_ENTERPRISE_BRANDING_DATA = {
+MFE_CONTEXT_WITH_EXTRA_CONTEXT_DATA = {
     'context_data': {
         'currentProvider': None,
         'platformName': 'edX',
@@ -138,12 +137,12 @@ MFE_CONTEXT_WITH_ENTERPRISE_BRANDING_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
-        'enterpriseBranding': ENTERPRISE_BRANDING_DATA,
         'pipeline_user_details': {},
+        'extra_context': EXTRA_CONTEXT_DATA,
     },
 }
 
-SERIALIZED_MFE_CONTEXT_WITH_ENTERPRISE_BRANDING_DATA = {
+SERIALIZED_MFE_CONTEXT_WITH_EXTRA_CONTEXT_DATA = {
     'contextData': {
         'currentProvider': None,
         'platformName': 'edX',
@@ -156,8 +155,8 @@ SERIALIZED_MFE_CONTEXT_WITH_ENTERPRISE_BRANDING_DATA = {
         'syncLearnerProfileData': False,
         'countryCode': '',
         'welcomePageRedirectUrl': '',
-        'enterpriseBranding': ENTERPRISE_BRANDING_DATA,
         'pipelineUserDetails': {},
+        **EXTRA_CONTEXT_DATA,
     },
     'registrationFields': {},
     'optionalFields': {

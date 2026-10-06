@@ -985,6 +985,24 @@ DEV_CONTENT = True
 
 SEARCH_COURSEWARE_CONTENT_LOG_PARAMS = False
 
+############################# Incremental assessment load #####################
+# Only consulted when the courseware.incremental_assessment_load waffle flag is on for
+# the course. See lms/djangoapps/courseware/block_render.py.
+
+# Units with more estimated problems than this are rendered as a shell -- the first
+# INCREMENTAL_LOAD_EAGER_COUNT children inline, the rest as placeholders -- instead of
+# rendering every child in one response. Units at or below it are unaffected.
+INCREMENTAL_LOAD_PROBLEM_THRESHOLD = 20
+
+# How many children a shell response renders inline before it starts emitting
+# placeholders. These arrive with the page, so the learner can begin immediately, and
+# rendering them also pulls in the CSS/JS the batch-loaded children will need.
+INCREMENTAL_LOAD_EAGER_COUNT = 5
+
+# Maximum children accepted by a single request to /api/courseware/xblock_children/.
+# Requests above this are rejected with a 400.
+XBLOCK_CHILDREN_BATCH_MAX = 10
+
 # .. setting_name: ELASTIC_SEARCH_INDEX_PREFIX
 # .. setting_default: ''
 # .. setting_description: Specifies the prefix used when naming elasticsearch indexes related to edx-search.
@@ -1011,6 +1029,10 @@ MAINTENANCE_BANNER_TEXT = None
 # Set certificate issued date format. It supports all formats supported by
 # `common.djangoapps.util.date_utils.strftime_localized`.
 CERTIFICATE_DATE_FORMAT = "%B %-d, %Y"
+
+# UTC timestamp when access-time proctoring certificate blocking became
+# effective. Production deployment configuration supplies the rollout value.
+CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT = None
 
 ### Dark code. Should be enabled in local settings for devel.
 
@@ -2103,6 +2125,37 @@ BULK_EMAIL_JOB_SIZE_THRESHOLD = 100
 # parallel, and what the SES rate is.
 BULK_EMAIL_RETRY_DELAY_BETWEEN_SENDS = 0.02
 
+############################# Bulk Unenroll ###################################
+
+# Upload guardrails (lms/djangoapps/support/rest_api). The row limit counts every
+# data row, duplicates included: it guards the file, not the de-duped course list.
+BULK_UNENROLL_MAX_FILE_BYTES = 5 * 1024 * 1024   # 5 MB
+BULK_UNENROLL_MAX_ROWS = 2000
+
+# --- Async engine (lms/djangoapps/support/tasks.py) ---
+# Worst case is ~10M unenrollments from one upload; these knobs throttle a real
+# run without a code deploy.
+
+# Learners deactivated per chunk task. Smaller = finer-grained progress/retry;
+# larger = fewer task round-trips.
+BULK_UNENROLL_CHUNK_SIZE = 500
+
+# Celery ``rate_limit`` for the chunk task, per worker process. ``None`` leaves
+# throughput to the queue's worker concurrency; "10/s" adds a per-worker cap.
+BULK_UNENROLL_CHUNK_RATE_LIMIT = None
+
+# Per-chunk soft time limit (seconds). On overrun the chunk records what it got
+# through and queues the untouched tail as a fresh chunk.
+BULK_UNENROLL_SOFT_TIME_LIMIT = 300
+
+# A running chunk re-checks for revocation every N learners, bounding the
+# overrun after a cancel to ~N without a DB check per learner.
+BULK_UNENROLL_CANCEL_CHECK_EVERY = 50
+
+# Queue the engine's tasks run on. In production, point this at a DEDICATED queue
+# whose worker concurrency bounds the run, so it never starves interactive tasks.
+BULK_UNENROLL_ROUTING_KEY = Derived(lambda settings: settings.DEFAULT_PRIORITY_QUEUE)
+
 ############################# Email Opt In ####################################
 
 # Minimum age for organization-wide email opt in
@@ -2895,6 +2948,7 @@ ACCOUNT_VISIBILITY_CONFIGURATION["admin_fields"] = (
         "id",
         "verified_name",
         "extended_profile",
+        "progressive_profile_status",
         "gender",
         "state",
         "goals",
@@ -3706,6 +3760,36 @@ EVENT_BUS_PRODUCER_CONFIG = {
         "learning-badges-lifecycle": {
             "event_key_field": "course_passing_status.course.ccx_course_key",
             "enabled": Derived(should_send_learning_badge_events),
+        },
+    },
+    'org.openedx.learning.program.certificate.awarded.v1': {
+        'learning-program-certificate-lifecycle': {
+            'event_key_field': 'program_certificate.program.uuid',
+            # .. toggle_name: EVENT_BUS_PRODUCER_CONFIG['org.openedx.learning.program.certificate.awarded.v1']
+            #    ['learning-program-certificate-lifecycle']['enabled']
+            # .. toggle_implementation: DjangoSetting
+            # .. toggle_default: False
+            # .. toggle_description: Enables sending PROGRAM_CERTIFICATE_AWARDED events over the event bus from
+            #    edx-platform. Disabled until Credentials IDA is ready to consume these events instead of
+            #    receiving REST API calls.
+            # .. toggle_use_cases: opt_in
+            # .. toggle_creation_date: 2026-05-26
+            'enabled': False,
+        },
+    },
+    'org.openedx.learning.program.certificate.revoked.v1': {
+        'learning-program-certificate-lifecycle': {
+            'event_key_field': 'program_certificate.program.uuid',
+            # .. toggle_name: EVENT_BUS_PRODUCER_CONFIG['org.openedx.learning.program.certificate.revoked.v1']
+            #    ['learning-program-certificate-lifecycle']['enabled']
+            # .. toggle_implementation: DjangoSetting
+            # .. toggle_default: False
+            # .. toggle_description: Enables sending PROGRAM_CERTIFICATE_REVOKED events over the event bus from
+            #    edx-platform. Disabled until Credentials IDA is ready to consume these events instead of
+            #    receiving REST API calls.
+            # .. toggle_use_cases: opt_in
+            # .. toggle_creation_date: 2026-05-26
+            'enabled': False,
         },
     },
 }

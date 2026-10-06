@@ -58,7 +58,6 @@ def get_user_course_duration(user, course):
     """
     if not CourseDurationLimitConfig.enabled_for_enrollment(user, course):
         return None
-
     enrollment = CourseEnrollment.get_enrollment(user, course.id)
     if enrollment is None or enrollment.mode != CourseMode.AUDIT:
         return None

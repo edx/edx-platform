@@ -286,8 +286,8 @@ EVENT_TRACKING_BACKENDS['segmentio']['OPTIONS']['processors'][0]['OPTIONS']['whi
 
 
 if ENABLE_COURSEWARE_INDEX or ENABLE_LIBRARY_INDEX:
-    # Use ElasticSearch for the search engine
-    SEARCH_ENGINE = "search.elastic.ElasticSearchEngine"
+    # Default to ElasticSearch, but honor explicit SEARCH_ENGINE overrides from YAML.
+    SEARCH_ENGINE = _YAML_TOKENS.get('SEARCH_ENGINE', "search.elastic.ElasticSearchEngine")
 
 # TODO: Once we have successfully upgraded to ES7, switch this back to ELASTIC_SEARCH_CONFIG.
 ELASTIC_SEARCH_CONFIG = _YAML_TOKENS.get('ELASTIC_SEARCH_CONFIG_ES7', [{}])

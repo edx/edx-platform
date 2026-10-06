@@ -331,8 +331,8 @@ if (
    ENABLE_COURSE_DISCOVERY or
    ENABLE_TEAMS
    ):
-    # Use ElasticSearch as the search engine herein
-    SEARCH_ENGINE = "search.elastic.ElasticSearchEngine"
+    # Default to ElasticSearch, but honor explicit SEARCH_ENGINE overrides from YAML.
+    SEARCH_ENGINE = _YAML_TOKENS.get('SEARCH_ENGINE', "search.elastic.ElasticSearchEngine")
 
 # TODO: Once we have successfully upgraded to ES7, switch this back to ELASTIC_SEARCH_CONFIG.
 ELASTIC_SEARCH_CONFIG = _YAML_TOKENS.get('ELASTIC_SEARCH_CONFIG_ES7', [{}])

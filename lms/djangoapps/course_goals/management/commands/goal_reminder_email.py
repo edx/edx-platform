@@ -1,32 +1,40 @@
 """
 Command to trigger sending reminder emails for learners to achieve their Course Goals
 """
+import logging
+import string
 import time
+import uuid
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 import boto3
+import pytz
 from edx_ace.channel.django_email import DjangoEmailChannel
 from edx_ace.channel.mixins import EmailChannelMixin
 from eventtracking import tracker
-import logging
-import uuid
 
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.management.base import BaseCommand
+from django.db.models import CharField, Count, Exists, F, IntegerField, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce, NullIf
 from edx_ace import ace, presentation
 from edx_ace.message import Message
 from edx_ace.recipient import Recipient
 from edx_ace.utils.signals import send_ace_message_sent_signal
+from edx_django_utils.cache import RequestCache
+
 from common.djangoapps.student.models import CourseEnrollment
-from lms.djangoapps.certificates.api import get_certificate_for_user_id
 from lms.djangoapps.certificates.data import CertificateStatuses
-from lms.djangoapps.courseware.context_processor import get_user_timezone_or_last_seen_timezone_or_utc
+from lms.djangoapps.certificates.models import GeneratedCertificate
+from lms.djangoapps.courseware.models import LastSeenCoursewareTimezone
 from lms.djangoapps.course_goals.models import CourseGoal, CourseGoalReminderStatus, UserActivity
 from openedx.core.djangoapps.ace_common.template_context import get_base_template_context
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.lang_pref import LANGUAGE_KEY
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
+from openedx.core.djangoapps.user_api.models import UserPreference
 from openedx.core.djangoapps.user_api.preferences.api import get_user_preference
 from openedx.core.lib.celery.task_utils import emulate_http_request
 from openedx.features.course_duration_limits.access import get_user_course_expiration_date
@@ -37,6 +45,7 @@ log = logging.getLogger(__name__)
 
 MONDAY_WEEKDAY = 0
 SUNDAY_WEEKDAY = 6
+CHUNK_SIZE = 2000
 
 
 def send_ace_message(goal, session_id):
@@ -50,7 +59,8 @@ def send_ace_message(goal, session_id):
     """
     user = goal.user
     if not user.has_usable_password():
-        log.info(f'Goal Reminder User is disabled {user.username} course {goal.course_key}')
+        user_identifier_for_log = user.id if getattr(settings, 'SQUELCH_PII_IN_LOGS', False) else user.username
+        log.info('Goal Reminder User is disabled user %s course %s', user_identifier_for_log, goal.course_key)
         return False
     try:
         course = CourseOverview.get_from_id(goal.course_key)
@@ -188,12 +198,7 @@ class Command(BaseCommand):
             raise
 
     def _handle_all_goals(self):
-        """
-        Handle goal emails across all courses
-
-        Helpful notes for the function:
-            weekday() returns an int 0-6 with Monday being 0 and Sunday being 6
-        """
+        """Handle goal emails across all courses."""
         today = date.today()
         sunday_date = today + timedelta(days=SUNDAY_WEEKDAY - today.weekday())
         monday_date = today - timedelta(days=today.weekday())
@@ -206,102 +211,221 @@ class Command(BaseCommand):
             log.info('Cleared all reminder statuses')
             return
 
-        course_goals = CourseGoal.objects.filter(
-            days_per_week__gt=0, subscribed_to_reminders=True,
-        ).exclude(
-            reminder_status__email_reminder_sent=True,
-        )
-        all_goal_course_keys = course_goals.values_list('course_key', flat=True).distinct()
-        # Exclude all courses whose end dates are earlier than Sunday so we don't send an email about hitting
-        # a course goal when it may not even be possible.
-        courses_to_exclude = CourseOverview.objects.filter(
-            id__in=all_goal_course_keys, end__date__lte=sunday_date
-        ).values_list('id', flat=True)
-        log.info(f"Processing course goals across {len(all_goal_course_keys)} courses "
-                 + f"excluding {len(courses_to_exclude)} ended courses")
-
-        sent_count = 0
-        filtered_count = 0
-        course_goals = course_goals.exclude(course_key__in=courses_to_exclude).select_related('user').order_by('user')
-        total_goals = course_goals.count()
-        tracker.emit(
-            'edx.course.goal.email.session_started',
-            {
-                'uuid': session_id,
-                'timestamp': datetime.now(),
-                'goal_count': total_goals,
-            }
-        )
-        log.info('Processing course goals, total goal count {}, timestamp: {}, uuid: {}'.format(
-            total_goals,
-            datetime.now(),
-            session_id
-        ))
-        for goal in course_goals.iterator(chunk_size=500):
-            # emulate a request for waffle's benefit
-            with emulate_http_request(site=Site.objects.get_current(), user=goal.user):
-                if self.handle_goal(goal, today, sunday_date, monday_date, session_id):
-                    sent_count += 1
-                else:
-                    filtered_count += 1
-            if (sent_count + filtered_count) % 10000 == 0:
-                log.info('Processing course goals: sent {} filtered {} out of {}, timestamp: {}, uuid: {}'.format(
-                    sent_count,
-                    filtered_count,
-                    total_goals,
-                    datetime.now(),
-                    session_id
-                ))
+        course_goals = self._get_course_goals(today, sunday_date, monday_date)
+        sent_count, filtered_count = self._process_course_goals(course_goals, sunday_date, session_id)
 
         tracker.emit(
             'edx.course.goal.email.session_completed',
             {
                 'uuid': session_id,
                 'timestamp': datetime.now(),
-                'goal_count': total_goals,
+                'goal_count': sent_count + filtered_count,
                 'emails_sent': sent_count,
                 'emails_filtered': filtered_count,
             }
         )
-        log.info('Processing course goals complete: sent {} emails, '
-                 'filtered out {} emails, timestamp: {}, '
-                 'uuid: {}'.format(sent_count, filtered_count, datetime.now(), session_id)
-                 )
+        log.info(
+            'Processing course goals complete: sent %d emails, filtered out %d emails, timestamp: %s, uuid: %s',
+            sent_count,
+            filtered_count,
+            datetime.now(),
+            session_id,
+        )
 
     @staticmethod
-    def handle_goal(goal, today, sunday_date, monday_date, session_id):
-        """Sends an email reminder for a single CourseGoal, if it passes all our checks"""
-        if not ENABLE_COURSE_GOALS.is_enabled(goal.course_key):
-            return False
-
-        enrollment = CourseEnrollment.get_enrollment(goal.user, goal.course_key, select_related=['course'])
-        # If you're not actively enrolled in the course or your enrollment was this week
-        if not enrollment or not enrollment.is_active or enrollment.created.date() >= monday_date:
-            return False
-
-        audit_access_expiration_date = get_user_course_expiration_date(goal.user, enrollment.course_overview)
-        # If an audit user's access expires this week, exclude them from the email since they may not
-        # be able to hit their goal anyway
-        if audit_access_expiration_date and audit_access_expiration_date.date() <= sunday_date:
-            return False
-
-        cert = get_certificate_for_user_id(goal.user, goal.course_key)
-        # If a user has a downloadable certificate, we will consider them as having completed
-        # the course and opt them out of receiving emails
-        if cert and cert.status == CertificateStatuses.downloadable:
-            return False
-
-        # Check the number of days left to successfully hit their goal
-        week_activity_count = UserActivity.objects.filter(
-            user=goal.user, course_key=goal.course_key, date__gte=monday_date,
-        ).count()
-        required_days_left = goal.days_per_week - week_activity_count
-        # The weekdays are 0 indexed, but we want this to be 1 to match required_days_left.
-        # Essentially, if today is Sunday, days_left_in_week should be 1 since they have Sunday to hit their goal.
+    def _get_course_goals(today, sunday_date, monday_date):
+        """Build the queryset of goals eligible for reminders during this run."""
         days_left_in_week = SUNDAY_WEEKDAY - today.weekday() + 1
 
-        # We want to email users during the day of their timezone
-        user_timezone = get_user_timezone_or_last_seen_timezone_or_utc(goal.user)
+        active_enrollment_exists = CourseEnrollment.objects.filter(
+            user=OuterRef('user'),
+            course_id=OuterRef('course_key'),
+            is_active=True,
+            created__date__lt=monday_date,
+        )
+
+        # Subquery: count how many activity days this user has logged this week for this course
+        week_activity_subquery = Coalesce(
+            Subquery(
+                UserActivity.objects.filter(
+                    user=OuterRef('user'),
+                    course_key=OuterRef('course_key'),
+                    date__gte=monday_date,
+                ).values('user', 'course_key').annotate(cnt=Count('pk')).values('cnt'),
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        )
+
+        user_tz_pref_subquery = Subquery(
+            UserPreference.objects.filter(
+                user=OuterRef('user'),
+                key='time_zone',
+            ).values('value')[:1],
+            output_field=CharField(),
+        )
+        last_seen_tz_subquery = Subquery(
+            LastSeenCoursewareTimezone.objects.filter(
+                user=OuterRef('user'),
+            ).values('last_seen_courseware_timezone')[:1],
+            output_field=CharField(),
+        )
+
+        now_utc = datetime.now(pytz.utc)
+        active_timezones = [
+            tz_name
+            for tz_name in pytz.common_timezones
+            if 8 <= now_utc.astimezone(pytz.timezone(tz_name)).hour < 18
+        ]
+
+        # Only include goals where the user needs exactly days_left_in_week more days to hit their goal.
+        # Keep the unsigned days_per_week field on the non-subtracted side because MySQL raises an
+        # out-of-range error when days_per_week is less than days_left_in_week.
+        course_goals = CourseGoal.objects.filter(
+            days_per_week__gt=0,
+            subscribed_to_reminders=True,
+        ).filter(
+            Exists(active_enrollment_exists)
+        ).exclude(
+            reminder_status__email_reminder_sent=True,
+        ).annotate(
+            week_activity_count=week_activity_subquery,
+        ).filter(
+            days_per_week=F('week_activity_count') + days_left_in_week,
+        ).exclude(
+            # Exclude users who already have a downloadable certificate — they've completed the course
+            Exists(
+                GeneratedCertificate.objects.filter(
+                    user=OuterRef('user'),
+                    course_id=OuterRef('course_key'),
+                    status=CertificateStatuses.downloadable,
+                )
+            )
+        ).exclude(
+            Exists(
+                CourseOverview.objects.filter(
+                    id=OuterRef('course_key'),
+                    end__date__lte=sunday_date,
+                )
+            )
+        ).annotate(
+            # NullIf preserves the existing Python fallback behavior for empty preferences.
+            user_timezone_str=Coalesce(
+                NullIf(user_tz_pref_subquery, Value('')),
+                NullIf(last_seen_tz_subquery, Value('')),
+                Value('UTC'),
+            ),
+        ).filter(
+            # Unrecognized values must reach handle_goal so it can sanitize them or fall back to UTC.
+            Q(user_timezone_str__in=active_timezones)
+            | ~Q(user_timezone_str__in=pytz.common_timezones)
+        ).select_related('user')
+
+        return course_goals
+
+    def _process_course_goals(self, course_goals, sunday_date, session_id):
+        """Send reminders for an eligible queryset and return sent and filtered counts."""
+        tracker.emit(
+            'edx.course.goal.email.session_started',
+            {
+                'uuid': session_id,
+                'timestamp': datetime.now(),
+            }
+        )
+        log.info(
+            'Processing course goals started, timestamp: %s, uuid: %s',
+            datetime.now(),
+            session_id,
+        )
+        site = Site.objects.get_current()
+        sent_count = 0
+        filtered_count = 0
+
+        for chunk in self._iter_chunks(course_goals, CHUNK_SIZE):
+            enrollment_map = self._prefetch_enrollments_into_cache(chunk)
+
+            for goal in chunk:
+                with emulate_http_request(site=site, user=goal.user):
+                    if self.handle_goal(
+                        goal,
+                        enrollment_map.get((goal.user_id, goal.course_key)),
+                        sunday_date,
+                        session_id,
+                    ):
+                        sent_count += 1
+                    else:
+                        filtered_count += 1
+
+            RequestCache('get_enrollment').clear()
+
+            total_processed = sent_count + filtered_count
+            if total_processed % 10000 == 0:
+                log.info(
+                    'Processing course goals: sent %d filtered %d total %d, timestamp: %s, uuid: %s',
+                    sent_count,
+                    filtered_count,
+                    total_processed,
+                    datetime.now(),
+                    session_id,
+                )
+
+        return sent_count, filtered_count
+
+    @staticmethod
+    def _iter_chunks(queryset, chunk_size):
+        """Yield stable primary-key chunks without offset pagination."""
+        last_pk = 0
+        while True:
+            chunk = list(queryset.filter(pk__gt=last_pk).order_by('pk')[:chunk_size])
+            if not chunk:
+                return
+            yield chunk
+            last_pk = chunk[-1].pk
+
+    @staticmethod
+    def _prefetch_enrollments_into_cache(goals):
+        """Fetch and cache only the enrollment pairs represented by this goal chunk."""
+        if not goals:
+            return {}
+
+        users_by_course = defaultdict(set)
+        for goal in goals:
+            users_by_course[goal.course_key].add(goal.user_id)
+
+        enrollment_filter = Q()
+        for course_key, user_ids in users_by_course.items():
+            enrollment_filter |= Q(course_id=course_key, user_id__in=user_ids)
+
+        enrollments = CourseEnrollment.objects.filter(
+            enrollment_filter,
+            is_active=True,
+        ).select_related('course')
+        enrollment_map = {(enrollment.user_id, enrollment.course_id): enrollment for enrollment in enrollments}
+
+        request_cache = RequestCache('get_enrollment')
+        for goal in goals:
+            enrollment = enrollment_map.get((goal.user_id, goal.course_key))
+            request_cache.set((goal.user_id, goal.course_key), enrollment)
+            request_cache.set((goal.user_id, goal.course_key, 'course'), enrollment)
+
+        return enrollment_map
+
+    @staticmethod
+    def handle_goal(goal, enrollment, sunday_date, session_id):
+        """Sends an email reminder for a single CourseGoal, if it passes all our checks.
+
+        Note: enrollment validity, certificate status, and weekly activity count are pre-filtered
+        at the queryset level in _handle_all_goals. This method handles the remaining checks that
+        cannot be efficiently expressed as DB filters.
+        """
+        # Check timezone first — cheapest check, no DB query
+        user_timezone_str = ''.join(
+            character for character in getattr(goal, 'user_timezone_str', 'UTC') if character in string.printable
+        )
+        try:
+            user_timezone = pytz.timezone(user_timezone_str)
+        except pytz.UnknownTimeZoneError:
+            user_timezone = pytz.utc
         now_in_users_timezone = datetime.now(user_timezone)
         if not 8 <= now_in_users_timezone.hour < 18:
             tracker.emit(
@@ -316,11 +440,27 @@ class Command(BaseCommand):
             )
             return False
 
-        if required_days_left == days_left_in_week:
-            sent = send_ace_message(goal, session_id)
-            if sent:
-                CourseGoalReminderStatus.objects.update_or_create(goal=goal, defaults={'email_reminder_sent': True})
-                return True
+        if not ENABLE_COURSE_GOALS.is_enabled(goal.course_key):
+            return False
+
+        # Fetch enrollment only to check audit access expiration date
+        if not enrollment:
+            return False
+
+        audit_access_expiration_date = get_user_course_expiration_date(
+            goal.user,
+            enrollment.course_overview,
+            enrollment=enrollment,
+        )
+        # If an audit user's access expires this week, exclude them from the email since they may not
+        # be able to hit their goal anyway
+        if audit_access_expiration_date and audit_access_expiration_date.date() <= sunday_date:
+            return False
+
+        sent = send_ace_message(goal, session_id)
+        if sent:
+            CourseGoalReminderStatus.objects.update_or_create(goal=goal, defaults={'email_reminder_sent': True})
+            return True
 
         return False
 

@@ -718,9 +718,8 @@ class TestInstructorAPIBulkAccountCreationAndEnrollment(SharedModuleStoreTestCas
 
         # test the log for email that's send to new created user.
         info_log.assert_called_with(
-            "user already exists with username '%s' and email '%s'",
-            'test_student_1',
-            'test_student@example.com'
+            'user already exists with %s',
+            "username 'test_student_1' and email 'test_student@example.com'"
         )
 
     def test_file_upload_type_not_csv(self):
@@ -2848,12 +2847,14 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
         response = self.client.post(url, {})
         res_json = json.loads(response.content.decode('utf-8'))
         assert 'external_user_key' in res_json['feature_names']
+        assert 'lti_13_uuid' in res_json['feature_names']
         for student in self.students:
             student_json = [
                 x for x in res_json['students']
                 if x['username'] == student.username
             ][0]
             assert student_json['username'] == student.username
+            assert student_json['lti_13_uuid'] == ''
             if has_program_enrollments:
                 assert student_json['external_user_key'] == external_key_dict[student.username]
             else:

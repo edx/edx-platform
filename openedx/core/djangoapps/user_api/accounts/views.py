@@ -39,11 +39,13 @@ from wiki.models.pluginbase import RevisionPluginRevision
 from common.djangoapps.track import segment
 from common.djangoapps.entitlements.models import CourseEntitlement
 from common.djangoapps.student.models import (  # lint-amnesty, pylint: disable=unused-import
+    AccountRecovery,
     CourseEnrollmentAllowed,
     LoginFailures,
     ManualEnrollmentAudit,
     PendingEmailChange,
     PendingNameChange,
+    PendingSecondaryEmailChange,
     User,
     UserProfile,
     get_potentially_retired_user_by_username,
@@ -63,7 +65,10 @@ from openedx.core.djangoapps.profile_images.images import remove_profile_images
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_api import accounts
 from openedx.core.djangoapps.user_api.accounts.image_helpers import get_profile_image_names, set_has_profile_image
-from openedx.core.djangoapps.user_api.accounts.utils import handle_retirement_cancellation
+from openedx.core.djangoapps.user_api.accounts.utils import (
+    handle_retirement_cancellation,
+    redact_and_delete_historical_social_auth,
+)
 from openedx.core.djangoapps.user_authn.exceptions import AuthFailedError
 from openedx.core.lib.api.authentication import BearerAuthentication, BearerAuthenticationAllowInactiveUser
 from openedx.core.lib.api.parsers import MergePatchParser
@@ -1020,10 +1025,7 @@ class AccountRetirementStatusView(ViewSet):
 
         ```
         {
-            'usernames': ['user1', 'user2', ...],
-            'redacted_username': 'Value to store in username field',
-            'redacted_email': 'Value to store in email field',
-            'redacted_name': 'Value to store in name field'
+            'usernames': ['user1', 'user2', ...]
         }
         ```
 
@@ -1031,9 +1033,6 @@ class AccountRetirementStatusView(ViewSet):
         """
         try:
             usernames = request.data["usernames"]
-            redacted_username = request.data.get("redacted_username", "redacted")
-            redacted_email = request.data.get("redacted_email", "redacted")
-            redacted_name = request.data.get("redacted_name", "redacted")
 
             if not isinstance(usernames, list):
                 raise TypeError("Usernames should be an array.")
@@ -1056,9 +1055,9 @@ class AccountRetirementStatusView(ViewSet):
 
             # Update by IDs
             UserRetirementStatus.objects.filter(id__in=retirement_ids).update(
-                original_username=redacted_username,
-                original_email=redacted_email,
-                original_name=redacted_name
+                original_username="redacted-before-delete",
+                original_email="redacted-before-delete@safe.com",
+                original_name="redacted-before-delete"
             )
 
             # Delete by IDs
@@ -1107,6 +1106,7 @@ class LMSAccountRetirementView(ViewSet):
             CreditRequest.retire_user(retirement)
             ApiAccessRequest.retire_user(retirement.user)
             CreditRequirementStatus.retire_user(retirement)
+            redact_and_delete_historical_social_auth(retirement.user.id)
 
             # This signal allows code in higher points of LMS to retire the user as necessary
             USER_RETIRE_LMS_MISC.send(sender=self.__class__, user=retirement.user)
@@ -1199,6 +1199,8 @@ class AccountRetirementView(ViewSet):
             # Retire misc. models that may contain PII of this user
             PendingEmailChange.delete_by_user_value(user, field="user")
             UserOrgTag.delete_by_user_value(user, field="user")
+            PendingSecondaryEmailChange.redact_and_delete_pending_secondary_email(user.id)
+            AccountRecovery.retire_recovery_email(user.id)
 
             # Retire any objects linked to the user via their original email
             CourseEnrollmentAllowed.delete_by_user_value(original_email, field="email")
@@ -1216,6 +1218,7 @@ class AccountRetirementView(ViewSet):
             user.last_name = ""
             user.is_active = False
             user.username = retired_username
+            user.email = retired_email
             user.save()
         except UserRetirementStatus.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)

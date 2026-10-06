@@ -696,10 +696,6 @@ class VideoStudioViewHandlers:
             get_audio_description_url,
             upload_audio_description,
         )
-        from cms.djangoapps.contentstore.toggles import audio_description_enabled  # pylint: disable=import-outside-toplevel
-
-        if not audio_description_enabled or not audio_description_enabled(self.course_id):
-            return Response(status=404)
 
         if request.method == 'POST':
             try:

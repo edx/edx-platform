@@ -203,6 +203,7 @@ LANGUAGES = [
     ('fi-fi', 'Suomi (Suomi)'),  # Finnish (Finland)
     ('fil', 'Filipino'),  # Filipino
     ('fr', 'Français'),  # French
+    ('fr-ca', 'Français (Canada)'),  # French (Canada)
     ('gl', 'Galego'),  # Galician
     ('gu', 'ગુજરાતી'),  # Gujarati
     ('he', 'עברית'),  # Hebrew
@@ -1817,7 +1818,10 @@ OPTIMIZELY_FULLSTACK_SDK_KEY = None
 ################################# Zendesk ##################################
 ZENDESK_URL = ''
 ZENDESK_CUSTOM_FIELDS = {}
-ZENDESK_OAUTH_ACCESS_TOKEN = ''
+ZENDESK_OAUTH_CLIENT_ID = ''
+ZENDESK_OAUTH_CLIENT_SECRET = ''
+ZENDESK_OAUTH_SCOPE = 'tickets:write'
+ZENDESK_OAUTH_TOKEN_EXPIRES_IN = 86400
 # A mapping of string names to Zendesk Group IDs
 # To get the IDs of your groups you can go to
 # {zendesk_url}/api/v2/groups.json
@@ -2443,3 +2447,16 @@ FEEDBACK_SUBMISSION_EMAIL = ''
 COURSE_LIVE_GLOBAL_CREDENTIALS = {}
 
 BEAMER_PRODUCT_ID = ""
+
+# .. setting_name: COURSE_ACCESS_DURATION_MIN_WEEKS
+# .. setting_default: 1
+# .. setting_description: Minimum course duration in weeks when Discovery service data is unavailable or course has no
+# .. weeks_to_complete value. Used as fallback for course access duration calculations (e.g., audit access expiration
+# .. and discussion notification filtering).
+COURSE_ACCESS_DURATION_MIN_WEEKS = 4
+
+# .. setting_name: COURSE_ACCESS_DURATION_MAX_WEEKS
+# .. setting_default: 18
+# .. setting_description: Maximum course duration in weeks. Course access duration is bounded by this upper limit
+# .. regardless of Discovery service data.
+COURSE_ACCESS_DURATION_MAX_WEEKS = 18

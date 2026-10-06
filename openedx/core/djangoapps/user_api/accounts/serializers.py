@@ -42,6 +42,15 @@ from . import (
 from .image_helpers import get_profile_image_urls_for_user
 from .utils import format_social_link, validate_social_link
 
+PROGRESSIVE_PROFILE_FIELD = "progressive_profile"
+
+PROGRESSIVE_PROFILE_QUESTIONS = [
+    "learning_goal",
+    "learning_motivation",
+    "interests_declared",
+    "work_status",
+]
+
 PROFILE_IMAGE_KEY_PREFIX = 'image_url'
 LOGGER = logging.getLogger(__name__)
 
@@ -172,6 +181,7 @@ class UserReadOnlySerializer(serializers.Serializer):  # lint-amnesty, pylint: d
             "account_privacy": self.configuration.get('default_visibility'),
             "social_links": None,
             "extended_profile_fields": None,
+            "progressive_profile_status": None,
             "phone_number": None,
             "pending_name_change": None,
             "verified_name": None,
@@ -203,6 +213,9 @@ class UserReadOnlySerializer(serializers.Serializer):  # lint-amnesty, pylint: d
                         user_profile.social_links.all().order_by('platform'), many=True
                     ).data,
                     "extended_profile": get_extended_profile(user_profile),
+                    "progressive_profile_status": get_progressive_profile_status(
+                        user_profile
+                    ),
                     "phone_number": user_profile.phone_number,
                 }
             )
@@ -604,6 +617,58 @@ def get_extended_profile(user_profile):
             "field_value": extended_profile_fields_data.get(field_name, "")
         })
     return extended_profile
+
+
+def get_progressive_profile_status(user_profile):
+    """
+    Returns the completion status of the user's progressive profile.
+    """
+    total_questions = len(PROGRESSIVE_PROFILE_QUESTIONS)
+
+    try:
+        profile_meta = json.loads(user_profile.meta)
+    except (TypeError, ValueError):
+        profile_meta = {}
+
+    progressive_profile = profile_meta.get(
+        PROGRESSIVE_PROFILE_FIELD,
+        {}
+    )
+
+    if not progressive_profile or not isinstance(progressive_profile, dict):
+        return {
+            "status": "not_started",
+            "answered_questions": 0,
+            "total_questions": total_questions,
+            "remaining_questions": total_questions,
+        }
+
+    answered_questions = sum(
+        bool(
+            progressive_profile.get(question, {}).get(
+                "selected_values",
+                []
+            )
+        )
+        for question in PROGRESSIVE_PROFILE_QUESTIONS
+        if isinstance(progressive_profile.get(question), dict)
+    )
+
+    remaining_questions = total_questions - answered_questions
+
+    if answered_questions == 0:
+        status = "not_started"
+    elif answered_questions == total_questions:
+        status = "complete"
+    else:
+        status = "incomplete"
+
+    return {
+        "status": status,
+        "answered_questions": answered_questions,
+        "total_questions": total_questions,
+        "remaining_questions": remaining_questions,
+    }
 
 
 def get_profile_visibility(user_profile, user, configuration):

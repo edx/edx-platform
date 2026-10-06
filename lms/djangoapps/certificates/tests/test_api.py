@@ -53,7 +53,7 @@ from lms.djangoapps.certificates.api import (
     remove_allowlist_entry,
     set_cert_generation_enabled,
 )
-from lms.djangoapps.certificates.config import AUTO_CERTIFICATE_GENERATION
+from lms.djangoapps.certificates.config import AUTO_CERTIFICATE_GENERATION, CERTIFICATE_PROCTORING_REVIEW_BLOCK
 from lms.djangoapps.certificates.models import (
     CertificateGenerationConfiguration,
     CertificateStatuses,
@@ -156,6 +156,29 @@ class CertificateDownloadableStatusTests(WebCertificateTestMixin, ModuleStoreTes
             "is_unverified": False,
             "download_url": None,
             "uuid": None,
+        }
+
+    @patch(
+        'lms.djangoapps.certificates.api._certificate_status_for_student',
+        return_value={
+            'status': CertificateStatuses.downloadable,
+            'certificate_blocked_due_to_proctoring': True,
+            'certificate_block_reason': 'proctoring_review_pending',
+            'certificate_blocking_statuses': ['submitted'],
+        },
+    )
+    def test_blocked_certificate_status_does_not_expose_url(self, _mock_certificate_status):
+        response = certificate_downloadable_status(self.student, self.course.id)
+
+        assert response == {
+            'is_downloadable': False,
+            'is_generating': False,
+            'is_unverified': False,
+            'download_url': None,
+            'uuid': None,
+            'certificate_blocked_due_to_proctoring': True,
+            'certificate_block_reason': 'proctoring_review_pending',
+            'certificate_blocking_statuses': ['submitted'],
         }
 
     def test_without_cert(self):
@@ -413,6 +436,22 @@ class CertificateGetTests(SharedModuleStoreTestCase):
         assert cert["is_passing"] is True
         assert cert["download_url"] == "www.google.com"
 
+    @patch(
+        'lms.djangoapps.certificates.api.get_certificate_proctoring_status',
+        return_value={
+            'blocked': True,
+            'reason': 'proctoring_review_pending',
+            'blocking_statuses': ['submitted'],
+        },
+    )
+    def test_get_certificate_for_user_hides_blocked_url(self, _mock_proctoring_status):
+        cert = get_certificate_for_user(self.student.username, self.web_cert_course.id)
+
+        assert cert['download_url'] is None
+        assert cert['certificate_blocked_due_to_proctoring'] is True
+        assert cert['certificate_block_reason'] == 'proctoring_review_pending'
+        assert cert['certificate_blocking_statuses'] == ['submitted']
+
     def test_get_certificate_for_user_id(self):
         """
         Test to get a certificate for a user id for a specific course.
@@ -485,9 +524,21 @@ class CertificateGetTests(SharedModuleStoreTestCase):
         assert expected_url == cert_url
 
         expected_url = reverse("certificates:render_cert_by_uuid", kwargs=dict(certificate_uuid=self.uuid))
-
         cert_url = get_certificate_url(user_id=self.student.id, course_id=self.web_cert_course.id, uuid=self.uuid)
         assert expected_url == cert_url
+
+    @patch.dict(settings.FEATURES, {"CERTIFICATES_HTML_VIEW": False})
+    def test_get_pdf_certificate_url_uses_controlled_endpoint(self):
+        expected_url = reverse('certificates:download_cert_by_uuid', kwargs={'certificate_uuid': self.uuid})
+
+        with override_waffle_switch(CERTIFICATE_PROCTORING_REVIEW_BLOCK, active=True):
+            cert_url = get_certificate_url(
+                user_id=self.student.id,
+                course_id=self.pdf_cert_course.id,
+                uuid=self.uuid,
+            )
+
+        assert cert_url == expected_url
 
     @patch.dict(settings.FEATURES, {"CERTIFICATES_HTML_VIEW": True})
     def test_get_pdf_certificate_url(self):
@@ -1275,3 +1326,29 @@ class CertificatesLearnerRetirementFunctionality(ModuleStoreTestCase):
         cert_course2 = GeneratedCertificate.objects.get(user=self.user, course_id=self.course2.id)
         assert cert_course1.name == ""
         assert cert_course2.name == ""
+
+    def test_clear_pii_from_certificate_records_clears_history_table(self):
+        """
+        Verify that `clear_pii_from_certificate_records_for_user` blanks `name` in the
+        django-simple-history audit table only when the ``REDACT_CERTIFICATES_HISTORICAL_PII``
+        setting toggle is enabled, and leaves it untouched when the toggle is disabled.
+        """
+        with override_settings(REDACT_CERTIFICATES_HISTORICAL_PII=False):
+            clear_pii_from_certificate_records_for_user(self.user)
+
+        history_names = list(
+            GeneratedCertificate.history.filter(user=self.user).values_list("name", flat=True)
+        )
+        assert all(n == self.user_full_name for n in history_names), (
+            "History rows should be untouched when the waffle flag is disabled."
+        )
+
+        with override_settings(REDACT_CERTIFICATES_HISTORICAL_PII=True):
+            clear_pii_from_certificate_records_for_user(self.user)
+
+        history_names_after = list(
+            GeneratedCertificate.history.filter(user=self.user).values_list("name", flat=True)
+        )
+        assert all(n == "" for n in history_names_after), (
+            "Expected all history rows to have name blanked after retirement."
+        )

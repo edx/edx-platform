@@ -5,38 +5,28 @@ Tests the forum notification views.
 
 import json
 import logging
-from datetime import datetime
-from unittest import mock
-from unittest.mock import ANY, Mock, call, patch
+from unittest.mock import patch
 
 import ddt
 import pytest
 from django.conf import settings
 from django.http import Http404
-from django.test.client import Client, RequestFactory
+from django.test.client import RequestFactory
 from django.test.utils import override_settings
 from django.urls import reverse
-from django.utils import translation
-from edx_django_utils.cache import RequestCache
 from edx_toggles.toggles.testutils import override_waffle_flag
 from lms.djangoapps.discussion.django_comment_client.tests.mixins import (
     MockForumApiMixin,
 )
-from xmodule.modulestore import ModuleStoreEnum
-from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.tests.django_utils import (
-    TEST_DATA_SPLIT_MODULESTORE,
     ModuleStoreTestCase,
     SharedModuleStoreTestCase,
 )
 from xmodule.modulestore.tests.factories import (
     CourseFactory,
     BlockFactory,
-    check_mongo_calls,
 )
 
-from common.djangoapps.course_modes.models import CourseMode
-from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.student.roles import CourseStaffRole, UserBasedRole
 from common.djangoapps.student.tests.factories import (
     AdminFactory,
@@ -44,12 +34,7 @@ from common.djangoapps.student.tests.factories import (
     UserFactory,
 )
 from common.djangoapps.util.testing import EventTestMixin, UrlResetMixin
-from lms.djangoapps.courseware.exceptions import CourseAccessRedirect
 from lms.djangoapps.discussion import views
-from lms.djangoapps.discussion.django_comment_client.constants import (
-    TYPE_ENTRY,
-    TYPE_SUBCATEGORY,
-)
 from lms.djangoapps.discussion.django_comment_client.permissions import get_team
 from lms.djangoapps.discussion.django_comment_client.tests.group_id import (
     CohortedTopicGroupIdTestMixinV2,
@@ -61,28 +46,16 @@ from lms.djangoapps.discussion.django_comment_client.tests.unicode import (
 )
 from lms.djangoapps.discussion.django_comment_client.tests.utils import (
     CohortedTestCase,
-    config_course_discussions,
-    topic_name_to_id,
 )
 from lms.djangoapps.discussion.django_comment_client.utils import strip_none
 from lms.djangoapps.discussion.toggles import ENABLE_DISCUSSIONS_MFE
-from lms.djangoapps.discussion.views import (
-    _get_discussion_default_topic_id,
-    course_discussions_settings_handler,
-)
 from lms.djangoapps.teams.tests.factories import (
     CourseTeamFactory,
     CourseTeamMembershipFactory,
 )
 from openedx.core.djangoapps.course_groups.models import CourseUserGroup
-from openedx.core.djangoapps.course_groups.tests.helpers import config_course_cohorts
-from openedx.core.djangoapps.course_groups.tests.test_views import CohortViewsTestCase
-from openedx.core.djangoapps.django_comment_common.comment_client.utils import (
-    CommentClientPaginatedResult,
-)
 from openedx.core.djangoapps.django_comment_common.models import (
     FORUM_ROLE_STUDENT,
-    CourseDiscussionSettings,
 )
 from openedx.core.djangoapps.django_comment_common.utils import (
     ThreadContext,
@@ -91,10 +64,6 @@ from openedx.core.djangoapps.django_comment_common.utils import (
 from openedx.core.djangoapps.util.testing import ContentGroupTestCase
 from openedx.core.djangoapps.waffle_utils.testutils import WAFFLE_TABLES
 from openedx.core.lib.teams_config import TeamsConfig
-from openedx.features.content_type_gating.models import ContentTypeGatingConfig
-from openedx.features.enterprise_support.tests.mixins.enterprise import (
-    EnterpriseTestConsentRequired,
-)
 
 log = logging.getLogger(__name__)
 
@@ -1069,75 +1038,6 @@ class ForumFormDiscussionUnicodeTestCase(
         response_data = json.loads(response.content.decode("utf-8"))
         assert response_data["discussion_data"][0]["title"] == text
         assert response_data["discussion_data"][0]["body"] == text
-
-
-class EnterpriseConsentTestCase(
-    EnterpriseTestConsentRequired,
-    UrlResetMixin,
-    ModuleStoreTestCase,
-    ForumViewsUtilsMixin,
-):
-    """
-    Ensure that the Enterprise Data Consent redirects are in place only when consent is required.
-    """
-
-    CREATE_USER = False
-
-    @patch.dict("django.conf.settings.FEATURES", {"ENABLE_DISCUSSION_SERVICE": True})
-    def setUp(self):
-        # Invoke UrlResetMixin setUp
-        super().setUp()
-        username = "foo"
-        password = "bar"
-
-        self.discussion_id = "dummy_discussion_id"
-        self.course = CourseFactory.create(
-            discussion_topics={"dummy discussion": {"id": self.discussion_id}}
-        )
-        self.student = UserFactory.create(username=username, password=password)
-        CourseEnrollmentFactory.create(user=self.student, course_id=self.course.id)
-        assert self.client.login(username=username, password=password)
-
-        self.addCleanup(translation.deactivate)
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        super().setUpClassAndForumMock()
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        super().disposeForumMocks()
-
-    @patch("openedx.features.enterprise_support.api.enterprise_customer_for_request")
-    def test_consent_required(self, mock_enterprise_customer_for_request):
-        """
-        Test that enterprise data sharing consent is required when enabled for the various discussion views.
-        """
-        # ENT-924: Temporary solution to replace sensitive SSO usernames.
-        mock_enterprise_customer_for_request.return_value = None
-
-        thread_id = "dummy"
-        course_id = str(self.course.id)
-        self._configure_mock_responses(
-            course=self.course, text="dummy", thread_id=thread_id
-        )
-
-        for url in (
-            reverse("forum_form_discussion", kwargs=dict(course_id=course_id)),
-            reverse(
-                "single_thread",
-                kwargs=dict(
-                    course_id=course_id,
-                    discussion_id=self.discussion_id,
-                    thread_id=thread_id,
-                ),
-            ),
-        ):
-            self.verify_consent_required(  # pylint: disable=no-value-for-parameter
-                self.client, url
-            )
 
 
 class InlineDiscussionGroupIdTestCase(  # lint-amnesty, pylint: disable=missing-class-docstring

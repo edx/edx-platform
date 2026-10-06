@@ -8,12 +8,14 @@ import hashlib
 import json
 import logging
 import re
-import urllib
+import unicodedata
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth import login as django_login
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -29,6 +31,7 @@ from edx_django_utils.monitoring import set_custom_attribute
 from eventtracking import tracker
 from openedx_events.learning.data import UserData, UserPersonalData
 from openedx_events.learning.signals import SESSION_LOGIN_COMPLETED
+from openedx_filters.authentication.filters import LoginAltRedirectURLRequested
 from openedx_filters.learning.filters import StudentLoginRequested
 from rest_framework import status
 from rest_framework.views import APIView
@@ -54,13 +57,12 @@ from openedx.core.djangoapps.user_authn.toggles import (
     is_require_third_party_auth_enabled,
     should_redirect_to_authn_microfrontend,
 )
+from openedx.core.djangoapps.user_authn.utils import is_safe_login_or_logout_redirect
 from openedx.core.djangoapps.user_authn.views.login_form import get_login_session_form
 from openedx.core.djangoapps.user_authn.views.password_reset import send_password_reset_email_for_user
-from openedx.core.djangoapps.user_authn.views.utils import API_V1, ENTERPRISE_ENROLLMENT_URL_REGEX, UUID4_REGEX
+from openedx.core.djangoapps.user_authn.views.utils import API_V1
 from openedx.core.djangoapps.util.user_messages import PageLevelMessages
 from openedx.core.djangolib.markup import HTML, Text
-from openedx.core.lib.api.view_utils import require_post_params  # lint-amnesty, pylint: disable=unused-import
-from openedx.features.enterprise_support.api import activate_learner_enterprise, get_enterprise_learner_data_from_api
 
 log = logging.getLogger("edx.student")
 AUDIT_LOG = logging.getLogger("audit")
@@ -125,6 +127,166 @@ def _get_user_by_username(username):
         return None
 
 
+def _validate_internationalized_email(email):
+    """
+    Validate an internationalized email address that Django's validate_email may reject.
+    Implements permissive validation for RFC 6531 (SMTPUTF8) compliant emails.
+
+    This fallback is used when Django's validate_email() rejects an email that may be
+    a valid internationalized email. It's intentionally restrictive to only accept
+    common Latin-based accented characters and common scripts used in email addresses.
+
+    Returns True if the email is valid, False otherwise.
+    Rejects emails with:
+    - Multiple @ symbols
+    - Empty local part or domain
+    - Control characters or other dangerous chars
+    - CJK characters and other rare scripts
+    - Invalid domain structure
+    """
+    # Must have exactly one @ symbol
+    if email.count('@') != 1:
+        return False
+
+    local_part, domain = email.rsplit('@', 1)
+
+    # Both parts must be non-empty
+    if not local_part or not domain:
+        return False
+
+    # Reject control characters (ASCII 0-31, 127)
+    for char in email:
+        if ord(char) < 32 or ord(char) == 127:
+            return False
+
+    # Reject some dangerous characters even if they appear in valid emails
+    # (quotes, angle brackets, space, etc.)
+    dangerous_chars = set('"<>\\,; \t\n\r')
+    if any(char in dangerous_chars for char in email):
+        return False
+
+    # Validate Unicode characters: be restrictive to only allow common email-friendly characters
+    # Allow: ASCII alphanumeric, common Latin accented characters, and common punctuation
+    # Reject: CJK, other non-Latin scripts, and problematic Unicode blocks
+    for char in email:
+        code_point = ord(char)
+
+        if code_point <= 127:
+            # ASCII characters - allow alphanumeric and common email chars
+            # (@ . _ - + handled by dangerous_chars check above)
+            continue
+        elif 0xC0 <= code_point <= 0x17F:
+            # Latin Extended-A and Latin Extended-B (accented characters like é, ñ, etc.)
+            # This is the most common range for internationalized emails
+            category = unicodedata.category(char)
+            if category[0] not in ('L', 'M'):
+                return False
+        elif 0x0370 <= code_point <= 0x03FF:
+            # Greek letters (common in internationalized emails)
+            category = unicodedata.category(char)
+            if category[0] not in ('L', 'M'):
+                return False
+        elif 0x0400 <= code_point <= 0x04FF:
+            # Cyrillic letters (common in internationalized emails)
+            category = unicodedata.category(char)
+            if category[0] not in ('L', 'M'):
+                return False
+        else:
+            # Reject all other Unicode blocks including CJK (U+4E00-U+9FFF)
+            # This is very restrictive but safer for email validation
+            return False
+
+    # Domain must contain at least one dot OR be localhost
+    if '.' not in domain and domain != 'localhost':
+        return False
+
+    # For internationalized domains, try IDNA encoding to validate structure
+    if domain != 'localhost':
+        try:
+            # IDNA encoding will raise an exception for invalid domain names
+            domain.encode('idna').decode('ascii')
+        except (UnicodeError, UnicodeDecodeError):
+            # Invalid internationalized domain name
+            return False
+
+    return True
+
+
+def _validate_email_or_username_format(email_or_username):
+    """
+    Validate email_or_username against allowlist format.
+    Returns True if valid, False otherwise.
+
+    Allows either:
+    - Valid email format (up to 254 chars) - RFC-compliant with character allowlist
+    - Valid username charset: depends on ENABLE_UNICODE_USERNAME setting
+        - ASCII mode: alphanumeric + {._@+-} (up to 150 chars)
+        - Unicode mode: USERNAME_REGEX_PARTIAL with re.UNICODE flag
+    """
+    if not email_or_username or not isinstance(email_or_username, str):
+        return False
+
+    # Try email format validation
+    if '@' in email_or_username:
+        # Email format validation: use Django's validate_email for RFC-compliant validation
+        # with proper character allowlist. Max 254 chars per RFC 5321.
+        if len(email_or_username) > 254:
+            return False
+        try:
+            # Django's validate_email performs:
+            # - Proper RFC 5321/5322 structural validation
+            # - Character allowlist validation (rejects control chars, quotes, angle brackets, etc.)
+            # - Supports Unicode local parts per RFC 6531
+            validate_email(email_or_username)
+            return True
+        except ValidationError:
+            # Fallback: Django's validate_email may reject valid internationalized emails.
+            # Try a permissive validation for Unicode emails (RFC 6531).
+            return _validate_internationalized_email(email_or_username)
+    else:
+        # Username format validation: honor ENABLE_UNICODE_USERNAME setting
+        if len(email_or_username) > 150:
+            return False
+
+        if settings.FEATURES.get("ENABLE_UNICODE_USERNAME"):
+            # Unicode mode: use USERNAME_REGEX_PARTIAL pattern (same as registration)
+            # Use fullmatch() to ensure entire string matches (avoids $ newline gotcha)
+            username_pattern = settings.USERNAME_REGEX_PARTIAL
+            return bool(re.fullmatch(username_pattern, email_or_username, re.UNICODE))
+        else:
+            # ASCII mode: allow only alphanumeric, dots, underscores, @, +, -
+            # Use fullmatch() to ensure entire string matches (avoids $ newline gotcha)
+            username_pattern = r'[a-zA-Z0-9_.@+-]+'
+            return bool(re.fullmatch(username_pattern, email_or_username))
+
+
+def _get_request_value(request, field_name):
+    """Return a trusted scalar string from the request payload or raise a login error.
+
+    Rejects multi-valued form parameters (e.g., email=val1&email=val2) by requiring exactly one value.
+    Supports both Django QueryDict and plain dict payloads.
+    """
+    payload = request.POST
+    # Support both Django QueryDict (with getlist) and plain dict payloads
+    if hasattr(payload, 'getlist'):
+        values = payload.getlist(field_name)
+    else:
+        # Plain dict: convert to list format for consistent handling
+        value = payload.get(field_name)
+        values = value if isinstance(value, (list, tuple)) else [value]
+
+    if not values:
+        return None
+    if len(values) > 1:
+        # Reject requests with repeated parameters (e.g., email=val1&email=val2)
+        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+
+    value = values[0]
+    if isinstance(value, str):
+        return value
+    raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+
+
 def _get_user_by_email_or_username(request, api_version):
     """
     Finds a user object in the database based on the given request, ignores all fields except for email and username.
@@ -137,7 +299,17 @@ def _get_user_by_email_or_username(request, api_version):
     if any(f not in request.POST.keys() for f in login_fields):
         raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
 
-    email_or_username = request.POST.get("email", None) or request.POST.get("email_or_username", None)
+    email_or_username = _get_request_value(request, "email") or _get_request_value(request, "email_or_username")
+    if email_or_username is None:
+        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+
+    # Strict allowlist validation: reject malformed input early with 400
+    if not _validate_email_or_username_format(email_or_username):
+        # Log hashed value for audit trail / pentest detection (without raw value)
+        digest = hashlib.shake_128(email_or_username.encode("utf-8")).hexdigest(16)
+        AUDIT_LOG.warning(f"Login failed - malformed email_or_username format {digest}")
+        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+
     user = _get_user_by_email(email_or_username)
 
     if not user and is_api_v2:
@@ -200,7 +372,8 @@ def _enforce_password_policy_compliance(request, user):  # lint-amnesty, pylint:
         if LoginFailures.is_feature_enabled():
             LoginFailures.increment_lockout_counter(user)
 
-        AUDIT_LOG.info("Password reset initiated for email %s.", user.email)
+        user_identifier_for_log = user.id if getattr(settings, 'SQUELCH_PII_IN_LOGS', False) else user.email
+        AUDIT_LOG.info("Password reset initiated for email %s.", user_identifier_for_log)
         tracker.emit(
             PASSWORD_RESET_INITIATED,
             {
@@ -253,7 +426,10 @@ def _authenticate_first_party(request, unauthenticated_user, third_party_auth_re
     if not third_party_auth_requested:
         _check_user_auth_flow(request.site, unauthenticated_user)
 
-    password = normalize_password(request.POST["password"])
+    password = _get_request_value(request, "password")
+    if password is None:
+        raise AuthFailedError(_("There was an error receiving your login information. Please email us."))
+    password = normalize_password(password)
     return authenticate(username=username, password=password, request=request)
 
 
@@ -478,33 +654,45 @@ def finish_auth(request):
     )
 
 
-def enterprise_selection_page(request, user, next_url):
+def _get_alt_redirect_url(request, redirect_url, user):
     """
-    Updates redirect url to enterprise selection page if user is associated
-    with multiple enterprises otherwise return the next url.
+    Ask the configured pipeline steps for an alternative post-login redirect URL.
 
-    param:
-      next_url(string): The URL to redirect to after multiple enterprise selection or in case
-      the selection page is bypassed e.g when dealing with direct enrolment urls.
+    The pipeline is arbitrary configured code, so its answer is held to the same
+    open-redirect protections as a caller-supplied ``?next=`` parameter: an unsafe URL is
+    discarded and the caller's own destination is used instead.
+
+    Arguments:
+        request (HttpRequest)
+        redirect_url (str): the destination the caller intends to send the user to.
+        user (User): the authenticated user.
+
+    Returns: str
+        the alternative redirect url if safe, else the given redirect_url.
     """
-    redirect_url = next_url
+    # .. filter_implemented_name: LoginAltRedirectURLRequested
+    # .. filter_type: org.openedx.authentication.login.alt_redirect_url.requested.v1
+    alt_redirect_url, __ = LoginAltRedirectURLRequested.run_filter(
+        redirect_url=redirect_url,
+        user=user,
+    )
 
-    response = get_enterprise_learner_data_from_api(user)
-    if response and len(response) > 1:
-        redirect_url = reverse("enterprise_select_active") + "/?success_url=" + urllib.parse.quote(next_url)
+    if alt_redirect_url == redirect_url:
+        return redirect_url
 
-        # Check to see if next url has an enterprise in it. In this case if user is associated with
-        # that enterprise, activate that enterprise and bypass the selection page.
-        if re.match(ENTERPRISE_ENROLLMENT_URL_REGEX, urllib.parse.unquote(next_url)):
-            enterprise_in_url = re.search(UUID4_REGEX, next_url).group(0)
-            for enterprise in response:
-                if enterprise_in_url == str(enterprise["enterprise_customer"]["uuid"]):
-                    is_activated_successfully = activate_learner_enterprise(request, user, enterprise_in_url)
-                    if is_activated_successfully:
-                        redirect_url = next_url
-                    break
+    if not alt_redirect_url or not is_safe_login_or_logout_redirect(
+        redirect_to=alt_redirect_url,
+        request_host=request.get_host(),
+        dot_client_id=request.POST.get("client_id"),
+        require_https=request.is_secure(),
+    ):
+        log.warning(
+            "Unsafe alternative redirect URL detected after login: '%(alt_redirect_url)s'",
+            {"alt_redirect_url": alt_redirect_url},
+        )
+        return redirect_url
 
-    return redirect_url
+    return alt_redirect_url
 
 
 @ensure_csrf_cookie
@@ -649,7 +837,8 @@ def login_user(request, api_version="v1"):  # pylint: disable=too-many-statement
         elif should_redirect_to_authn_microfrontend():
             next_url, root_url = get_next_url_for_login_page(request, include_host=True)
             redirect_url = get_redirect_url_with_host(
-                root_url, enterprise_selection_page(request, possibly_authenticated_user, finish_auth_url or next_url)
+                root_url,
+                _get_alt_redirect_url(request, finish_auth_url or next_url, possibly_authenticated_user),
             )
 
         if (
@@ -682,10 +871,8 @@ def login_user(request, api_version="v1"):  # pylint: disable=too-many-statement
         error_code = response_content.get("error_code")
         if error_code:
             set_custom_attribute("login_error_code", error_code)
-        email_or_username_key = "email" if api_version == API_V1 else "email_or_username"
-        email_or_username = request.POST.get(email_or_username_key, None)
-        email_or_username = possibly_authenticated_user.email if possibly_authenticated_user else email_or_username
-        response_content["email"] = email_or_username
+        # Do not reflect raw user input in error responses; omit the email field for security
+        # If a field is needed for compatibility, only include authenticated user email (not request input)
     except VulnerablePasswordError as error:
         response_content = error.get_response()
         log.exception(response_content)

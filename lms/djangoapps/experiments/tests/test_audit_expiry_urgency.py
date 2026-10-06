@@ -162,7 +162,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
             name='decision_source',
         ).value
 
-        assert experiment_key == 'audit_expiry_urgency_v1'
+        assert experiment_key == 'audit_duration_a_b_c_test'
         assert expiry_days.isdigit()
         assert assigned_at
         assert decision_source == 'fallback_control'
@@ -185,9 +185,9 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
         self._enable_course_flag(self.course_2.id)
 
         with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
-            # First enrollment activates to expiry_7_days.
+            # First enrollment activates to 7_day_limit.
             client = mock.Mock()
-            client.activate.return_value = 'expiry_7_days'
+            client.activate.return_value = '7_day_limit'
             with mock.patch(
                 'lms.djangoapps.experiments.audit_expiry_urgency.OptimizelyClient.get_optimizely_client',
                 return_value=client,
@@ -214,7 +214,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
             namespace='audit_expiry_experiment',
             name='variant',
         ).value
-        assert v1 == v2 == 'expiry_7_days'
+        assert v1 == v2 == '7_day_limit'
 
     def test_idempotent_does_not_overwrite_existing_audit_expiry_at(self):
         enrollment = CourseEnrollmentFactory.create(course=self.course_1, mode=CourseMode.AUDIT, is_active=True)
@@ -231,7 +231,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
 
         with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
             client = mock.Mock()
-            client.activate.return_value = 'expiry_7_days'
+            client.activate.return_value = '7_day_limit'
             with mock.patch(
                 'lms.djangoapps.experiments.audit_expiry_urgency.OptimizelyClient.get_optimizely_client',
                 return_value=client,
@@ -252,7 +252,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
 
         with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
             with override_settings(
-                AUDIT_EXPIRY_FORCE_VARIANT='expiry_7_days',
+                AUDIT_EXPIRY_FORCE_VARIANT='7_day_limit',
                 DEBUG=False,
             ):
                 client = mock.Mock()
@@ -269,7 +269,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
             namespace='audit_expiry_experiment',
             name='variant',
         ).value
-        assert variant == 'expiry_7_days'
+        assert variant == '7_day_limit'
 
         decision_source = CourseEnrollmentAttribute.objects.get(
             enrollment=enrollment,
@@ -295,7 +295,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
 
         with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
             client = mock.Mock()
-            client.activate.return_value = 'expiry_7_days'
+            client.activate.return_value = '7_day_limit'
             with mock.patch(
                 'lms.djangoapps.experiments.audit_expiry_urgency.OptimizelyClient.get_optimizely_client',
                 return_value=client,
@@ -312,7 +312,7 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
 
         with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
             client = mock.Mock()
-            client.activate.return_value = 'expiry_7_days'
+            client.activate.return_value = '7_day_limit'
             with mock.patch(
                 'lms.djangoapps.experiments.audit_expiry_urgency.OptimizelyClient.get_optimizely_client',
                 return_value=client,
@@ -351,3 +351,44 @@ class TestAuditExpiryUrgencyExperiment(SharedModuleStoreTestCase):
                 )
 
         assert conversion_client.track.call_count == 0
+
+    def test_assigns_14_day_expiry_variant_from_optimizely(self):
+        enrollment = CourseEnrollmentFactory.create(
+            course=self.course_1,
+            mode=CourseMode.AUDIT,
+            is_active=True,
+        )
+        self._enable_course_flag(self.course_1.id)
+
+        with override_waffle_flag(AUDIT_EXPIRY_URGENCY_V1_ENABLED, active=True):
+            client = mock.Mock()
+            client.activate.return_value = '14_day_limit'
+
+            with mock.patch(
+                'lms.djangoapps.experiments.audit_expiry_urgency.'
+                'OptimizelyClient.get_optimizely_client',
+                return_value=client,
+            ):
+                enrollment.save()
+
+        variant = CourseEnrollmentAttribute.objects.get(
+            enrollment=enrollment,
+            namespace='audit_expiry_experiment',
+            name='variant',
+        ).value
+
+        expiry_days = CourseEnrollmentAttribute.objects.get(
+            enrollment=enrollment,
+            namespace='audit_expiry_experiment',
+            name='expiry_days',
+        ).value
+
+        decision_source = CourseEnrollmentAttribute.objects.get(
+            enrollment=enrollment,
+            namespace='audit_expiry_experiment',
+            name='decision_source',
+        ).value
+
+        assert variant == '14_day_limit'
+        assert expiry_days == '14'
+        assert decision_source == 'optimizely'

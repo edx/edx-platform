@@ -5,10 +5,13 @@ Python APIs exposed by the student app to other in-process apps.
 
 
 from typing import TYPE_CHECKING
+import csv
+import io
 import logging
 
 from django.contrib.auth import get_user_model
 from django.conf import settings
+from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 
 from common.djangoapps.student.models import CourseEnrollment
@@ -159,3 +162,136 @@ def get_course_enrollments(
         course_enrollments = course_enrollments.filter(course_id__in=course_ids)
 
     return course_enrollments
+
+
+# Header cells (case-insensitive, whitespace-trimmed) that mark an optional first row as a header.
+BULK_UNENROLL_CSV_HEADERS = frozenset({"course_id", "course id"})
+
+
+class BulkUnenrollCsvTooManyRows(Exception):
+    """
+    Raised as soon as a bulk-unenroll CSV passes the caller's row limit, so an
+    oversized file is never parsed in full. Carries the limit so it can be reported.
+    """
+
+    def __init__(self, max_rows):
+        self.max_rows = max_rows
+        super().__init__(f"CSV exceeds the maximum of {max_rows} rows.")
+
+
+class BulkUnenrollCsvUnreadable(Exception):
+    """
+    Raised when the upload cannot be read as CSV text at all.
+
+    Distinct from the per-row errors this parser collects: a file that is not UTF-8
+    (a ``.xls`` renamed to ``.csv``) or is malformed CSV has no rows to report
+    against. Callers turn this into a 400 rather than a 500.
+    """
+
+
+def _iter_csv_rows(text):
+    """
+    Yield CSV rows, reporting a malformed file as ``BulkUnenrollCsvUnreadable``.
+
+    ``csv.reader`` raises ``csv.Error`` lazily, from the middle of iteration, so the
+    guard has to wrap the stepping rather than the reader's construction.
+    """
+    reader = csv.reader(io.StringIO(text))
+    while True:
+        try:
+            yield next(reader)
+        except StopIteration:
+            return
+        except csv.Error as exc:
+            raise BulkUnenrollCsvUnreadable(f"File is not readable as CSV: {exc}") from exc
+
+
+def parse_bulk_unenroll_csv(file_obj, max_rows=None):
+    """
+    Parse a bulk-unenroll CSV into course keys.
+
+    UTF-8 (BOM optional), exactly **one** non-empty cell per row: a course id. An
+    optional ``course_id`` / ``course id`` header and blank rows are skipped, and
+    duplicates are collapsed to the first occurrence without being reported. A row
+    with more than one cell is an error — deliberately narrower than the
+    ``bulk_unenroll`` management command's ``username,course_id``, whose username
+    column the whole-course worker would silently ignore while unenrolling everyone.
+
+    Arguments:
+        file_obj: a file-like object opened in binary or text mode.
+        max_rows: optional cap on *data* rows (every non-blank, non-header row,
+            including duplicates and invalid ones). ``None`` means no limit.
+
+    Raises:
+        BulkUnenrollCsvTooManyRows: if ``max_rows`` is exceeded.
+        BulkUnenrollCsvUnreadable: if the bytes are not UTF-8 or not parseable CSV.
+
+    Returns:
+        (course_keys, errors) — course keys de-duplicated in input order, and
+        ``{"row": int, "value": str, "error": str}`` dicts whose 1-based row number
+        counts every physical row, so it matches what a spreadsheet shows.
+    """
+    raw = file_obj.read()
+    if isinstance(raw, bytes):
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise BulkUnenrollCsvUnreadable(
+                "File is not valid UTF-8 text. Re-save it as a UTF-8 CSV and try again."
+            ) from exc
+    else:
+        # Strip a leading BOM if the caller handed us already-decoded text.
+        # Spelled as an escape: the literal character is invisible in a diff.
+        text = raw.removeprefix("\ufeff")
+
+    course_keys = []
+    errors = []
+    seen = set()
+    data_rows = 0
+
+    for row_number, row in enumerate(_iter_csv_rows(text), start=1):
+        cells = [cell.strip() for cell in row]
+        non_empty = [cell for cell in cells if cell]
+
+        if not non_empty:
+            # Blank row (possibly all-whitespace or trailing newline) — skip.
+            continue
+
+        # Skip a single-cell header row if it names the column.
+        if row_number == 1 and len(non_empty) == 1 and non_empty[0].lower() in BULK_UNENROLL_CSV_HEADERS:
+            continue
+
+        # Count every data row, not just the ones that survive to `course_keys`:
+        # duplicates and invalid rows still cost time and response size.
+        data_rows += 1
+        if max_rows is not None and data_rows > max_rows:
+            raise BulkUnenrollCsvTooManyRows(max_rows)
+
+        raw_value = ",".join(cells).strip(",")
+
+        if len(non_empty) > 1:
+            errors.append({
+                "row": row_number,
+                "value": raw_value,
+                "error": "Expected a single course_id column",
+            })
+            continue
+
+        value = non_empty[0]
+        try:
+            course_key = CourseKey.from_string(value)
+        except InvalidKeyError:
+            errors.append({
+                "row": row_number,
+                "value": value,
+                "error": "Invalid course id",
+            })
+            continue
+
+        if course_key in seen:
+            # Duplicate — collapse silently so a course is never double-queued.
+            continue
+        seen.add(course_key)
+        course_keys.append(course_key)
+
+    return course_keys, errors

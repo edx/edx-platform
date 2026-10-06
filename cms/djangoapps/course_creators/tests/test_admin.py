@@ -3,23 +3,20 @@ Tests course_creators.admin.py.
 """
 
 
+from smtplib import SMTPException
 from unittest import mock
 
 from django.contrib.admin.sites import AdminSite
 from django.core import mail
 from django.http import HttpRequest
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from cms.djangoapps.course_creators.admin import CourseCreatorAdmin
 from cms.djangoapps.course_creators.models import CourseCreator
+from common.djangoapps.edxmako.shortcuts import render_to_string
 from common.djangoapps.student import auth
 from common.djangoapps.student.roles import CourseCreatorRole
 from common.djangoapps.student.tests.factories import UserFactory
-
-
-def mock_render_to_string(template_name, context):
-    """Return a string that encodes template_name and context"""
-    return str((template_name, context))
 
 
 class CourseCreatorAdminTest(TestCase):
@@ -52,14 +49,17 @@ class CourseCreatorAdminTest(TestCase):
 
         self.studio_request_email = 'mark@marky.mark'
         self.enable_creator_group_patch = {
-            "ENABLE_CREATOR_GROUP": True,
-            "STUDIO_REQUEST_EMAIL": self.studio_request_email
+            'ENABLE_CREATOR_GROUP': True,
+            'STUDIO_REQUEST_EMAIL': self.studio_request_email,
+        }
+        self.context = {
+            'studio_request_email': self.studio_request_email,
+            'is_secure': False,
+            'site': 'localhost:8001',
+            'user_name': 'test_user',
+            'user_email': 'test_user+courses@edx.org',
         }
 
-    @mock.patch(
-        'cms.djangoapps.course_creators.admin.render_to_string',
-        mock.Mock(side_effect=mock_render_to_string, autospec=True)
-    )
     @mock.patch('django.contrib.auth.models.User.email_user')
     def test_change_status(self, email_user):
         """
@@ -71,7 +71,6 @@ class CourseCreatorAdminTest(TestCase):
             self._change_state(state)
             self.assertEqual(is_creator, auth.user_has_role(self.user, CourseCreatorRole()))
 
-            context = {'studio_request_email': self.studio_request_email}
             if state == CourseCreator.GRANTED:
                 template = 'emails/course_creator_granted.txt'
             elif state == CourseCreator.DENIED:
@@ -79,8 +78,8 @@ class CourseCreatorAdminTest(TestCase):
             else:
                 template = 'emails/course_creator_revoked.txt'
             email_user.assert_called_with(
-                mock_render_to_string('emails/course_creator_subject.txt', context),
-                mock_render_to_string(template, context),
+                render_to_string('emails/course_creator_subject.txt', self.context).strip(),
+                render_to_string(template, self.context),
                 self.studio_request_email
             )
 
@@ -103,10 +102,6 @@ class CourseCreatorAdminTest(TestCase):
 
             change_state_and_verify_email(CourseCreator.DENIED, False)
 
-    @mock.patch(
-        'cms.djangoapps.course_creators.admin.render_to_string',
-        mock.Mock(side_effect=mock_render_to_string, autospec=True)
-    )
     def test_mail_admin_on_pending(self):
         """
         Tests that the admin account is notified when a user is in the 'pending' state.
@@ -121,16 +116,15 @@ class CourseCreatorAdminTest(TestCase):
             # message sent. Admin message will follow.
             base_num_emails = 1 if expect_sent_to_user else 0
             if expect_sent_to_admin:
-                context = {'user_name': 'test_user', 'user_email': 'test_user+courses@edx.org'}
 
                 self.assertEqual(base_num_emails + 1, len(mail.outbox), 'Expected admin message to be sent')
                 sent_mail = mail.outbox[base_num_emails]
-                self.assertEqual(
-                    mock_render_to_string('emails/course_creator_admin_subject.txt', context),
+                self.assertEqual(  # noqa: PT009
+                    render_to_string('emails/course_creator_admin_subject.txt', self.context).strip(),
                     sent_mail.subject
                 )
-                self.assertEqual(
-                    mock_render_to_string('emails/course_creator_admin_user_pending.txt', context),
+                self.assertEqual(  # noqa: PT009
+                    render_to_string('emails/course_creator_admin_user_pending.txt', self.context),
                     sent_mail.body
                 )
                 self.assertEqual(self.studio_request_email, sent_mail.from_email)
@@ -175,4 +169,57 @@ class CourseCreatorAdminTest(TestCase):
         self.assertTrue(self.creator_admin.has_change_permission(self.request))
 
         self.request.user = self.user
-        self.assertFalse(self.creator_admin.has_change_permission(self.request))
+        self.assertFalse(self.creator_admin.has_change_permission(self.request))  # noqa: PT009
+
+    @override_settings(ENABLE_CREATOR_GROUP=True, STUDIO_REQUEST_EMAIL='mark@marky.mark')
+    @mock.patch('cms.djangoapps.course_creators.admin.log')
+    @mock.patch('django.contrib.auth.models.User.email_user')
+    def test_send_user_notification_error_logging(self, mock_email_user, mock_log):
+        """
+        Test that email_user raising an exception logs the correct message based on SQUELCH_PII_IN_LOGS setting.
+        """
+        mock_email_user.side_effect = Exception("SMTP error")
+
+        def test_and_assert_case(squelch_pii, states):
+            mock_log.reset_mock()
+            with self.settings(SQUELCH_PII_IN_LOGS=squelch_pii), mock.patch.dict(
+                'django.conf.settings.FEATURES', self.enable_creator_group_patch
+            ):
+                for state in states:
+                    self._change_state(state)
+                expected_identifier = self.user.id if squelch_pii else self.user.email
+                mock_log.warning.assert_any_call(
+                    "Unable to send course creator status e-mail to %s",
+                    expected_identifier
+                )
+
+        test_and_assert_case(True, [CourseCreator.GRANTED])
+        # True case moved the object to GRANTED; False case needs DENIED -> GRANTED to retrigger.
+        test_and_assert_case(False, [CourseCreator.DENIED, CourseCreator.GRANTED])
+
+    @override_settings(ENABLE_CREATOR_GROUP=True, STUDIO_REQUEST_EMAIL='mark@marky.mark')
+    @mock.patch('cms.djangoapps.course_creators.admin.log')
+    @mock.patch('cms.djangoapps.course_creators.admin.send_mail')
+    def test_send_admin_notification_error_logging(self, mock_send_mail, mock_log):
+        """
+        Test that send_mail raising SMTPException logs the correct message based on SQUELCH_PII_IN_LOGS setting.
+        """
+        mock_send_mail.side_effect = SMTPException("SMTP error")
+
+        def test_and_assert_case(squelch_pii, states):
+            mock_log.reset_mock()
+            with self.settings(SQUELCH_PII_IN_LOGS=squelch_pii), mock.patch.dict(
+                'django.conf.settings.FEATURES', self.enable_creator_group_patch
+            ):
+                for state in states:
+                    self._change_state(state)
+                expected_identifier = self.user.id if squelch_pii else self.user.email
+                mock_log.warning.assert_any_call(
+                    "Failure sending 'pending state' e-mail for %s to %s",
+                    expected_identifier,
+                    self.studio_request_email
+                )
+
+        test_and_assert_case(True, [CourseCreator.PENDING])
+        # True case left the object at PENDING; False case needs UNREQUESTED -> PENDING to retrigger.
+        test_and_assert_case(False, [CourseCreator.UNREQUESTED, CourseCreator.PENDING])

@@ -146,6 +146,7 @@ class Notification(TimeStampedModel):
     content_context = models.JSONField(default=dict)
     content_url = models.URLField(null=True, blank=True)
     web = models.BooleanField(default=True, null=False, blank=False)
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # field does not store user PII data, safe under OEP-30
     email = models.BooleanField(default=False, null=False, blank=False)
     push = models.BooleanField(default=False, null=False, blank=False)
     last_read = models.DateTimeField(null=True, blank=True)
@@ -165,7 +166,9 @@ class Notification(TimeStampedModel):
 
 class NotificationPreference(TimeStampedModel):
     """
-    Model to store notification preferences for users at account level
+    Model to store notification preferences for users at account level.
+
+    .. no_pii:
     """
 
     class EmailCadenceChoices(models.TextChoices):
@@ -182,7 +185,9 @@ class NotificationPreference(TimeStampedModel):
     app = models.CharField(max_length=128, null=False, blank=False, db_index=True)
     web = models.BooleanField(default=True, null=False, blank=False)
     push = models.BooleanField(default=False, null=False, blank=False)
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # field does not store user PII data, safe under OEP-30
     email = models.BooleanField(default=False, null=False, blank=False)
+    # pylint: disable-next=pii-invalid-no-pii-annotation  # field does not store user PII data, safe under OEP-30
     email_cadence = models.CharField(max_length=64, choices=EmailCadenceChoices.choices, null=False, blank=False)
     is_active = models.BooleanField(default=True)
 

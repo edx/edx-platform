@@ -42,6 +42,7 @@ from lms.djangoapps.discussion.rate_limit import is_content_creation_rate_limite
 from lms.djangoapps.discussion.rest_api.permissions import (
     IsAllowedToBulkDelete,
     IsAllowedToRestore,
+    IsDiscussionReadOnlyModeDisabled,
     IsStaffOrAdmin,
     IsStaffOrCourseTeamOrEnrolled,
     can_take_action_on_spam,
@@ -761,6 +762,10 @@ class ThreadViewSet(DeveloperErrorViewMixin, ViewSet):
         MergePatchParser,
     )
 
+    def get_permissions(self):
+        """Append read-only mode check to permissions set by @view_auth_classes decorator."""
+        return super().get_permissions() + [IsDiscussionReadOnlyModeDisabled()]
+
     def list(self, request):
         """
         Implements the GET method for the list endpoint as described in the
@@ -1237,6 +1242,10 @@ class CommentViewSet(DeveloperErrorViewMixin, ViewSet):
         MergePatchParser,
     )
 
+    def get_permissions(self):
+        """Append read-only mode check to permissions set by @view_auth_classes decorator."""
+        return super().get_permissions() + [IsDiscussionReadOnlyModeDisabled()]
+
     def list(self, request):
         """
         Implements the GET method for the list endpoint as described in
@@ -1511,6 +1520,7 @@ class UploadFileView(DeveloperErrorViewMixin, APIView):
     permission_classes = (
         permissions.IsAuthenticated,
         IsStaffOrCourseTeamOrEnrolled,
+        IsDiscussionReadOnlyModeDisabled,
     )
 
     def post(self, request, course_id):
@@ -1755,7 +1765,11 @@ class CourseDiscussionSettingsAPIView(DeveloperErrorViewMixin, APIView):
         JSONParser,
         MergePatchParser,
     )
-    permission_classes = (permissions.IsAuthenticated, IsStaffOrAdmin)
+    permission_classes = (
+        permissions.IsAuthenticated,
+        IsStaffOrAdmin,
+        IsDiscussionReadOnlyModeDisabled,
+    )
 
     def _get_request_kwargs(self, course_id):
         return dict(course_id=course_id)
@@ -1879,7 +1893,11 @@ class CourseDiscussionRolesAPIView(DeveloperErrorViewMixin, APIView):
         BearerAuthenticationAllowInactiveUser,
         SessionAuthenticationAllowInactiveUser,
     )
-    permission_classes = (permissions.IsAuthenticated, permissions.IsAdminUser)
+    permission_classes = (
+        permissions.IsAuthenticated,
+        permissions.IsAdminUser,
+        IsDiscussionReadOnlyModeDisabled,
+    )
 
     def _get_request_kwargs(self, course_id, rolename):
         return dict(course_id=course_id, rolename=rolename)
@@ -1960,7 +1978,11 @@ class BulkDeleteUserPosts(DeveloperErrorViewMixin, APIView):
         BearerAuthentication,
         SessionAuthentication,
     )
-    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+    permission_classes = (
+        permissions.IsAuthenticated,
+        IsAllowedToBulkDelete,
+        IsDiscussionReadOnlyModeDisabled,
+    )
 
     def post(self, request, course_id):
         """
@@ -2047,7 +2069,11 @@ class RestoreContent(DeveloperErrorViewMixin, APIView):
         BearerAuthentication,
         SessionAuthentication,
     )
-    permission_classes = (permissions.IsAuthenticated, IsAllowedToRestore)
+    permission_classes = (
+        permissions.IsAuthenticated,
+        IsAllowedToRestore,
+        IsDiscussionReadOnlyModeDisabled,
+    )
 
     def post(self, request):
         """
@@ -2150,7 +2176,11 @@ class BulkRestoreUserPosts(DeveloperErrorViewMixin, APIView):
         BearerAuthentication,
         SessionAuthentication,
     )
-    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+    permission_classes = (
+        permissions.IsAuthenticated,
+        IsAllowedToBulkDelete,
+        IsDiscussionReadOnlyModeDisabled,
+    )
 
     def post(self, request, course_id):
         """
@@ -2337,7 +2367,11 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
     authentication_classes = (
         JwtAuthentication, BearerAuthentication, SessionAuthentication,
     )
-    permission_classes = (permissions.IsAuthenticated, IsAllowedToBulkDelete)
+    permission_classes = (
+        permissions.IsAuthenticated,
+        IsAllowedToBulkDelete,
+        IsDiscussionReadOnlyModeDisabled,
+    )
 
     def get_permissions(self):
         """
@@ -2347,8 +2381,10 @@ class DiscussionModerationViewSet(DeveloperErrorViewMixin, ViewSet):
         because we check course-specific permissions inside the action method after retrieving the ban.
         For ban_user, we check permissions inside the action based on scope.
         """
-        if self.action in ['unban_user', 'unban_user_by_id', 'banned_users', 'ban_user']:
+        if self.action in ['banned_users']:
             return [permissions.IsAuthenticated()]
+        if self.action in ['unban_user', 'unban_user_by_id', 'ban_user']:
+            return [permissions.IsAuthenticated(), IsDiscussionReadOnlyModeDisabled()]
         return super().get_permissions()
 
     @apidocs.schema(

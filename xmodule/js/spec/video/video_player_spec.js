@@ -979,6 +979,40 @@ import _ from 'underscore';
                         expect(state.videoPlayer.player.hls).toBeDefined();
                     });
 
+                    it('limits fatal network retries for the same fragment', function() {
+                        var i,
+                            player = state.videoPlayer.player,
+                            makeFatalNetworkError = function(url) {
+                                return {
+                                    fatal: true,
+                                    type: Hls.ErrorTypes.NETWORK_ERROR,
+                                    details: 'fragLoadError',
+                                    frag: {
+                                        url: url
+                                    }
+                                };
+                            };
+
+                        spyOn(player.hls, 'startLoad');
+                        spyOn(console, 'error');
+                        spyOn(console, 'warn');
+                        player.hls.stopLoad = jasmine.createSpy('stopLoad');
+
+                        for (i = 0; i < 4; i++) {
+                            player.onError(null, makeFatalNetworkError('/base/fixtures/hls/hls_0_4.ts'));
+                        }
+
+                        expect(player.hls.startLoad.calls.count()).toEqual(3);
+                        expect(console.error.calls.count()).toEqual(3);
+                        expect(console.warn.calls.count()).toEqual(1);
+                        expect(player.hls.stopLoad).toHaveBeenCalled();
+
+                        player.onError(null, makeFatalNetworkError('/base/fixtures/hls/hls_0_5.ts'));
+
+                        expect(player.hls.startLoad.calls.count()).toEqual(4);
+                        expect(console.error.calls.count()).toEqual(4);
+                    });
+
                     describe('on safari', function() {
                         beforeEach(function() {
                             spyOn(HLS, 'isSupported').and.returnValue(false);

@@ -80,15 +80,19 @@ class CertificatesDetailRestApiTest(AuthAndScopesTestMixin, SharedModuleStoreTes
 
     def assert_success_response_for_student(self, response):
         """ This method is required by AuthAndScopesTestMixin. """
-        assert response.data ==\
-               {'username': self.student.username,
-                'status': CertificateStatuses.downloadable,
-                'is_passing': True,
-                'grade': '0.88',
-                'download_url': 'www.google.com',
-                'certificate_type': CourseMode.VERIFIED,
-                'course_id': str(self.course.id),
-                'created_date': self.now}
+        assert response.data == {
+            'username': self.student.username,
+            'status': CertificateStatuses.downloadable,
+            'is_passing': True,
+            'grade': '0.88',
+            'download_url': 'www.google.com',
+            'certificate_type': CourseMode.VERIFIED,
+            'course_id': str(self.course.id),
+            'created_date': self.now,
+            'certificate_blocked_due_to_proctoring': False,
+            'certificate_block_reason': None,
+            'certificate_blocking_statuses': [],
+        }
 
     def test_no_certificate(self):
         student_no_cert = UserFactory.create(password=self.user_password)
@@ -186,7 +190,10 @@ class CertificatesListRestApiTest(AuthAndScopesTestMixin, SharedModuleStoreTestC
                 'is_passing': True,
                 'download_url': download_url,
                 'grade': '0.88',
-                'uuid': str(self.cert.verify_uuid)
+                'uuid': str(self.cert.verify_uuid),
+                'certificate_blocked_due_to_proctoring': False,
+                'certificate_block_reason': None,
+                'certificate_blocking_statuses': [],
             }
         ]
 
@@ -331,7 +338,7 @@ class CertificatesListRestApiTest(AuthAndScopesTestMixin, SharedModuleStoreTestC
             assert len(resp.data) == 0
 
         # Test student with 1 certificate
-        with self.assertNumQueries(13, table_ignorelist=WAFFLE_TABLES):
+        with self.assertNumQueries(14, table_ignorelist=WAFFLE_TABLES):
             resp = self.get_response(
                 AuthType.jwt,
                 requesting_user=self.global_staff,
@@ -371,7 +378,7 @@ class CertificatesListRestApiTest(AuthAndScopesTestMixin, SharedModuleStoreTestC
             download_url='www.google.com',
             grade="0.88",
         )
-        with self.assertNumQueries(13, table_ignorelist=WAFFLE_TABLES):
+        with self.assertNumQueries(15, table_ignorelist=WAFFLE_TABLES):
             resp = self.get_response(
                 AuthType.jwt,
                 requesting_user=self.global_staff,

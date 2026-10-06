@@ -37,6 +37,8 @@ class StagedContent(models.Model):
     Use as a clipboard: for any given user, the most recent row with
     purpose=CLIPBOARD is the "current" clipboard content. But it can only be
     pasted if its status is READY.
+
+    .. no_pii:
     """
 
     class Meta:
@@ -89,6 +91,8 @@ class StagedContentFile(models.Model):
     These usually come from a course's Files & Uploads page, but can also come
     from per-xblock file storage (e.g. video transcripts or images used in
     v2 content libraries).
+
+    .. no_pii:
     """
     for_content = models.ForeignKey(StagedContent, on_delete=models.CASCADE, related_name="files")
     filename = models.CharField(max_length=255, blank=False)
@@ -106,6 +110,8 @@ class UserClipboard(models.Model):
     Each user has a clipboard that can hold one item at a time, where an item
     is some OLX content that can be used in a course, such as an XBlock, a Unit,
     or a Subsection.
+
+    .. no_pii:
     """
     # The user that copied something. Clipboards are user-specific and
     # previously copied items are not kept.

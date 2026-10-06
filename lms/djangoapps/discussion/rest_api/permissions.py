@@ -5,7 +5,7 @@ from typing import Dict, Set, Union
 
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
-from rest_framework import permissions
+from rest_framework import exceptions, permissions, status
 
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.roles import (
@@ -17,6 +17,8 @@ from lms.djangoapps.discussion.django_comment_client.utils import (
     get_user_role_names,
     has_discussion_privileges,
 )
+from lms.djangoapps.discussion.rest_api.utils import get_course_id_from_thread_id
+from lms.djangoapps.discussion.toggles import READ_ONLY_MODE
 from openedx.core.djangoapps.django_comment_common.comment_client.comment import Comment
 from openedx.core.djangoapps.django_comment_common.comment_client.thread import Thread
 from openedx.core.djangoapps.django_comment_common.models import (
@@ -223,6 +225,89 @@ def can_take_action_on_spam(user, course_id):
     if bool(user_roles & {FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR}):
         return True
     return False
+
+
+class DiscussionReadOnlyModeException(exceptions.APIException):
+    """Raised when a write operation is attempted while discussions are in read-only mode."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_code = "read_only_mode"
+    default_detail = (
+        "Discussions are temporarily in read-only mode while maintenance is in progress. "
+        "You can continue viewing content, but posting and other modifications are temporarily unavailable."
+    )
+
+
+class IsDiscussionReadOnlyModeDisabled(permissions.BasePermission):
+    """Block discussion write operations when the read-only waffle flag is enabled."""
+
+    SAFE_METHODS_WITH_TRACE = (*permissions.SAFE_METHODS, "TRACE")
+
+    def has_permission(self, request, view):
+        if request.method in self.SAFE_METHODS_WITH_TRACE:
+            return True
+
+        course_key = self._get_course_key(request, view)
+
+        if READ_ONLY_MODE.is_enabled(course_key):
+            raise DiscussionReadOnlyModeException()
+
+        return True
+
+    def _get_course_key(self, request, view):
+        """Best-effort course key extraction for discussion write requests."""
+        course_id = None
+        thread_id = None
+        comment_id = None
+
+        if hasattr(view, "kwargs") and view.kwargs:
+            course_id = view.kwargs.get("course_id") or view.kwargs.get("course_key_string")
+            thread_id = view.kwargs.get("thread_id")
+            comment_id = view.kwargs.get("comment_id")
+
+        if not course_id and hasattr(request, "data") and hasattr(request.data, "get"):
+            course_id = request.data.get("course_id")
+            thread_id = thread_id or request.data.get("thread_id")
+            comment_id = comment_id or request.data.get("comment_id")
+
+        if not course_id:
+            course_id = request.query_params.get("course_id")
+
+        if not course_id:
+            try:
+                if thread_id:
+                    course_id = get_course_id_from_thread_id(thread_id)
+                elif comment_id:
+                    cc_comment = Comment(id=comment_id).retrieve()
+                    course_id = get_course_id_from_thread_id(cc_comment["thread_id"])
+            except Exception:  # pylint: disable=broad-exception-caught
+                # Do not fail permission checks on backend lookup edge cases.
+                # The target view will still validate and return a proper response.
+                course_id = None
+
+        if (
+            not course_id
+            and hasattr(view, "kwargs")
+            and view.kwargs
+            and getattr(view, "action", None) == "unban_user_by_id"
+        ):
+            try:
+                from forum import api as forum_api
+
+                ban = forum_api.get_ban(view.kwargs.get("pk"))
+                course_id = ban.get("course_id") or (
+                    request.data.get("course_id") if hasattr(request.data, "get") else None
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                course_id = None
+
+        if not course_id:
+            return None
+
+        try:
+            return CourseKey.from_string(str(course_id))
+        except InvalidKeyError:
+            return None
 
 
 class IsAllowedToBulkDelete(permissions.BasePermission):

@@ -31,6 +31,7 @@ from common.djangoapps.student.models import (
     ManualEnrollmentAudit,
     PendingEmailChange,
     PendingNameChange,
+    PendingSecondaryEmailChange,
     Registration,
     SocialLink,
     UserProfile,
@@ -194,8 +195,8 @@ class TestDeactivateLogout(RetirementTestCase):
     @mock.patch('openedx.core.djangoapps.user_api.accounts.utils.retire_dot_oauth2_models')
     def test_user_can_deactivate_self(self, mock_retire_dot):
         """
-        Verify a user calling the deactivation endpoint logs out the user, deletes all their SSO tokens,
-        and creates a user retirement row.
+        Verify a user calling the deactivation endpoint logs out the user,
+        redacts user account record, and creates a user retirement row.
         """
         self.client.login(username=self.test_user.username, password=self.test_password)
         headers = build_jwt_headers(self.test_user)
@@ -205,7 +206,7 @@ class TestDeactivateLogout(RetirementTestCase):
         updated_user = User.objects.get(id=self.test_user.id)
         assert get_retired_email_by_email(self.test_user.email) == updated_user.email
         assert not updated_user.has_usable_password()
-        assert not list(UserSocialAuth.objects.filter(user=self.test_user))
+        assert list(UserSocialAuth.objects.filter(user=self.test_user))
         assert not list(Registration.objects.filter(user=self.test_user))
         assert len(UserRetirementStatus.objects.filter(user_id=self.test_user.id)) == 1
         # these retirement utils are tested elsewhere; just make sure we called them
@@ -1071,14 +1072,11 @@ class TestAccountRetirementCleanup(RetirementTestCase):
         assert response.status_code == expected_status
         return response
 
-    def _assert_redacted_update_delete_queries(self, queries, redacted_username, redacted_email, redacted_name):
+    def _assert_redacted_update_delete_queries(self, queries):
         """
         Helper method to verify UPDATE and DELETE queries use ID-based filtering and correct field-value assignments.
         Args:
             queries: List of captured query dicts from CaptureQueriesContext
-            redacted_username: Expected redacted username value
-            redacted_email: Expected redacted email value
-            redacted_name: Expected redacted name value
         """
         update_queries = [q for q in queries if 'UPDATE' in q['sql'] and 'user_api_userretirementstatus' in q['sql']]
         delete_queries = [q for q in queries if 'DELETE' in q['sql'] and 'user_api_userretirementstatus' in q['sql']]
@@ -1090,15 +1088,9 @@ class TestAccountRetirementCleanup(RetirementTestCase):
         update_query = update_queries[0]
         sql_lower = update_query['sql']
         # Ensure original_username, original_email, and original_name are set to redacted values
-        assert f'"original_username" = \'{redacted_username}\'' in sql_lower, (
-            f"UPDATE query missing '\"original_username\" = {redacted_username}': {sql_lower}"
-        )
-        assert f'"original_email" = \'{redacted_email}\'' in sql_lower, (
-            f"UPDATE query missing '\"original_email\" = {redacted_email}': {sql_lower}"
-        )
-        assert f'"original_name" = \'{redacted_name}\'' in sql_lower, (
-            f"UPDATE query missing '\"original_name\" = {redacted_name}': {sql_lower}"
-        )
+        assert '"original_username" = \'redacted-before-delete\'' in sql_lower
+        assert '"original_email" = \'redacted-before-delete@safe.com\'' in sql_lower
+        assert '"original_name" = \'redacted-before-delete\'' in sql_lower
         # Ensure UPDATE uses ID-based filtering
         assert '"id" IN' in sql_lower or 'WHERE "id"' in sql_lower, (
             f"UPDATE query should use ID filtering to prevent over-update, but got: {sql_lower}"
@@ -1114,9 +1106,9 @@ class TestAccountRetirementCleanup(RetirementTestCase):
             f"DELETE query should use ID filtering to prevent over-deletion, but got: {sql_lower}"
         )
 
-    def test_default_redacted_values(self):
+    def test_redact_and_delete(self):
         """
-        Test basic cleanup with default redacted values.
+        Test basic cleanup with redacted values.
         Verify that redaction (UPDATE) happens before deletion (DELETE).
         Captures actual SQL queries to ensure UPDATE queries contain correct field-value assignments.
         """
@@ -1125,29 +1117,30 @@ class TestAccountRetirementCleanup(RetirementTestCase):
         # Verify records are deleted after redaction
         retirements = UserRetirementStatus.objects.all()
         assert retirements.count() == 0
-        # Verify UPDATE and DELETE queries with default 'redacted' value
-        self._assert_redacted_update_delete_queries(context.captured_queries, 'redacted', 'redacted', 'redacted')
+        # Verify UPDATE and DELETE queries with 'redacted' value
+        self._assert_redacted_update_delete_queries(context.captured_queries)
 
-    def test_custom_redacted_values(self):
-        """Test that custom redacted values are applied before deletion."""
-        custom_username = 'username-redacted-12345'
-        custom_email = 'email-redacted-67890'
-        custom_name = 'name-redacted-abcde'
-        data = {
-            'usernames': self.usernames,
-            'redacted_username': custom_username,
-            'redacted_email': custom_email,
-            'redacted_name': custom_name
-        }
-        with CaptureQueriesContext(connection) as context:
-            self.cleanup_and_assert_status(data=data)
-        # Verify records are deleted after redaction
-        retirements = UserRetirementStatus.objects.all()
-        assert retirements.count() == 0
-        # Verify UPDATE and DELETE queries with custom redacted values
-        self._assert_redacted_update_delete_queries(
-            context.captured_queries, custom_username, custom_email, custom_name
-        )
+    def test_does_not_delete_unrelated_redacted_records(self):
+        """
+        Verify cleanup doesn't delete unrelated records with coincidental redacted values.
+        Regression test for over-deletion bug where deletion was filtered by field values
+        (original_username='redacted') instead of by primary key.
+        """
+        # Create an unrelated record that already has redacted field values
+        other_user = UserFactory()
+        other_retirement = create_retirement_status(other_user, state=self.complete_state)
+        other_retirement.original_username = 'redacted-before-delete'
+        other_retirement.original_email = 'redacted-before-delete@safe.com'
+        other_retirement.original_name = 'redacted-before-delete'
+        other_retirement.save()
+        other_id = other_retirement.id
+        # Clean up only self.usernames records
+        self.cleanup_and_assert_status()
+        # Verify target records were deleted
+        target_count = UserRetirementStatus.objects.filter(user__username__in=self.usernames).count()
+        assert target_count == 0, f"Expected 0 target records, found {target_count}"
+        # Verify unrelated record was NOT deleted (not a target of cleanup)
+        assert UserRetirementStatus.objects.filter(id=other_id).exists()
 
     def test_leaves_other_users(self):
         remaining_usernames = []
@@ -1183,31 +1176,6 @@ class TestAccountRetirementCleanup(RetirementTestCase):
         retirement.save()
 
         self.cleanup_and_assert_status(expected_status=status.HTTP_400_BAD_REQUEST)
-
-    def test_does_not_delete_unrelated_redacted_records(self):
-        """
-        Verify cleanup doesn't delete unrelated records with coincidental redacted values.
-        Regression test for over-deletion bug where deletion was filtered by field values
-        (original_username='redacted') instead of by primary key.
-        """
-        # Create an unrelated record that already has redacted field values
-        other_user = UserFactory()
-        other_retirement = create_retirement_status(other_user, state=self.complete_state)
-        other_retirement.original_username = 'redacted'
-        other_retirement.original_email = 'redacted'
-        other_retirement.original_name = 'redacted'
-        other_retirement.save()
-        other_id = other_retirement.id
-
-        # Clean up only self.usernames records
-        self.cleanup_and_assert_status()
-
-        # Verify target records were deleted
-        target_count = UserRetirementStatus.objects.filter(user__username__in=self.usernames).count()
-        assert target_count == 0, f"Expected 0 target records, found {target_count}"
-
-        # Verify unrelated record was NOT deleted (not a target of cleanup)
-        assert UserRetirementStatus.objects.filter(id=other_id).exists()
 
 
 @ddt.ddt
@@ -1394,6 +1362,18 @@ class TestAccountRetirementPost(RetirementTestCase):
         UserOrgTagFactory.create(user=self.test_user, key='foo', value='bar')
         UserOrgTagFactory.create(user=self.test_user, key='cat', value='dog')
 
+        # Secondary email setup
+        PendingSecondaryEmailChange.objects.create(
+            user=self.test_user,
+            new_secondary_email='pending_secondary@example.com',
+            activation_key='test_activation_key_123'
+        )
+        AccountRecovery.objects.create(
+            user=self.test_user,
+            secondary_email='confirmed_secondary@example.com',
+            is_active=True
+        )
+
         CourseEnrollmentAllowedFactory.create(email=self.original_email)
 
         self.course_key = CourseKey.from_string('course-v1:edX+DemoX+Demo_Course')
@@ -1485,6 +1465,7 @@ class TestAccountRetirementPost(RetirementTestCase):
             'last_name': '',
             'is_active': False,
             'username': self.retired_username,
+            'email': self.retired_email,
         }
         for field, expected_value in expected_user_values.items():
             assert expected_value == getattr(self.test_user, field)
@@ -1506,6 +1487,10 @@ class TestAccountRetirementPost(RetirementTestCase):
 
         assert not PendingEmailChange.objects.filter(user=self.test_user).exists()
         assert not UserOrgTag.objects.filter(user=self.test_user).exists()
+
+        # Verify secondary email models were cleaned
+        assert not PendingSecondaryEmailChange.objects.filter(user=self.test_user).exists()
+        assert not AccountRecovery.objects.filter(user=self.test_user).exists()
 
         assert not CourseEnrollmentAllowed.objects.filter(email=self.original_email).exists()
         assert not UnregisteredLearnerCohortAssignments.objects.filter(email=self.original_email).exists()
@@ -1706,3 +1691,42 @@ class TestLMSAccountRetirementPost(RetirementTestCase, ModuleStoreTestCase):
         self.post_and_assert_status(data)
         fake_completed_retirement(self.test_user)
         self.post_and_assert_status(data)
+
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.USER_RETIRE_MAILINGS')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.USER_RETIRE_LMS_MISC')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.redact_and_delete_historical_social_auth')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.CreditRequirementStatus.retire_user')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.ApiAccessRequest.retire_user')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.CreditRequest.retire_user')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.ManualEnrollmentAudit.retire_manual_enrollments')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.PendingNameChange.delete_by_user_value')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.ArticleRevision.retire_user')
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.RevisionPluginRevision.retire_user')
+    def test_retire_misc_calls_all_retirement_steps(
+        self,
+        mock_revision_plugin,
+        mock_article_revision,
+        mock_pending_name,
+        mock_manual_enroll,
+        mock_credit_request,
+        mock_api_access,
+        mock_credit_req_status,
+        mock_redact_historical,
+        mock_lms_misc_signal,
+        mock_mailings_signal,
+    ):
+        """
+        Ensure that all retirement steps in the retire_misc view are invoked.
+        """
+        self.post_and_assert_status({'username': self.original_username})
+
+        mock_revision_plugin.assert_called_once()
+        mock_article_revision.assert_called_once()
+        mock_pending_name.assert_called_once()
+        mock_manual_enroll.assert_called_once()
+        mock_credit_request.assert_called_once()
+        mock_api_access.assert_called_once()
+        mock_credit_req_status.assert_called_once()
+        mock_redact_historical.assert_called_once()
+        mock_lms_misc_signal.send.assert_called_once()
+        mock_mailings_signal.send.assert_called_once()

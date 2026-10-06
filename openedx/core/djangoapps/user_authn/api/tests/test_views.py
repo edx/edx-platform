@@ -118,7 +118,6 @@ class MFEContextViewTest(ThirdPartyAuthTestMixin, APITestCase):
                 'syncLearnerProfileData': False,
                 'countryCode': self.country_code,
                 'welcomePageRedirectUrl': None,
-                'enterpriseBranding': None,
                 'pipelineUserDetails': self.pipeline_user_details,
             },
             'registrationFields': {
@@ -412,7 +411,6 @@ class MFEContextViewTest(ThirdPartyAuthTestMixin, APITestCase):
         # Verify that context from get_mfe_context is preserved
         assert 'countryCode' in response.data['contextData']
         assert 'platformName' in response.data['contextData']
-        assert response.data['contextData']['enterpriseBranding'] is None
         assert 'providers' in response.data['contextData']
 
     @override_settings(
@@ -433,7 +431,6 @@ class MFEContextViewTest(ThirdPartyAuthTestMixin, APITestCase):
         # Verify that context from get_mfe_context is preserved even when no optional fields
         assert 'countryCode' in response.data['contextData']
         assert 'platformName' in response.data['contextData']
-        assert response.data['contextData']['enterpriseBranding'] is None
         assert 'providers' in response.data['contextData']
 
 

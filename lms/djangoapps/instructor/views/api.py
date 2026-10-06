@@ -501,13 +501,18 @@ class RegisterAndEnrollStudents(APIView):
                             warnings.append({
                                 'username': username, 'email': email, 'response': warning_message
                             })
-                            log.warning('email %s already exist', email)
-                        else:
-                            log.info(
-                                "user already exists with username '%s' and email '%s'",
-                                username,
-                                email
+                            user_identifier_for_log = (
+                                user.id
+                                if getattr(settings, 'SQUELCH_PII_IN_LOGS', False)
+                                else email
                             )
+                            log.warning('email for user (%s) already exists', user_identifier_for_log)
+                        else:
+                            user_identifier_for_log = (
+                                f'user ID {user.id}' if getattr(settings, 'SQUELCH_PII_IN_LOGS', False)
+                                else f"username '{username}' and email '{email}'"
+                            )
+                            log.info('user already exists with %s', user_identifier_for_log)
 
                         # enroll a user if it is not already enrolled.
                         if not is_user_enrolled_in_course(user, course_id):
@@ -1493,7 +1498,8 @@ class GetStudentsFeatures(DeveloperErrorViewMixin, APIView):
             query_features = [
                 'id', 'username', 'name', 'email', 'language', 'location',
                 'year_of_birth', 'gender', 'level_of_education', 'mailing_address',
-                'goals', 'enrollment_mode', 'last_login', 'date_joined', 'external_user_key'
+                'goals', 'enrollment_mode', 'last_login', 'date_joined', 'external_user_key',
+                'lti_13_uuid'
             ]
 
         # Provide human-friendly and translatable names for these features. These names
@@ -1515,6 +1521,7 @@ class GetStudentsFeatures(DeveloperErrorViewMixin, APIView):
             'last_login': _('Last Login'),
             'date_joined': _('Date Joined'),
             'external_user_key': _('External User Key'),
+            'lti_13_uuid': _('LTI 1.3 UUID'),
         }
 
         for field in settings.PROFILE_INFORMATION_REPORT_PRIVATE_FIELDS:

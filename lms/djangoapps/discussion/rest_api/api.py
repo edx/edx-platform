@@ -1685,6 +1685,7 @@ def get_comment_list(
             "response_limit": page_size,
             "reverse_order": reverse_order,
             "merge_question_type_responses": merge_question_type_responses,
+            "show_deleted": show_deleted,
         },
     )
     # Responses to discussion threads cannot be separated by endorsed, but
@@ -1724,16 +1725,15 @@ def get_comment_list(
     if not responses and page != 1:
         raise PageNotFoundError("Page not found (No results on this page).")
     num_pages = (resp_total + page_size - 1) // page_size if resp_total else 1
-
-    if not show_deleted:
-        responses = [
-            response for response in responses if not response.get("is_deleted", False)
-        ]
-    else:
+    if show_deleted:
         if not context["has_moderation_privilege"]:
             raise PermissionDenied(
                 "`show_deleted` can only be set by users with moderation roles."
             )
+    elif responses:
+        responses = [
+            response for response in responses if not response.get("is_deleted", False)
+        ]
 
     # Always filter muted content for All Posts tab
     if include_muted:
@@ -2317,17 +2317,11 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
                 response_comments = response["children"]
                 break
 
-        response_skip = page_size * (page - 1)
-        paged_response_comments = response_comments[
-            response_skip: (response_skip + page_size)
-        ]
-        if not paged_response_comments and page != 1:
-            raise PageNotFoundError("Page not found (No results on this page).")
-
+        # Filter deleted content from the FULL list first
         if not show_deleted:
-            paged_response_comments = [
+            response_comments = [
                 response
-                for response in paged_response_comments
+                for response in response_comments
                 if not response.get("is_deleted", False)
             ]
         else:
@@ -2336,13 +2330,30 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
                     "`show_deleted` can only be set by users with moderation roles."
                 )
 
-        # Apply muting filter if not including muted content
+        # Filter muted content from the FULL list
+        include_muted = request.GET.get("include_muted", False)
+        include_muted = include_muted in ["true", "True", True]
         if not include_muted:
-            paged_response_comments = filter_muted_content(
+            response_comments = filter_muted_content(
                 request.user,
                 context["course"].id,
-                paged_response_comments
+                response_comments
             )
+
+        # NOW calculate pagination based on FILTERED total
+        total_comments_count = len(response_comments)
+        num_pages = (
+            (total_comments_count + page_size - 1) // page_size
+            if total_comments_count else 1
+        )
+
+        # Then paginate the filtered list
+        response_skip = page_size * (page - 1)
+        paged_response_comments = response_comments[
+            response_skip: (response_skip + page_size)
+        ]
+        if not paged_response_comments and page != 1:
+            raise PageNotFoundError("Page not found (No results on this page).")
 
         results = _serialize_discussion_entities(
             request,
@@ -2352,11 +2363,6 @@ def get_response_comments(request, comment_id, page, page_size, requested_fields
             DiscussionEntity.comment,
         )
 
-        total_comments_count = len(response_comments)
-        num_pages = (
-            (total_comments_count + page_size - 1) // page_size
-            if total_comments_count else 1
-        )
         paginator = DiscussionAPIPagination(
             request, page, num_pages, total_comments_count
         )
@@ -2751,11 +2757,12 @@ def add_stats_for_users_with_null_values(course_stats, users_in_course):
     return updated_course_stats
 
 
-def _get_user_label_function(course_staff_user_ids, moderator_user_ids, ta_user_ids):
+def _get_user_label_function(course_id, course_staff_user_ids, moderator_user_ids, ta_user_ids):
     """
     Create and return a function that determines user labels based on role.
 
     Args:
+        course_id: Course key/id used for discussion Role lookups
         course_staff_user_ids: List of user IDs for course staff
         moderator_user_ids: List of user IDs for moderators
         ta_user_ids: List of user IDs for TAs
@@ -2764,16 +2771,40 @@ def _get_user_label_function(course_staff_user_ids, moderator_user_ids, ta_user_
         A function that takes a user_id and returns the appropriate label or None
     """
 
+    # Pre-fetch discussion role names for all relevant users to avoid per-user queries.
+    relevant_user_ids = set(moderator_user_ids) | set(ta_user_ids)
+    role_names_by_user_id = {}
+    if relevant_user_ids:
+        for user_id_val, role_name in Role.objects.filter(
+            course_id=course_id,
+            users__id__in=relevant_user_ids,
+            name__in=[
+                FORUM_ROLE_ADMINISTRATOR,
+                FORUM_ROLE_MODERATOR,
+                FORUM_ROLE_COMMUNITY_TA,
+                FORUM_ROLE_GROUP_MODERATOR,
+            ],
+        ).values_list('users__id', 'name'):
+            role_names_by_user_id.setdefault(int(user_id_val), set()).add(role_name)
+
     def get_user_label(user_id):
         """Get role label for a user ID."""
         try:
             user_id_int = int(user_id)
+            # Platform course roles (collapsed to "Course Staff" for deleted content lists)
             if user_id_int in course_staff_user_ids:
-                return "Staff"
-            elif user_id_int in moderator_user_ids:
+                return "Course Staff"
+
+            # Discussion-specific roles (distinguish admin vs moderator)
+            role_names = role_names_by_user_id.get(user_id_int, set())
+            if FORUM_ROLE_ADMINISTRATOR in role_names:
+                return "Discussion Administrator"
+            if FORUM_ROLE_MODERATOR in role_names:
                 return "Moderator"
-            elif user_id_int in ta_user_ids:
+            if FORUM_ROLE_COMMUNITY_TA in role_names:
                 return "Community TA"
+            if FORUM_ROLE_GROUP_MODERATOR in role_names:
+                return "Group Moderator"
         except (ValueError, TypeError):
             # If user_id has any issues, there's no label to return
             pass
@@ -3065,7 +3096,7 @@ def get_deleted_content_for_course(
 
         # Get user label function
         get_user_label = _get_user_label_function(
-            course_staff_user_ids, moderator_user_ids, ta_user_ids
+            course.id, course_staff_user_ids, moderator_user_ids, ta_user_ids
         )
 
         # Build query parameters for forum API

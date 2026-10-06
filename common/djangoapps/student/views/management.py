@@ -36,17 +36,52 @@ from eventtracking import tracker
 # Note that this lives in LMS, so this dependency should be refactored.
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
+from openedx_filters.authentication.filters import AccountActivationEmailContextGenerated
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
+from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.edxmako.shortcuts import (  # pylint: disable=unused-import
+    marketing_link,
+    render_to_response,
+    render_to_string,  # noqa: F401
+)
+from common.djangoapps.entitlements.models import CourseEntitlement
+from common.djangoapps.student.email_helpers import generate_activation_email_context
+from common.djangoapps.student.helpers import (
+    DISABLE_UNENROLL_CERT_STATES,
+    cert_info,
+    get_next_url_for_login_page,
+    get_redirect_url_with_host,
+)
+from common.djangoapps.student.message_types import (  # pylint: disable=line-too-long
+    AccountActivation,
+    EmailChange,
+    EmailChangeConfirmation,
+    RecoveryEmailCreate,
+)
+from common.djangoapps.student.models import (  # pylint: disable=unused-import
+    PENDING_SECONDARY_EMAIL_REDACTED_VALUE,
+    AccountRecovery,
+    CourseEnrollment,
+    EnrollmentNotAllowed,
+    PendingEmailChange,  # unimport:skip
+    PendingSecondaryEmailChange,
+    Registration,
+    RegistrationCookieConfiguration,  # noqa: F401
+    UnenrollmentNotAllowed,
+    UserAttribute,  # noqa: F401
+    UserProfile,
+    UserSignupSource,
+    UserStanding,
+    create_comments_service_user,  # noqa: F401
+    email_exists_or_retired,  # noqa: F401
+)
+from common.djangoapps.student.signals import REFUND_ORDER, USER_EMAIL_CHANGED
 from common.djangoapps.student.toggles import should_redirect_to_courseware_after_enrollment
 from common.djangoapps.track import views as track_views
 from lms.djangoapps.bulk_email.models import Optout
-from common.djangoapps.course_modes.models import CourseMode
 from lms.djangoapps.courseware.courses import get_courses, sort_by_announcement, sort_by_start_date
-from common.djangoapps.edxmako.shortcuts import marketing_link, render_to_response, render_to_string  # lint-amnesty, pylint: disable=unused-import
-from common.djangoapps.entitlements.models import CourseEntitlement
-from common.djangoapps.student.helpers import get_next_url_for_login_page, get_redirect_url_with_host
 from openedx.core.djangoapps.ace_common.template_context import get_base_template_context
 from openedx.core.djangoapps.catalog.utils import get_programs_with_type
 from openedx.core.djangoapps.embargo import api as embargo_api
@@ -64,30 +99,8 @@ from openedx.core.djangolib.markup import HTML, Text
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.features.course_experience.url_helpers import make_learning_mfe_courseware_url
 from openedx.features.discounts.applicability import FIRST_PURCHASE_DISCOUNT_OVERRIDE_FLAG
-from openedx.features.enterprise_support.utils import is_enterprise_learner
-from common.djangoapps.student.email_helpers import generate_activation_email_context
-from common.djangoapps.student.helpers import DISABLE_UNENROLL_CERT_STATES, cert_info
-from common.djangoapps.student.message_types import AccountActivation, EmailChange, EmailChangeConfirmation, RecoveryEmailCreate  # lint-amnesty, pylint: disable=line-too-long
-from common.djangoapps.student.models import (  # lint-amnesty, pylint: disable=unused-import
-    AccountRecovery,
-    CourseEnrollment,
-    EnrollmentNotAllowed,
-    PendingEmailChange,  # unimport:skip
-    PendingSecondaryEmailChange,
-    Registration,
-    RegistrationCookieConfiguration,
-    UnenrollmentNotAllowed,
-    UserAttribute,
-    UserProfile,
-    UserSignupSource,
-    UserStanding,
-    create_comments_service_user,
-    email_exists_or_retired
-)
-from common.djangoapps.student.signals import REFUND_ORDER
 from common.djangoapps.util.db import outer_atomic
 from common.djangoapps.util.json_request import JsonResponse
-from common.djangoapps.student.signals import USER_EMAIL_CHANGED
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 
 log = logging.getLogger("edx.student")
@@ -209,7 +222,6 @@ def compose_activation_email(
     message_context = generate_activation_email_context(user, user_registration)
     message_context.update({
         'confirm_activation_link': _get_activation_confirmation_link(message_context['key'], redirect_url),
-        'is_enterprise_learner': is_enterprise_learner(user),
         'is_first_purchase_discount_overridden': FIRST_PURCHASE_DISCOUNT_OVERRIDE_FLAG.is_enabled(),
         'route_enabled': route_enabled,
         'routed_user': user.username,
@@ -218,6 +230,11 @@ def compose_activation_email(
         'registration_flow': registration_flow,
         'show_auto_generated_username': show_auto_generated_username(user.username),
     })
+    # .. filter_implemented_name: AccountActivationEmailContextGenerated
+    # .. filter_type: org.openedx.authentication.account_activation.email.context.generated.v1
+    __, message_context = AccountActivationEmailContextGenerated.run_filter(
+        user=user, message_context=message_context,
+    )
 
     if route_enabled:
         dest_addr = settings.FEATURES['REROUTE_ACTIVATION_EMAIL']
@@ -462,7 +479,8 @@ def change_enrollment(request, check_access=True):
         except UnenrollmentNotAllowed as exc:
             return HttpResponseBadRequest(str(exc))
 
-        log.info("User %s unenrolled from %s; sending REFUND_ORDER", user.username, course_id)
+        user_identifier_for_log = user.id if getattr(settings, 'SQUELCH_PII_IN_LOGS', False) else user.username
+        log.info("User %s unenrolled from %s; sending REFUND_ORDER", user_identifier_for_log, course_id)
         REFUND_ORDER.send(sender=None, course_enrollment=enrollment)
         return HttpResponse()
     else:
@@ -527,14 +545,19 @@ def disable_account_ajax(request):
         user_account, _success = UserStanding.objects.get_or_create(
             user=user, defaults={'changed_by': request.user},
         )
+        request_user_identifier_for_log, user_identifier_for_log = (
+            (request.user.id, user.id)
+            if getattr(settings, 'SQUELCH_PII_IN_LOGS', False)
+            else (request.user, username)
+        )
         if account_action == 'disable':
             user_account.account_status = UserStanding.ACCOUNT_DISABLED
             context['message'] = _("Successfully disabled {}'s account").format(username)
-            log.info("%s disabled %s's account", request.user, username)
+            log.info("%s disabled %s's account", request_user_identifier_for_log, user_identifier_for_log)
         elif account_action == 'reenable':
             user_account.account_status = UserStanding.ACCOUNT_ENABLED
             context['message'] = _("Successfully reenabled {}'s account").format(username)
-            log.info("%s reenabled %s's account", request.user, username)
+            log.info("%s reenabled %s's account", request_user_identifier_for_log, user_identifier_for_log)
         else:
             context['message'] = _("Unexpected account status")
             return JsonResponse(context, status=400)
@@ -665,7 +688,7 @@ def activate_account(request, key):
     if request.GET.get('next'):
         redirect_to, root_login_url = get_next_url_for_login_page(request, include_host=True)
 
-        # Don't automatically redirect authenticated users to the redirect_url
+        # Don't automatically redirect to the redirect_url
         # if the `next` value is either:
         # 1. "/dashboard" or
         # 2. "https://{LMS_ROOT_URL}/dashboard" (which we might provide as a value from the AuthN MFE)
@@ -675,14 +698,26 @@ def activate_account(request, key):
         ):
             redirect_url = get_redirect_url_with_host(root_login_url, redirect_to)
 
-    if should_redirect_to_authn_microfrontend() and not request.user.is_authenticated:
-        params = {'account_activation_status': activation_message_type}
+    # Visitors who are not signed in have to authenticate before they can use their
+    # destination, so force a detour to the login page.
+    if not request.user.is_authenticated:
+        params = {}
+        if should_redirect_to_authn_microfrontend():
+            login_url = settings.AUTHN_MICROFRONTEND_URL + '/login'
+            params['account_activation_status'] = activation_message_type
+        else:
+            login_url = reverse('signin_user')
+
         if redirect_url:
             params['next'] = redirect_url
-        url_path = '/login?{}'.format(urllib.parse.urlencode(params))
-        return redirect(settings.AUTHN_MICROFRONTEND_URL + url_path)
+        if params:
+            login_url = '{login_url}?{params}'.format(
+                login_url=login_url,
+                params=urllib.parse.urlencode(params),
+            )
+        redirect_url = login_url
 
-    response = redirect(redirect_url) if redirect_url and is_enterprise_learner(request.user) else redirect('dashboard')
+    response = redirect(redirect_url or 'dashboard')
     if show_account_activation_popup:
         response.delete_cookie(
             settings.SHOW_ACTIVATE_CTA_POPUP_COOKIE_NAME,
@@ -818,11 +853,12 @@ def do_email_change_request(user, new_email, activation_key=None, secondary_emai
 
     try:
         ace.send(msg)
-        log.info("Email activation link sent to user [%s].", new_email)
-    except Exception:
+        user_identifier_for_log = user.id if getattr(settings, 'SQUELCH_PII_IN_LOGS', False) else new_email
+        log.info("Email activation link sent to user [%s].", user_identifier_for_log)
+    except Exception as err:
         from_address = configuration_helpers.get_value('email_from_address', settings.DEFAULT_FROM_EMAIL)
         log.error('Unable to send email activation link to user from "%s"', from_address, exc_info=True)
-        raise ValueError(_('Unable to send email activation link. Please try again later.'))  # lint-amnesty, pylint: disable=raise-missing-from
+        raise ValueError(_('Unable to send email activation link. Please try again later.')) from err
 
     if not secondary_email_change_request:
         # When the email address change is complete, a "edx.user.settings.changed" event will be emitted.
@@ -862,6 +898,9 @@ def activate_secondary_email(request, key):
             'secondary_email': pending_secondary_email_change.new_secondary_email
         })
 
+    # Redact the pending email before deletion so downstream soft-delete mirrors do not retain the original address.
+    pending_secondary_email_change.new_secondary_email = PENDING_SECONDARY_EMAIL_REDACTED_VALUE
+    pending_secondary_email_change.save(update_fields=['new_secondary_email'])
     pending_secondary_email_change.delete()
 
     return render_to_response("secondary_email_change_successful.html")

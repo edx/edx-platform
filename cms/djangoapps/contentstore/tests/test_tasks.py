@@ -10,8 +10,10 @@ from uuid import uuid4
 from celery import Task
 
 import pytest
+import requests
 from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
+from django.core.cache import cache
 from django.test.utils import override_settings
 from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.keys import CourseKey
@@ -32,7 +34,9 @@ from xmodule.modulestore.tests.django_utils import TEST_DATA_SPLIT_MODULESTORE, 
 from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory  # lint-amnesty, pylint: disable=wrong-import-order
 from ..tasks import (
     LinkState,
+    course_analysis_report_cache_key,
     export_olx,
+    submit_course_analysis_report,
     update_special_exams_and_publish,
     rerun_course,
     _validate_urls_access_in_batches,
@@ -668,3 +672,103 @@ class CheckBrokenLinksTaskTest(ModuleStoreTestCase):
             "https://another-valid.com"
         ]
         self.assertEqual(extract_content_URLs_from_course(content), set(expected))
+
+
+class SubmitCourseAnalysisReportTaskTest(CourseTestCase):
+    """
+    Tests for submit_course_analysis_report, the background task that
+    exports a course and uploads it to the Course Optimizer extended-report
+    backend (xpert-ai-workflows).
+    """
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.course_key_string = str(self.course.id)
+        self.cache_key = course_analysis_report_cache_key(self.course_key_string)
+
+    def _mock_tarball(self):
+        tarball = mock.Mock()
+        tarball.name = '/tmp/whatever.tar.gz'
+        return tarball
+
+    def test_has_explicit_celery_time_limits(self):
+        self.assertEqual(
+            submit_course_analysis_report.soft_time_limit,
+            settings.COURSE_ANALYSIS_EXPORT_TASK_SOFT_TIME_LIMIT,
+        )
+        self.assertEqual(
+            submit_course_analysis_report.time_limit,
+            settings.COURSE_ANALYSIS_EXPORT_TASK_TIME_LIMIT,
+        )
+
+    @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
+    @mock.patch('cms.djangoapps.contentstore.tasks.create_export_tarball')
+    def test_uploads_export_to_backend(self, mock_export, mock_post):
+        mock_export.return_value = self._mock_tarball()
+        mock_post.return_value = mock.Mock(status_code=202)
+        cache.set(self.cache_key, {'status': 'PENDING'})
+
+        submit_course_analysis_report(self.course_key_string)
+
+        mock_post.assert_called_once()
+        self.assertIn(self.course_key_string, mock_post.call_args.args[0])
+        self.assertEqual(
+            mock_post.call_args.kwargs['headers']['X-Api-Key'],
+            settings.COURSE_ANALYSIS_WORKFLOW_API_KEY,
+        )
+        mock_post.return_value.raise_for_status.assert_called_once()
+        self.assertIsNone(cache.get(self.cache_key))
+
+    @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
+    @mock.patch('cms.djangoapps.contentstore.tasks.create_export_tarball')
+    def test_closes_tarball_even_on_request_failure(self, mock_export, mock_post):
+        tarball = self._mock_tarball()
+        mock_export.return_value = tarball
+        mock_post.side_effect = requests.ConnectionError()
+
+        with self.assertRaises(requests.ConnectionError):
+            submit_course_analysis_report(self.course_key_string)
+
+        tarball.close.assert_called_once()
+
+    @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
+    @mock.patch('cms.djangoapps.contentstore.tasks.create_export_tarball')
+    def test_request_failure_marks_run_failed_in_cache(self, mock_export, mock_post):
+        mock_export.return_value = self._mock_tarball()
+        mock_post.side_effect = requests.ConnectionError('unreachable')
+        cache.set(self.cache_key, {'status': 'PENDING'})
+
+        with self.assertRaises(requests.ConnectionError):
+            submit_course_analysis_report(self.course_key_string)
+
+        self.assertEqual(
+            cache.get(self.cache_key),
+            {'status': 'FAILED', 'error': 'unreachable'},
+        )
+
+    @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
+    @mock.patch('cms.djangoapps.contentstore.tasks.create_export_tarball')
+    def test_raises_on_backend_error_response(self, mock_export, mock_post):
+        mock_export.return_value = self._mock_tarball()
+        mock_post.return_value = mock.Mock(status_code=500)
+        mock_post.return_value.raise_for_status.side_effect = requests.HTTPError()
+
+        with self.assertRaises(requests.HTTPError):
+            submit_course_analysis_report(self.course_key_string)
+
+    @mock.patch('cms.djangoapps.contentstore.tasks.requests.post')
+    @mock.patch('cms.djangoapps.contentstore.tasks.create_export_tarball')
+    def test_backend_error_response_marks_run_failed_in_cache(self, mock_export, mock_post):
+        mock_export.return_value = self._mock_tarball()
+        mock_post.return_value = mock.Mock(status_code=500)
+        mock_post.return_value.raise_for_status.side_effect = requests.HTTPError('server error')
+        cache.set(self.cache_key, {'status': 'PENDING'})
+
+        with self.assertRaises(requests.HTTPError):
+            submit_course_analysis_report(self.course_key_string)
+
+        self.assertEqual(
+            cache.get(self.cache_key),
+            {'status': 'FAILED', 'error': 'server error'},
+        )

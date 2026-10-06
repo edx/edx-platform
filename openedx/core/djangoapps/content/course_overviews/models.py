@@ -57,14 +57,16 @@ class CourseOverview(TimeStampedModel):
     will cause a slew of modulestore reads as each course needs to be re-cached into
     the course overview.
 
-    .. no_pii:
+    .. pii: Contains proctoring_escalation_email, a staff contact address copied from CourseFields.
+    .. pii_types: email_address
+    .. pii_retirement: retained
     """
 
     class Meta:
         app_label = 'course_overviews'
 
     # IMPORTANT: Bump this whenever you modify this model and/or add a migration.
-    VERSION = 19
+    VERSION = 20
 
     # Cache entry versioning.
     version = models.IntegerField()
@@ -129,6 +131,10 @@ class CourseOverview(TimeStampedModel):
     self_paced = models.BooleanField(default=False)
     marketing_url = models.TextField(null=True)
     eligible_for_financial_aid = models.BooleanField(default=True)
+
+    # Identifier linking this course run to a product variant in an external LOB system
+    # (i.e. ExecEd & Bootcamps, e.g. GetSmarter/Titan). Synced from discovery's CourseRun.variant_id.
+    variant_id = models.UUIDField(null=True, blank=True)
 
     # Course highlight info, used to guide course update emails
     has_highlights = models.BooleanField(null=True, default=None)  # if None, you have to look up the answer yourself

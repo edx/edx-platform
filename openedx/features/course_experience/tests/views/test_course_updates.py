@@ -1,7 +1,6 @@
 """
 Tests for the course updates page.
 """
-
 from datetime import datetime
 
 from django.urls import reverse

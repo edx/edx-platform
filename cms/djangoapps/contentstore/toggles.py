@@ -66,55 +66,6 @@ def bypass_olx_failure_enabled():
     return BYPASS_OLX_FAILURE.is_enabled()
 
 
-# .. toggle_name: contentstore.enable_audio_description
-# .. toggle_implementation: CourseWaffleFlag
-# .. toggle_default: False
-# .. toggle_description: Enables the audio description (AD) upload UI in the
-#   Studio video editor and the corresponding studio_audio_description XBlock
-#   handler. When disabled, course authors cannot upload, replace, or delete
-#   audio description files for video blocks. Playback of AD files that were
-#   already uploaded is NOT gated by this flag and continues to work in the
-#   LMS -- disable the playback path with a separate flag if needed.
-# .. toggle_use_cases: open_edx
-# .. toggle_creation_date: 2026-04-07
-ENABLE_AUDIO_DESCRIPTION = CourseWaffleFlag(
-    f'{CONTENTSTORE_NAMESPACE}.enable_audio_description',
-    __name__,
-)
-
-
-def audio_description_enabled(course_key):
-    """
-    Return True if the audio description upload UI and handler are enabled.
-    """
-    return ENABLE_AUDIO_DESCRIPTION.is_enabled(course_key)
-
-
-# .. toggle_name: contentstore.enable_transcript_editor
-# .. toggle_implementation: CourseWaffleFlag
-# .. toggle_default: False
-# .. toggle_description: Enables the in-platform transcript editor in Studio's
-#   videos page. When enabled, course staff can open an editor modal from the
-#   transcript row action menu and edit transcript cue text directly in the
-#   browser; edits are saved via PATCH to a new v1 transcript endpoint. When
-#   disabled, the "Edit transcript" menu item is hidden and the API endpoint
-#   returns 404. Existing upload, download, and delete flows are unaffected.
-# .. toggle_use_cases: open_edx
-# .. toggle_creation_date: 2026-05-05
-# .. toggle_tickets: TNL2-608
-ENABLE_TRANSCRIPT_EDITOR = CourseWaffleFlag(
-    'contentstore.enable_transcript_editor',
-    __name__,
-)
-
-
-def transcript_editor_enabled(course_key):
-    """
-    Return True if the in-platform transcript editor is enabled for the course.
-    """
-    return ENABLE_TRANSCRIPT_EDITOR.is_enabled(course_key)
-
-
 # .. toggle_name: legacy_studio.exam_settings
 # .. toggle_implementation: WaffleFlag
 # .. toggle_default: False
@@ -667,6 +618,30 @@ def enable_course_optimizer_check_prev_run_links(course_key):
     Returns a boolean if previous run course optimizer feature is enabled for the given course.
     """
     return ENABLE_COURSE_OPTIMIZER_CHECK_PREV_RUN_LINKS.is_enabled(course_key)
+
+
+# .. toggle_name: contentstore.enable_course_optimizer_extended_checks
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, replaces the Course Optimizer page
+#   with its extended analysis report (time-on-task, learning balance, and
+#   LLM-driven accessibility/content-quality/pacing findings) in the
+#   authoring MFE.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-08-13
+# .. toggle_target_removal_date: 2027-02-13
+ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS = CourseWaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.enable_course_optimizer_extended_checks',
+    __name__,
+    CONTENTSTORE_LOG_PREFIX,
+)
+
+
+def enable_course_optimizer_extended_checks(course_key):
+    """
+    Returns a boolean if the Course Optimizer extended checks page is enabled for the given course.
+    """
+    return ENABLE_COURSE_OPTIMIZER_EXTENDED_CHECKS.is_enabled(course_key)
 
 
 # .. toggle_name: contentstore.enable_unit_expanded_view

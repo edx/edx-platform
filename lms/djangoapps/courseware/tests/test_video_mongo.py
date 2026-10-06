@@ -133,7 +133,6 @@ class TestVideoYouTube(TestVideo):  # lint-amnesty, pylint: disable=missing-clas
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
-                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -224,7 +223,6 @@ class TestVideoNonYouTube(TestVideo):  # pylint: disable=test-inherits-tests
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
-                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -385,7 +383,6 @@ class TestGetHtmlMethod(BaseTestVideoXBlock):
             'completionPercentage': 0.95,
             'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
             'prioritizeHls': False,
-            'audioDescriptionEnabled': False,
         })
 
     def get_handler_url(self, handler, suffix):
@@ -2452,7 +2449,6 @@ class TestVideoWithBumper(TestVideo):  # pylint: disable=test-inherits-tests
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
-                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',
@@ -2542,7 +2538,6 @@ class TestAutoAdvanceVideo(TestVideo):  # lint-amnesty, pylint: disable=test-inh
                 'completionPercentage': 0.95,
                 'publishCompletionUrl': self.get_handler_url('publish_completion', ''),
                 'prioritizeHls': False,
-                'audioDescriptionEnabled': False,
             })),
             'track': None,
             'transcript_download_format': 'srt',

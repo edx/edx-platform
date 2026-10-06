@@ -10,7 +10,6 @@ from unittest.mock import patch
 from urllib.parse import quote
 
 import ddt
-import httpretty
 import pytest
 from zoneinfo import ZoneInfo
 from django.conf import settings
@@ -45,8 +44,6 @@ from openedx.core.djangoapps.oauth_dispatch.jwt import create_jwt_for_user
 from openedx.core.djangoapps.user_api.models import RetirementState, UserOrgTag, UserRetirementStatus
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from openedx.core.lib.django_test_client_utils import get_absolute_url
-from openedx.features.enterprise_support.tests import FAKE_ENTERPRISE_CUSTOMER
-from openedx.features.enterprise_support.tests.mixins.enterprise import EnterpriseServiceMockMixin
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, check_mongo_calls_range
 
@@ -159,7 +156,7 @@ class EnrollmentTestMixin:
 @override_waffle_flag(ENABLE_NOTIFICATIONS, True)
 @ddt.ddt
 @skip_unless_lms
-class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, EnterpriseServiceMockMixin):
+class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase):
     """
     Test user enrollment, especially with different course modes.
     """
@@ -457,6 +454,28 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
         else:
             preference = UserOrgTag.objects.get(user=self.user, org=self.course.id.org, key="email-optin")
             assert preference.value == pref_value
+
+    def test_email_opt_in_recorded_for_enrolled_user_not_caller(self):
+        """
+        Regression test: when a staff user enrolls a different learner and passes
+        email_opt_in, the preference must be recorded against the enrolled learner,
+        not against the staff caller who made the request.
+        """
+        self.client.logout()
+        staff_user = AdminFactory.create(
+            username='global_staff', email='global_staff@example.com', password=self.PASSWORD
+        )
+        self.client.login(username='global_staff', password=self.PASSWORD)
+
+        self.assert_enrollment_status(username=self.other_user.username, email_opt_in=True)
+
+        # The preference should be recorded against the enrolled learner...
+        preference = UserOrgTag.objects.get(user=self.other_user, org=self.course.id.org, key="email-optin")
+        assert preference.value == "True"
+
+        # ...and never against the staff user who made the API call.
+        with pytest.raises(UserOrgTag.DoesNotExist):
+            UserOrgTag.objects.get(user=staff_user, org=self.course.id.org, key="email-optin")
 
     def test_enroll_prof_ed(self):
         # Create the prod ed mode.
@@ -1242,40 +1261,6 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
             assert is_active
             assert course_mode == CourseMode.VERIFIED
         self.client.logout()
-
-    @httpretty.activate
-    @override_settings(ENTERPRISE_SERVICE_WORKER_USERNAME='enterprise_worker',
-                       FEATURES=dict(ENABLE_ENTERPRISE_INTEGRATION=True))
-    @patch('openedx.features.enterprise_support.api.enterprise_customer_from_api')
-    def test_enterprise_course_enrollment_with_ec_uuid(self, mock_enterprise_customer_from_api):
-        """Verify that the enrollment completes when the EnterpriseCourseEnrollment creation succeeds. """
-        UserFactory.create(
-            username='enterprise_worker',
-            email=self.EMAIL,
-            password=self.PASSWORD,
-        )
-        CourseModeFactory.create(
-            course_id=self.course.id,
-            mode_slug=CourseMode.DEFAULT_MODE_SLUG,
-            mode_display_name=CourseMode.DEFAULT_MODE_SLUG,
-        )
-        consent_kwargs = {
-            'username': self.user.username,
-            'course_id': str(self.course.id),
-            'ec_uuid': 'this-is-a-real-uuid'
-        }
-        mock_enterprise_customer_from_api.return_value = FAKE_ENTERPRISE_CUSTOMER
-        self.mock_enterprise_course_enrollment_post_api()
-        self.mock_consent_missing(**consent_kwargs)
-        self.mock_consent_post(**consent_kwargs)
-        self.assert_enrollment_status(
-            expected_status=status.HTTP_200_OK,
-            as_server=True,
-            username='enterprise_worker',
-            linked_enterprise_customer='this-is-a-real-uuid',
-        )
-        assert httpretty.last_request().path == '/consent/api/v1/data_sharing_consent'    # pylint: disable=no-member
-        assert httpretty.last_request().method == httpretty.POST
 
     def test_enrollment_attributes_always_written(self):
         """ Enrollment attributes should always be written, regardless of whether

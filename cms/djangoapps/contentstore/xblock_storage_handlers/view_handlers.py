@@ -9,6 +9,7 @@ contentstore/views/block.py to this file, because the logic is reused in another
 Along with it, we moved the business logic of the other views in that file, since that is related.
 """
 import logging
+from collections import Counter
 from datetime import datetime
 from uuid import uuid4
 
@@ -366,6 +367,24 @@ def _save_xblock(
             children = []
             for child_string in children_strings:
                 children.append(usage_key_with_run(child_string))
+
+            # Reject duplicate children before any mutation below (reparenting
+            # writes to old parents), so a bad request leaves every structure
+            # untouched. Set-based checks further down cannot see duplicates.
+            if len(children) != len(set(children)):
+                counts = Counter(children)
+                duplicates = sorted(
+                    str(child) for child, count in counts.items() if count > 1
+                )
+                log.warning(
+                    "Rejected duplicate children submitted for %s: %s",
+                    xblock.location,
+                    ", ".join(duplicates),
+                )
+                return JsonResponse(
+                    {"error": "Duplicate children are not allowed."},
+                    400,
+                )
 
             # if new children have been added, remove them from their old parents
             new_children = set(children) - set(xblock.children)

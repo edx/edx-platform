@@ -32,10 +32,9 @@ class CourseWaffleFlagsSerializer(serializers.Serializer):
     use_react_markdown_editor = serializers.SerializerMethodField()
     use_video_gallery_flow = serializers.SerializerMethodField()
     enable_course_optimizer_check_prev_run_links = serializers.SerializerMethodField()
+    enable_course_optimizer_extended_checks = serializers.SerializerMethodField()
     enable_unit_expanded_view = serializers.SerializerMethodField()
     enable_outline_component_creation = serializers.SerializerMethodField()
-    enable_audio_description = serializers.SerializerMethodField()
-    enable_transcript_editor = serializers.SerializerMethodField()
 
     def get_course_key(self):
         """
@@ -192,6 +191,13 @@ class CourseWaffleFlagsSerializer(serializers.Serializer):
         course_key = self.get_course_key()
         return toggles.enable_course_optimizer_check_prev_run_links(course_key)
 
+    def get_enable_course_optimizer_extended_checks(self, obj):
+        """
+        Method to get the enable_course_optimizer_extended_checks waffle flag
+        """
+        course_key = self.get_course_key()
+        return toggles.enable_course_optimizer_extended_checks(course_key)
+
     def get_enable_unit_expanded_view(self, obj):
         """
         Method to get the enable_unit_expanded_view waffle flag
@@ -205,17 +211,3 @@ class CourseWaffleFlagsSerializer(serializers.Serializer):
         """
         course_key = self.get_course_key()
         return toggles.enable_outline_component_creation(course_key)
-
-    def get_enable_audio_description(self, obj):
-        """
-        Method to get the enable_audio_description waffle flag.
-        """
-        course_key = self.get_course_key()
-        return toggles.audio_description_enabled(course_key)
-
-    def get_enable_transcript_editor(self, obj):
-        """
-        Method to get the contentstore.enable_transcript_editor waffle flag.
-        """
-        course_key = self.get_course_key()
-        return toggles.transcript_editor_enabled(course_key)

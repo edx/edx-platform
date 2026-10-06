@@ -19,15 +19,12 @@
             var $elems = this;
             var waiting = this.length;
 
-            var handler = function () {
+            return $elems.one('load', function () {
                 --waiting;
                 if (!waiting) {
                     fn.call(window);
                 }
-                this.unbind(handler);
-            };
-
-            return $elems.load(handler);
+            });
         }
     });
 })(jQuery);

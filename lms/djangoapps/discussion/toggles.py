@@ -55,3 +55,19 @@ ENABLE_RATE_LIMIT_IN_DISCUSSION = CourseWaffleFlag(f'{WAFFLE_FLAG_NAMESPACE}.ena
 ENABLE_DISCUSSION_BAN = CourseWaffleFlag(
     f'{WAFFLE_FLAG_NAMESPACE}.enable_discussion_ban', __name__
 )
+
+
+# .. toggle_name: discussions.read_only_mode
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Waffle flag to enable read-only mode for discussions during maintenance/migration.
+#    When enabled, all write operations are blocked while read operations remain available.
+# .. toggle_use_cases: temporary, circuit_breaker
+# .. toggle_creation_date: 2026-06-03
+# .. toggle_target_removal_date: 2026-12-31
+# .. toggle_warning: When enabled, all post/comment creation, editing, deletion, voting, and moderation actions are blocked.
+#    Users will see a message: "Discussions are temporarily in read-only mode while maintenance is in progress."
+# .. toggle_tickets: FORUM-MIGRATION
+READ_ONLY_MODE = CourseWaffleFlag(
+    f'{WAFFLE_FLAG_NAMESPACE}.read_only_mode', __name__
+)
