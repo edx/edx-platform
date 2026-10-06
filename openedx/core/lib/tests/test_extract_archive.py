@@ -21,6 +21,7 @@ from openedx.core.lib.extract_archive import _is_bad_path, safe_extractall
 
 # Direct tests of the path-containment helper. No Django settings needed.
 
+
 def test_is_bad_path_prefix_bypass_is_rejected():
     """
     A sibling path whose name extends the base's name as a raw string prefix
