@@ -68,7 +68,7 @@ Status on 2026-10-06:
    - Do not run `make upgrade`: it re-downloads `common_constraints.txt` and recompiles everything. The `compile-python-requirements.yml` workflow cannot do a single-package bump.
    - Still to do: say in the #505 description that this deviates from upstream ulmo.4.
 3. ~~Push the branch and open a draft PR to `release-ulmo`.~~ Done: [#505](https://github.com/edx/edx-platform/pull/505). The PR description links this plan; do not duplicate the plan there.
-4. **CI.** Fix failures as separate commits. Already fixed: two pycodestyle errors inherited from upstream (`test_extract_archive.py`, `test_videos.py`). `make xsslint`, `pii_check` and `check_keywords` run after `pycodestyle` in the same job, so check them once it passes. Pay particular attention to:
+4. **CI.** Fix failures as separate commits. Already fixed: two pycodestyle errors inherited from upstream (`test_extract_archive.py`, `test_videos.py`), and `pii_check` coverage for `oel_publishing.PublishableEntityVersionDependency` (a model new in openedx-learning 0.30.2, added to `.annotation_safe_list.yml`; `release-ulmo` lists it only under the old `openedx_content` label). `make check_keywords` runs after those in the same job, so check it too. Pay particular attention to:
    - `lms/djangoapps/courseware/tests/test_fields.py`
    - the video tests
    - `lms/djangoapps/staticbook/tests.py` (adapted to the fork's PDF guards)
