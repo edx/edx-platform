@@ -14,7 +14,7 @@ from django.utils.timezone import now
 from edx_rest_framework_extensions.paginators import DefaultPagination
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import status
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import GenericAPIView
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -27,6 +27,7 @@ from common.djangoapps.student.api import (
 )
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.models.user import CourseAccessRole
+from common.djangoapps.student.roles import SupportStaffRole
 from lms.djangoapps.support.models import BulkUnenrollBatch, BulkUnenrollCourseState
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 
@@ -154,6 +155,27 @@ class CourseTeamManageAPIView(GenericAPIView):
         context["course_role_map"] = getattr(self, "_course_role_map", {})
         return context
 
+    def _caller_can_manage_course_team(self, auth_user):
+        """
+        Return True if the caller may view or manage course team roles.
+
+        This is the union of the PUT authorization set (`is_staff`,
+        `is_superuser`, or any user with a `CourseAccessRole` of
+        `role="instructor"`) and the global `SupportStaffRole`. Read access
+        must at least match write access — a user who can PUT changes needs
+        to see the current state to make them — and the endpoint lives in
+        the support module, so support staff belong in the set too.
+        """
+        if (
+            auth_user.is_superuser
+            or auth_user.is_staff
+            or SupportStaffRole().has_user(auth_user)
+        ):
+            return True
+        return CourseAccessRole.objects.filter(
+            user=auth_user, role="instructor"
+        ).exists()
+
     def get_course_role_map_for_user(self, user):
         """Return a mapping of course_id to role for staff/instructor roles of given user."""
         access_roles = CourseAccessRole.objects.filter(
@@ -169,7 +191,11 @@ class CourseTeamManageAPIView(GenericAPIView):
 
     def get_accessible_courses_for_user(self, auth_user):
         """Return queryset of courses accessible by the authenticated user."""
-        if auth_user.is_superuser or auth_user.is_staff:
+        if (
+            auth_user.is_superuser
+            or auth_user.is_staff
+            or SupportStaffRole().has_user(auth_user)
+        ):
             return CourseOverview.objects.all()
 
         access_roles = CourseAccessRole.objects.filter(
@@ -326,6 +352,10 @@ class CourseTeamManageAPIView(GenericAPIView):
             }
         ```
         """
+        if not self._caller_can_manage_course_team(request.user):
+            raise PermissionDenied(
+                "You do not have permission to view course team information."
+            )
         return self.list(request, *args, **kwargs)
 
     def put(self, request, *args, **kwargs):

@@ -789,6 +789,7 @@ httpx[http2]==0.28.1
     # via
     #   -r requirements/edx/base.txt
     #   firebase-admin
+    #   typesense
 hyperframe==6.1.0
     # via
     #   -r requirements/edx/base.txt
@@ -1025,8 +1026,10 @@ openedx-filters==3.14.0
     #   edx-enterprise
     #   lti-consumer-xblock
     #   ora2
-openedx-forum==0.3.8
-    # via -r requirements/edx/base.txt
+openedx-forum==0.4.1
+    # via
+    #   -c requirements/constraints.txt
+    #   -r requirements/edx/base.txt
 openedx-learning==0.30.2
     # via
     #   -c requirements/constraints.txt
@@ -1510,6 +1513,10 @@ tqdm==4.67.1
     # via
     #   -r requirements/edx/base.txt
     #   nltk
+typesense==2.0.0
+    # via
+    #   -r requirements/edx/base.txt
+    #   openedx-forum
 typing-extensions==4.15.0
     # via
     #   -r requirements/edx/base.txt
@@ -1527,6 +1534,7 @@ typing-extensions==4.15.0
     #   pyopenssl
     #   referencing
     #   snowflake-connector-python
+    #   typesense
     #   typing-inspection
 typing-inspection==0.4.2
     # via

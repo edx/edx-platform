@@ -3,6 +3,8 @@ Views for serving static textbooks.
 """
 
 
+from urllib.parse import quote
+
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.views.decorators.clickjacking import xframe_options_exempt
@@ -86,11 +88,26 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
         raise Http404(f"Invalid book index value: {book_index}")
     textbook = course.pdf_textbooks[book_index]
 
-    viewer_params = ''
+    viewer_params = '&file='
     current_url = ''
+
+    # The PDF URL is passed as the `file` query parameter to pdf.js's viewer.
+    # Modern pdf.js parses that query string with URLSearchParams, which
+    # decodes `+` as a space -- and opaque-key asset URLs use `+` as a
+    # structural separator (e.g. `asset-v1:org+course+run+type@asset+block@…`).
+    # Percent-encode the URL value here so the viewer reads it back intact.
+    def _encode_file_value(url):
+        return quote(url, safe='/:@')
+
+    # Security (edx fork): only relative PDF URLs are passed to the viewer, so
+    # PDFs from other origins are not rendered.
+    def _is_relative_url(url):
+        return not url.startswith(('http://', 'https://'))
 
     if 'url' in textbook:
         textbook['url'] = remap_static_url(textbook['url'], course)
+        if _is_relative_url(textbook['url']):
+            viewer_params += _encode_file_value(textbook['url'])
         current_url = textbook['url']
 
     # then remap all the chapter URLs as well, if they are provided.
@@ -105,7 +122,8 @@ def pdf_index(request, course_id, book_index, chapter=None, page=None):
             current_chapter = textbook['chapters'][int(chapter) - 1]
         else:
             current_chapter = textbook['chapters'][0]
-
+        if _is_relative_url(current_chapter['url']):
+            viewer_params += _encode_file_value(current_chapter['url'])
         current_url = current_chapter['url']
 
     viewer_params += '#zoom=page-fit&disableRange=true'

@@ -58,8 +58,10 @@ class HomePageCoursesViewV2Test(CourseTestCase):
                     ("display_name", self.course.display_name),
                     ("lms_link", f'{settings.LMS_ROOT_URL}/courses/{course_id}/jump_to/{self.course.location}'),
                     ("cms_link", f'//{settings.CMS_BASE}{reverse_course_url("course_handler", self.course.id)}'),
-                    ("number", self.course.number),
-                    ("org", self.course.org),
+                    ("number", self.active_course.number),
+                    ("display_number", self.active_course.display_number_with_default),
+                    ("org", self.active_course.org),
+                    ("display_org", self.active_course.display_org_with_default),
                     ("rerun_link", f'/course_rerun/{course_id}'),
                     ("run", self.course.id.run),
                     ("url", f'/course/{course_id}'),
@@ -77,7 +79,9 @@ class HomePageCoursesViewV2Test(CourseTestCase):
                         f'//{settings.CMS_BASE}{reverse_course_url("course_handler", self.archived_course.id)}',
                     ),
                     ("number", self.archived_course.number),
+                    ("display_number", self.archived_course.display_number_with_default),
                     ("org", self.archived_course.org),
+                    ("display_org", self.archived_course.display_org_with_default),
                     ("rerun_link", f'/course_rerun/{str(self.archived_course.id)}'),
                     ("run", self.archived_course.id.run),
                     ("url", f'/course/{str(self.archived_course.id)}'),
@@ -111,8 +115,10 @@ class HomePageCoursesViewV2Test(CourseTestCase):
             ("display_name", self.course.display_name),
             ("lms_link", f'{settings.LMS_ROOT_URL}/courses/{str(self.course.id)}/jump_to/{self.course.location}'),
             ("cms_link", f'//{settings.CMS_BASE}{reverse_course_url("course_handler", self.course.id)}'),
-            ("number", self.course.number),
-            ("org", self.course.org),
+            ("number", self.active_course.number),
+            ("display_number", self.active_course.display_number_with_default),
+            ("org", self.active_course.org),
+            ("display_org", self.active_course.display_org_with_default),
             ("rerun_link", f'/course_rerun/{str(self.course.id)}'),
             ("run", self.course.id.run),
             ("url", f'/course/{str(self.course.id)}'),
@@ -142,7 +148,9 @@ class HomePageCoursesViewV2Test(CourseTestCase):
             ),
             ("cms_link", f'//{settings.CMS_BASE}{reverse_course_url("course_handler", self.archived_course.id)}'),
             ("number", self.archived_course.number),
+            ("display_number", self.archived_course.display_number_with_default),
             ("org", self.archived_course.org),
+            ("display_org", self.archived_course.display_org_with_default),
             ("rerun_link", f'/course_rerun/{str(self.archived_course.id)}'),
             ("run", self.archived_course.id.run),
             ("url", f'/course/{str(self.archived_course.id)}'),
@@ -172,13 +180,31 @@ class HomePageCoursesViewV2Test(CourseTestCase):
             ),
             ("cms_link", f'//{settings.CMS_BASE}{reverse_course_url("course_handler", self.archived_course.id)}'),
             ("number", self.archived_course.number),
+            ("display_number", self.archived_course.display_number_with_default),
             ("org", self.archived_course.org),
+            ("display_org", self.archived_course.display_org_with_default),
             ("rerun_link", f'/course_rerun/{str(self.archived_course.id)}'),
             ("run", self.archived_course.id.run),
             ("url", f'/course/{str(self.archived_course.id)}'),
             ("is_active", False),
         ])])
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_search_query_matches_display_number(self):
+        """Search must match course display number values."""
+        course_key = self.store.make_course_key("search-org", "opaque-number", "run")
+        searchable_course = CourseOverviewFactory.create(
+            id=course_key,
+            org=course_key.org,
+            display_name="Unrelated Title",
+            display_number_with_default="Friendly Number 42",
+        )
+
+        response = self.client.get(self.api_v2_url, {"search": "Friendly Number"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data["results"]["courses"]) == 1
+        assert response.data["results"]["courses"][0]["course_key"] == str(searchable_course.id)
 
     def test_order_query_if_passed(self):
         """Get list of courses when order filter passed as a query param.
