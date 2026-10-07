@@ -30,7 +30,7 @@ The same trap applies to rollback: see [Rollout and rollback](#rollout-and-rollb
 | Base | Continue from `edx/edx/ulmo.3`, not from scratch, because of the revert trap. A history-independent "from scratch" merge (explicit base `242a69d06b`) has 48 conflicted files; those were used as the audit's high-risk list instead of being hand-resolved twice. |
 | PDF textbook viewer | Upstream pdf.js 5.7.284 plus the fork's guards (relative-URL only, dangerous-scheme sanitizing). All six options considered are in the commit message of `fc8f1f0a8c`; to be reviewed by the owners of fork PRs #51/#64/#86. |
 | Branch naming | `robrap/` prefix. |
-| Testing | CI on the PR, plus devstack for what CI cannot cover (see [Next steps](#next-steps)). |
+| Testing | CI on the PR, plus devstack for what CI cannot cover (see [Next steps](#next-steps)). We will probably also create a **sandbox of #505** for manual testing. **Stage** testing comes near the very end, once the branch is ready to deploy, so anything that needs stage data (the migration-state queries, step 5) should be planned for then. |
 
 ## Current state
 
@@ -55,6 +55,17 @@ Status on 2026-10-06:
 - No tests have been run locally (no local Python environment, other than `pycodestyle` and `xsslint`, which pass). Draft PR #505 is open and CI is running; the latest push was `2ec85d2d75`. Fixes so far (see step 4): two inherited pycodestyle errors, the `pii_check` safelist entry, and the `xmodule/` CODEOWNERS line restored to the fork's version (upstream added community-only owners). As of the last check, quality passed through `pii_check`, and the unit-test shards, pylint, migrations and other checks were still running. **Next action: check `gh pr checks 505 --repo edx/edx-platform` and fix any failures as separate commits.**
 - `.github` differences from `release-ulmo` were reviewed: all are modifications (mostly action version bumps), no added or removed workflows. The `django-version: "5.2"` matrix leg was dropped from `unit-tests.yml` since `pinned` is now 5.2, so the "dj=pinned" jobs are the Django 5.2 tests. The community "tutorial PR" bot comment on #505 comes from `check-for-tutorial-prs.yml`, which already exists on `release-ulmo`; its removal is in separate PR [#507](https://github.com/edx/edx-platform/pull/507) (not part of this upgrade).
 - The edx-internal playbook's checks were run against this branch on 2026-10-06 (read-only: migration review, breaking-commit detection, argocd settings, fork-only settings survival). They added step 5 (migration state in stage and prod, not yet run), the [Breaking changes in the range](#breaking-changes-in-the-range) table (checks not yet done), the `contentstore 0014` rollback caveat, and owner items 4 and 5. Not done: any database query, a fresh `git fetch`, and a re-check of CI failures.
+
+## Blocking tickets (outside this branch)
+
+Two other tickets must be done before the upgrade is deployed. Neither changes the code in #505; both are tracked in Jira, not here.
+
+| Ticket | What | Affects #505 testing? |
+|---|---|---|
+| LP-1304 (Maintenance, P3): Ensure edxapp private requirements are Django 5.2 compatible | The private production/stage plugin pins live in edx-internal, `argocd/applications/edxapp-lms/requirements/private_requirements.txt` (also used by CMS, BOMS-233; deployed via `edx/internal-dockerfiles`). `ai-aside==3.8.9` and `federated-content-connector==1.7.0` are already tested on Django 5.2 upstream and are just older pins. `platform-plugin-braze` (git-pinned commit) and `learner-pathway-progress<1.3.5` are **real blockers**: no Django 5.2 in their test matrix, and still on Python 3.8. Some need their own tickets and upgrades. | Yes. #505's CI installs the repo's own requirements, not these private ones. A sandbox or stage deploy only tests Django 5.2 against the plugins if they are installed there. |
+| LP-1150 (Maintenance, priority unset): Ensure web certificates are tested for Django 5.2 compatibility | Affects the DB only. It should certainly be done before deploying. | No. It does not affect testing of the branch in #505. |
+
+Open question from LP-1304: for the plugins that are already Django 5.2-compatible (`ai-aside`, `federated-content-connector`), is it safe to bring in the newer version **before** the edxapp upgrade, i.e. while prod is still on Django 4.2? Not answered yet. It depends on whether each package's supported-Django matrix still includes 4.2 at the newer version; check that per package before bumping.
 
 ## Next steps
 
@@ -102,7 +113,7 @@ Status on 2026-10-06:
    - **MariaDB UUID migrations** are no-ops unless the engine is MariaDB. The engine is unconfirmed until step 5 query 4.
    - **Breaking changes:** see [Breaking changes in the range](#breaking-changes-in-the-range). Still to check there: the forked authoring MFE, and any DB-backed `legacy_studio.*` waffle overrides.
 8. **Owner reviews** (open items below), before merging.
-9. **Write the rollout and rollback plan** (next section) into this document, then deploy to stage, then prod.
+9. **Write the rollout and rollback plan** (next section) into this document, then deploy to stage, then prod. LP-1304 and LP-1150 (see [Blocking tickets](#blocking-tickets-outside-this-branch)) must be done before deploying.
 10. **Mark #505 ready for review and merge it.** Do the step 1 sync gate first, and again just before merging. The plan docs land with it.
 11. **Once stable in production**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`'s list. First make sure every item in [Feed to playbook](#feed-to-playbook) is resolved with an edx-internal edit or consciously dropped.
 
