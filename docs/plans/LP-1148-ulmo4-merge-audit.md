@@ -216,3 +216,78 @@ comm -23 $S/a.txt $S/up.txt   # files on the branch but not upstream: fork featu
 ```
 
 Triage the output by hand. Anything under a directory that upstream moved, such as `xmodule/js/src/video/`, is a suspect.
+
+### `lockfile_downgrades.py`: pins that went down
+
+```python
+#!/usr/bin/env python3
+"""Report pinned packages that are LOWER on a merged branch than on the fork's deployed branch.
+
+Read-only. Run from the repo root after fetching.
+  python3 lockfile_downgrades.py edx/release-ulmo HEAD
+  python3 lockfile_downgrades.py edx/release-ulmo HEAD requirements/edx/base.txt package-lock.json
+
+Compares exact `name==version` pins in compiled requirements files, and the `packages` map of
+package-lock.json. Version comparison is a simple numeric-segment key (no `packaging` dependency),
+so pre-release suffixes may be misordered. It does NOT detect dropped constraints, and compares to
+the fork branch's lockfiles, not to what is running in production images.
+"""
+import json, re, subprocess, sys
+
+DEFAULT_FILES = [
+    'requirements/edx/base.txt', 'requirements/edx/testing.txt', 'requirements/edx/development.txt',
+    'requirements/edx/doc.txt', 'scripts/user_retirement/requirements/base.txt',
+    'scripts/structures_pruning/requirements/base.txt', 'package-lock.json',
+]
+
+
+def vkey(v):
+    out = []
+    for p in re.split(r'[.\-+]', v):
+        m = re.match(r'^(\d+)(.*)$', p)
+        out.append((int(m.group(1)), m.group(2)) if m else (-1, p))
+    return out
+
+
+def show(ref, path):
+    return subprocess.run(['git', 'show', f'{ref}:{path}'], capture_output=True, text=True).stdout
+
+
+def load_requirements(ref, path):
+    pins = {}
+    for line in show(ref, path).splitlines():
+        m = re.match(r'^([A-Za-z0-9_.\-]+)(\[[^\]]*\])?==([^\s;\\]+)', line)
+        if m:
+            pins[m.group(1).lower().replace('_', '-')] = m.group(3)
+    return pins
+
+
+def load_npm(ref, path):
+    text = show(ref, path)
+    if not text:
+        return {}
+    return {k: v['version'] for k, v in json.loads(text).get('packages', {}).items() if k and v.get('version')}
+
+
+def main(base, head, files):
+    for path in files:
+        load = load_npm if path.endswith('package-lock.json') else load_requirements
+        a, b = load(base, path), load(head, path)
+        if not a:
+            print(f'== {path}: absent or empty on {base}')
+            continue
+        changed = [k for k in a if k in b and a[k] != b[k]]
+        down = sorted((k.split('node_modules/')[-1], a[k], b[k]) for k in changed if vkey(b[k]) < vkey(a[k]))
+        print(f'== {path}: changed {len(changed)}, DOWNGRADED {len(down)}, '
+              f'removed {len([k for k in a if k not in b])}, added {len([k for k in b if k not in a])}')
+        for row in down:
+            print('   DOWN', row)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 3:
+        sys.exit(__doc__)
+    main(sys.argv[1], sys.argv[2], sys.argv[3:] or DEFAULT_FILES)
+```
+
+Run it from the repo root as `python3 lockfile_downgrades.py edx/release-ulmo HEAD`. It does not detect dropped constraints, and it compares lockfiles, not production images. Re-run it at every sync gate.

@@ -68,6 +68,7 @@ Status on 2026-10-06:
    - If `edx/release-ulmo` moved past `122b882400`, merge it into the branch.
    - If `openedx/release/ulmo` moved past `2efdce0760`, merge it too.
    - Re-run the audit's survival check on the result (scripts are in the audit appendix).
+   - Re-run the lockfile downgrade check (audit appendix) and investigate anything that went down against `edx/release-ulmo`. Last run 2026-10-06: no production (`base.txt`) downgrades; test-only `pact-python` 2.3.3 to 1.6.0 (upstream's resolution under the shared `<3.0.0` constraint; confirm the contract tests still run); two nested npm packages (`globals`, `regenerator-runtime`), probably dependency-tree artifacts. It does not detect dropped constraints; `constraints.txt` was reviewed by hand in the audit.
    - For every merge: before committing, run `git diff --name-only --diff-filter=U` and `git status` to confirm that every hand-edited file is staged. Do not use `git checkout --theirs/--ours` on a whole file without first diffing that side against the merge base. Both mistakes happened once on this branch and were caught.
    - Remember that upstream moved the video JS from `xmodule/js/src/video/` to `xmodule/assets/video/public/js/`. Any new fork change to an old-path file must be ported by hand, because git will merge it into a stale copy or report a modify/delete conflict.
 2. ~~**Bump Django to 5.2.18**, as its own commit on the branch.~~ Done, via the `upgrade-one-python-dependency.yml` workflow (dispatched on `release-ulmo`, targeting this branch), which opened PR #506; its single commit was fast-forwarded into the branch.
@@ -168,4 +169,5 @@ The edx-internal playbook ([PR #14962](https://github.com/edx/edx-internal/pull/
 | MariaDB UUID migrations are no-ops on MySQL but are in this batch; "not applicable" assumed the engine | `04-...preflight`, `02-...digest` | Open |
 | `openedx/features/announcements` is retired upstream, so it is not a pluginize candidate; batch-state wording in registry rows 3 and 16 belongs here, not there | `03-...registry` | Open |
 | `05-...ulmo3-batch` open review items are superseded by this upgrade | `05-...ulmo3-batch` | Open |
+| Lockfile downgrade check at every sync gate (script is in the audit appendix; also copied to the playbook) | `01-playbook.md`, `scripts/` | Done in edx-internal#14962 |
 | First retrospective entry: the playbook, applied before any deploy, surfaced the breaking-change inventory and the rollback caveat that the merge audit alone missed | `01-playbook.md`, retrospectives | Open |
