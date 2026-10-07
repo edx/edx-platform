@@ -80,6 +80,7 @@ from xmodule.modulestore import EdxJSONEncoder  # lint-amnesty, pylint: disable=
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.exceptions import DuplicateCourseError  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.tabs import CourseTab, CourseTabList, InvalidTabsException  # lint-amnesty, pylint: disable=wrong-import-order
+from openedx.core.lib.log_utils import get_username_or_pii_safe_user_id_for_log
 
 from ..course_group_config import (
     COHORT_SCHEME,
@@ -1777,7 +1778,7 @@ def bulk_enable_disable_discussions(request, course_key_string):
     discussion_enabled = request.json['discussion_enabled']
     log.info(
         "User %s is attempting to %s discussions for all verticals in course %s",
-        user.username,
+        get_username_or_pii_safe_user_id_for_log(user),
         "enable" if discussion_enabled else "disable",
         course_key
     )

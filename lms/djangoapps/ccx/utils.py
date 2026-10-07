@@ -28,6 +28,7 @@ from lms.djangoapps.instructor.views.api import _split_input_list
 from lms.djangoapps.instructor.views.tools import get_student_from_identifier
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.lib.courses import get_course_by_id
+from openedx.core.lib.log_utils import get_email_or_pii_safe_user_id_for_log
 
 log = logging.getLogger("edx.ccx")
 
@@ -363,7 +364,7 @@ def add_master_course_staff_to_ccx(master_course, ccx_key, display_name, send_em
                 except CourseEnrollmentException:
                     log.warning(
                         "Unable to enroll staff %s to course with id %s",
-                        staff.email,
+                        get_email_or_pii_safe_user_id_for_log(staff),
                         ccx_key
                     )
                     continue
@@ -388,7 +389,7 @@ def add_master_course_staff_to_ccx(master_course, ccx_key, display_name, send_em
                 except CourseEnrollmentException:
                     log.warning(
                         "Unable to enroll instructor %s to course with id %s",
-                        instructor.email,
+                        get_email_or_pii_safe_user_id_for_log(instructor),
                         ccx_key
                     )
                     continue
