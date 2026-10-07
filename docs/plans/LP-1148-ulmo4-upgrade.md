@@ -57,9 +57,14 @@ Status on 2026-10-06:
 
 ## Next steps
 
-1. **Re-sync if `release-ulmo` or upstream moved.**
+1. **Re-sync if `release-ulmo` or upstream moved.** Manual testing must run against the latest `release-ulmo` plus this branch, so the tested tree is the tree that lands. Cadence:
+   - Until manual testing starts: check once a day (`git fetch edx --tags && git fetch openedx`, then `git log --oneline HEAD..edx/release-ulmo`), and merge promptly when something landed. Small merges are easier to audit than one large catch-up. Merge the branch tip; do not cherry-pick.
+   - Sync gate right before manual testing starts, and again right before marking ready and right before merging: merge, re-run CI, record the tested `release-ulmo` and upstream SHAs here, and confirm the PR is still conflict-free.
+   - Freeze during a manual test pass. Note new `release-ulmo` commits and merge them at the start of the next pass, re-testing what they touch (always the video JS, courseware state and PDF viewer areas if touched).
+   - Ask the `release-ulmo` owners for a soft freeze (urgent fixes only) from the start of manual testing until #505 merges.
+   - Wide commits (like #503, 39 files) need the survival check most.
    - `git fetch edx openedx --tags`.
-   - If `edx/release-ulmo` moved past `0cfc2835be`, merge it into the branch.
+   - If `edx/release-ulmo` moved past `122b882400`, merge it into the branch.
    - If `openedx/release/ulmo` moved past `2efdce0760`, merge it too.
    - Re-run the audit's survival check on the result (scripts are in the audit appendix).
    - For every merge: before committing, run `git diff --name-only --diff-filter=U` and `git status` to confirm that every hand-edited file is staged. Do not use `git checkout --theirs/--ours` on a whole file without first diffing that side against the merge base. Both mistakes happened once on this branch and were caught.
@@ -75,7 +80,7 @@ Status on 2026-10-06:
    - `lms/djangoapps/staticbook/tests.py` (adapted to the fork's PDF guards)
    - query-count tests (ulmo.3 needed "Update queries expected")
    - `make lint-imports`, migrations checks, and `makemigrations --check --dry-run` for lms and cms
-5. **Devstack checks**, the things CI cannot cover:
+5. **Devstack checks**, the things CI cannot cover. Do the step 1 sync gate first and record the SHAs tested; do not merge mid-pass.
    - The previous prod failure: seed `courseware_studentmodule` `AUTO_INCREMENT` above 2^31 (e.g. `ALTER TABLE courseware_studentmodule AUTO_INCREMENT = 4240000000;`). Navigate into a unit and back in the Learning MFE, and confirm XBlock state saves without "Forced update did not affect any rows" (see the description of edx PR #495).
    - The fork's learner-state work that the branch carries: incremental loading of large assessment xblocks and hydrating learner state for paginated assessment children (`courseware/model_data.py`, `block_render.py`). Exercise a large problem bank or assessment.
    - Video: HLS playback, audio description (upload in Studio, playback in LMS), and the language menu height with many caption languages.
@@ -83,7 +88,7 @@ Status on 2026-10-06:
 6. **Pre-flight items** from the edx-internal playbook (PR #14962 doc `04`, section B, Django 4.2→5.2) and its deployed-settings checks against `argocd/applications/edxapp-*/` in edx-internal. That repo, not Datadog, is the real deploy inventory.
 7. **Owner reviews** (open items below), before merging.
 8. **Write the rollout and rollback plan** (next section) into this document, then deploy to stage, then prod.
-9. **Mark #505 ready for review and merge it.** The plan docs land with it.
+9. **Mark #505 ready for review and merge it.** Do the step 1 sync gate first, and again just before merging. The plan docs land with it.
 10. **Once stable in production**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`'s list.
 
 ## Rollout and rollback
