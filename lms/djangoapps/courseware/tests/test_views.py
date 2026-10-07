@@ -58,6 +58,7 @@ from common.djangoapps.util.tests.test_date_utils import fake_pgettext, fake_uge
 from common.djangoapps.util.url import reload_django_url_config
 from common.djangoapps.util.views import ensure_valid_course_key
 from lms.djangoapps.certificates import api as certs_api
+from lms.djangoapps.certificates.generation_handler import CertificateGenerationNotAllowed
 from lms.djangoapps.certificates.models import (
     CertificateGenerationConfiguration,
     CertificateGenerationCourseSetting,
@@ -754,6 +755,31 @@ class ViewsTestCase(BaseViewsTestCase):
         self.assertEqual([{'id': 'custom_123', 'value': course}], custom_fields)
         assert 'Client IP' in additional_info
         assert group_name == 'Financial Assistance'
+
+    @ddt.data(
+        ('submit_financial_assistance_request', 'FA_v1', True),
+        ('submit_financial_assistance_request', 'FA_v1', False),
+        ('submit_financial_assistance_request_v2', 'FA_v2', True),
+        ('submit_financial_assistance_request_v2', 'FA_v2', False),
+    )
+    @ddt.unpack
+    @patch('lms.djangoapps.courseware.views.views.logging')
+    def test_financial_assistance_inactive_user_log_squelches_pii(self, submit_url, prefix, squelch_pii, mock_logging):
+        """
+        The inactive-account warning identifies the user by id when SQUELCH_PII_IN_LOGS is enabled.
+        """
+        self.user.is_active = False
+        self.user.save()
+        with self.settings(SQUELCH_PII_IN_LOGS=squelch_pii):
+            response = self._submit_financial_assistance_form(
+                {'username': self.user.username, 'course': str(self.course.id)}, submit_url=submit_url
+            )
+
+        assert response.status_code == 403
+        mock_logging.warning.assert_called_once_with(
+            f'{prefix}: User %s tried to submit app without activating their account.',
+            str(self.user.id) if squelch_pii else self.user.username,
+        )
 
     @patch.object(views, 'create_zendesk_ticket', return_value=500)
     def test_zendesk_submission_failed(self, _mock_create_zendesk_ticket):
@@ -1976,6 +2002,7 @@ class VerifyCourseKeyDecoratorTests(TestCase):
         assert not mocked_view.called
 
 
+@ddt.ddt
 class GenerateUserCertTests(ModuleStoreTestCase):
     """
     Tests for the view function Generated User Certs
@@ -1996,6 +2023,24 @@ class GenerateUserCertTests(ModuleStoreTestCase):
         self.enrollment = CourseEnrollment.enroll(self.student, self.course.id, mode='honor')
         assert self.client.login(username=self.student, password=TEST_PASSWORD)
         self.url = reverse('generate_user_cert', kwargs={'course_id': str(self.course.id)})
+
+    @ddt.data(True, False)
+    @patch('lms.djangoapps.courseware.views.views.log')
+    @patch('lms.djangoapps.courseware.views.views.certs_api.generate_certificate_task')
+    def test_generation_not_allowed_log_squelches_pii(self, squelch_pii, mock_generate, mock_log):
+        """
+        The generation-not-allowed log identifies the user by id when SQUELCH_PII_IN_LOGS is enabled.
+        """
+        mock_generate.side_effect = CertificateGenerationNotAllowed('not allowed')
+        with self.settings(SQUELCH_PII_IN_LOGS=squelch_pii):
+            resp = self.client.post(self.url)
+
+        assert resp.status_code == HttpResponseBadRequest.status_code
+        mock_log.exception.assert_called_once_with(
+            "Certificate generation not allowed for user %s in course %s",
+            str(self.student.id) if squelch_pii else self.student.username,
+            self.course.id,
+        )
 
     def test_user_with_out_passing_grades(self):
         # If user has no grading then json will return failed message and badrequest code

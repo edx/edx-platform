@@ -37,6 +37,7 @@ from openedx.core.djangoapps.site_configuration import helpers as configuration_
 from openedx.core.djangoapps.user_api.models import UserPreference
 from openedx.core.djangoapps.user_api.preferences.api import get_user_preference
 from openedx.core.lib.celery.task_utils import emulate_http_request
+from openedx.core.lib.log_utils import get_username_or_pii_safe_user_id_for_log
 from openedx.features.course_duration_limits.access import get_user_course_expiration_date
 from openedx.features.course_experience import ENABLE_COURSE_GOALS, ENABLE_SES_FOR_GOALREMINDER
 from openedx.features.course_experience.url_helpers import get_learning_mfe_home_url
@@ -59,7 +60,7 @@ def send_ace_message(goal, session_id):
     """
     user = goal.user
     if not user.has_usable_password():
-        user_identifier_for_log = user.id if getattr(settings, 'SQUELCH_PII_IN_LOGS', False) else user.username
+        user_identifier_for_log = get_username_or_pii_safe_user_id_for_log(user)
         log.info('Goal Reminder User is disabled user %s course %s', user_identifier_for_log, goal.course_key)
         return False
     try:

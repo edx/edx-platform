@@ -40,6 +40,7 @@ from common.djangoapps.student.roles import (
     UserBasedRole,
 )
 from common.djangoapps.util.json_request import JsonResponse, JsonResponseBadRequest, expect_json
+from openedx.core.lib.log_utils import get_username_or_pii_safe_user_id_for_log
 
 from ..utils import add_instructor, reverse_library_url
 from ..toggles import libraries_v1_enabled
@@ -151,7 +152,7 @@ def _display_library(library_key_string, request):
     if not has_studio_read_access(request.user, library_key):
         log.exception(
             "User %s tried to access library %s without permission",
-            request.user.username, str(library_key)
+            get_username_or_pii_safe_user_id_for_log(request.user), str(library_key)
         )
         raise PermissionDenied()
 
