@@ -718,6 +718,7 @@ class EnrollmentEventTestMixin(EventTestMixin):
                 'external_course_updates': -1,
                 'course_start': course.start,
                 'course_pacing': course.pacing,
+                'platform': 'web',
             })
         return properties, traits
 
