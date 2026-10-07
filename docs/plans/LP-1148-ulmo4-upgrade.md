@@ -52,7 +52,8 @@ Status on 2026-10-06:
 
 - Merges are complete and audited. See `LP-1148-ulmo4-merge-audit.md`: 4 real merge losses were found and fixed, nothing else was lost, and landing on `release-ulmo` is conflict-free and yields the branch's tree exactly.
 - Django is at 5.2.18 (bumped on the branch; upstream ulmo.4 has 5.2.11).
-- No tests have been run locally (no local Python environment, other than `pycodestyle` and `xsslint`, which pass). Draft PR #505 is open and CI is running. The first CI run (pre-Django-bump) failed only `Quality checks` on two inherited pycodestyle errors, now fixed.
+- No tests have been run locally (no local Python environment, other than `pycodestyle` and `xsslint`, which pass). Draft PR #505 is open and CI is running; the latest push was `2ec85d2d75`. Fixes so far (see step 4): two inherited pycodestyle errors, the `pii_check` safelist entry, and the `xmodule/` CODEOWNERS line restored to the fork's version (upstream added community-only owners). As of the last check, quality passed through `pii_check`, and the unit-test shards, pylint, migrations and other checks were still running. **Next action: check `gh pr checks 505 --repo edx/edx-platform` and fix any failures as separate commits.**
+- `.github` differences from `release-ulmo` were reviewed: all are modifications (mostly action version bumps), no added or removed workflows. The `django-version: "5.2"` matrix leg was dropped from `unit-tests.yml` since `pinned` is now 5.2, so the "dj=pinned" jobs are the Django 5.2 tests. The community "tutorial PR" bot comment on #505 comes from `check-for-tutorial-prs.yml`, which already exists on `release-ulmo`; its removal is in separate PR [#507](https://github.com/edx/edx-platform/pull/507) (not part of this upgrade).
 
 ## Next steps
 
