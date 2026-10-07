@@ -19,6 +19,7 @@ from django.dispatch import receiver
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from edx_django_utils.cache import RequestCache, TieredCache, get_cache_key
+from edx_django_utils.plugins import pluggable_override
 from eventtracking import tracker
 from model_utils.models import TimeStampedModel
 from opaque_keys.edx.django.models import CourseKeyField
@@ -302,6 +303,21 @@ class CourseEnrollmentManager(models.Manager):
 # CourseEnrollment for a user in a course.  This type
 # is used to cache the state in the request cache.
 CourseEnrollmentState = namedtuple('CourseEnrollmentState', 'mode, is_active')
+
+
+@pluggable_override("OVERRIDE_ENROLLMENT_SEGMENT_PROPERTIES")
+def get_enrollment_segment_properties(
+    enrollment,
+    event_name,
+    segment_properties,
+):
+    """
+    Return Segment properties for an enrollment event.
+
+    Allows plugins to extend or modify the Segment properties
+    generated for course enrollment events.
+    """
+    return segment_properties
 
 
 class CourseEnrollment(models.Model):
@@ -670,6 +686,18 @@ class CourseEnrollment(models.Model):
                                                                                                        self.course_id)
                 segment_properties['course_start'] = self.course.start
                 segment_properties['course_pacing'] = self.course.pacing
+                segment_properties["platform"] = "web"
+                try:
+                    segment_properties = get_enrollment_segment_properties(
+                        self,
+                        event_name,
+                        dict(segment_properties),
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    log.exception(
+                        "Failed to extend Segment properties for enrollment event %s",
+                        event_name,
+                    )
 
             with tracker.get_tracker().context(event_name, context):
                 tracker.emit(event_name, data)
