@@ -54,6 +54,7 @@ Status on 2026-10-06:
 - Django is at 5.2.18 (bumped on the branch; upstream ulmo.4 has 5.2.11).
 - No tests have been run locally (no local Python environment, other than `pycodestyle` and `xsslint`, which pass). Draft PR #505 is open and CI is running; the latest push was `2ec85d2d75`. Fixes so far (see step 4): two inherited pycodestyle errors, the `pii_check` safelist entry, and the `xmodule/` CODEOWNERS line restored to the fork's version (upstream added community-only owners). As of the last check, quality passed through `pii_check`, and the unit-test shards, pylint, migrations and other checks were still running. **Next action: check `gh pr checks 505 --repo edx/edx-platform` and fix any failures as separate commits.**
 - `.github` differences from `release-ulmo` were reviewed: all are modifications (mostly action version bumps), no added or removed workflows. The `django-version: "5.2"` matrix leg was dropped from `unit-tests.yml` since `pinned` is now 5.2, so the "dj=pinned" jobs are the Django 5.2 tests. The community "tutorial PR" bot comment on #505 comes from `check-for-tutorial-prs.yml`, which already exists on `release-ulmo`; its removal is in separate PR [#507](https://github.com/edx/edx-platform/pull/507) (not part of this upgrade).
+- The edx-internal playbook's checks were run against this branch on 2026-10-06 (read-only: migration review, breaking-commit detection, argocd settings, fork-only settings survival). They added step 5 (migration state in stage and prod, not yet run), the [Breaking changes in the range](#breaking-changes-in-the-range) table (checks not yet done), the `contentstore 0014` rollback caveat, and owner items 4 and 5. Not done: any database query, a fresh `git fetch`, and a re-check of CI failures.
 
 ## Next steps
 
@@ -80,24 +81,55 @@ Status on 2026-10-06:
    - `lms/djangoapps/staticbook/tests.py` (adapted to the fork's PDF guards)
    - query-count tests (ulmo.3 needed "Update queries expected")
    - `make lint-imports`, migrations checks, and `makemigrations --check --dry-run` for lms and cms
-5. **Devstack checks**, the things CI cannot cover. Do the step 1 sync gate first and record the SHAs tested; do not merge mid-pass.
+5. **Migration state in stage and prod.** `release-ulmo` was deployed with ulmo.1 in May (#304, 2026-05-22 to 2026-05-27) and rolled back by revert. Rolling back code never un-applies migrations, so what the databases have applied is unknown from the repo. `release/ulmo.1` and `release/ulmo.4` have identical migration files (no added, deleted or renamed), so anything May applied matches this batch; the open question is what was applied and when. Run read-only, on stage and prod, and record the results (with dates) here:
+   1. `SELECT app, name, applied FROM django_migrations WHERE applied >= '2026-05-15' ORDER BY applied;` Did May apply the ulmo.1 migrations listed below?
+   2. `showmigrations --plan` for lms and cms, run with #505's code against a stage snapshot, to list what #505 would still apply.
+   3. If `contentstore 0014` is already applied in prod: check for ComponentLink/ContainerLink errors since May, and whether prod uses library upstream-sync at all. If it is not applied, #505 applies it for the first time.
+   4. `SELECT VERSION();` on `prod-edx-edxapp.rds.edx.org`. argocd shows `django.db.backends.mysql`, which cannot tell MySQL from MariaDB. The five `*_mariadb_uuid_conversion` migrations are no-ops unless the version string contains "mariadb".
+   5. Row counts for `contentstore_componentlink`, `contentstore_containerlink` and `modulestore_migrator_*` (lock and duration risk of `0014` and the migrator migrations).
+
+   Migrations in #505 that `release-ulmo` does not have: `contentstore 0014`, `modulestore_migrator 0002`, `0003`, `0004`, `0006` (`0004` has a squash-style name but no `replaces`), `survey_report 0006`, and the five MariaDB conversions (`student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`). `announcements 0001_initial` is deleted with the app, so its `django_migrations` row will be stale, which is harmless unless a migration depends on it. The fork migrations `third_party_auth 0014/0015`, `support 0007` and `course_overviews 0030` are already in `release-ulmo`.
+6. **Devstack checks**, the things CI cannot cover. Do the step 1 sync gate first and record the SHAs tested; do not merge mid-pass.
    - The previous prod failure: seed `courseware_studentmodule` `AUTO_INCREMENT` above 2^31 (e.g. `ALTER TABLE courseware_studentmodule AUTO_INCREMENT = 4240000000;`). Navigate into a unit and back in the Learning MFE, and confirm XBlock state saves without "Forced update did not affect any rows" (see the description of edx PR #495).
    - The fork's learner-state work that the branch carries: incremental loading of large assessment xblocks and hydrating learner state for paginated assessment children (`courseware/model_data.py`, `block_render.py`). Exercise a large problem bank or assessment.
    - Video: HLS playback, audio description (upload in Studio, playback in LMS), and the language menu height with many caption languages.
    - PDF textbooks: relative-URL books render in the pdf.js 5 viewer, chapter switching works, and an absolute `https://` URL does not render the viewer.
-6. **Pre-flight items** from the edx-internal playbook (PR #14962 doc `04`, section B, Django 4.2→5.2) and its deployed-settings checks against `argocd/applications/edxapp-*/` in edx-internal. That repo, not Datadog, is the real deploy inventory.
-7. **Owner reviews** (open items below), before merging.
-8. **Write the rollout and rollback plan** (next section) into this document, then deploy to stage, then prod.
-9. **Mark #505 ready for review and merge it.** Do the step 1 sync gate first, and again just before merging. The plan docs land with it.
-10. **Once stable in production**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`'s list.
+7. **Pre-flight items** from the edx-internal playbook (PR #14962 doc `04`, section B, Django 4.2→5.2) and its deployed-settings checks against `argocd/applications/edxapp-*/` in edx-internal. That repo, not Datadog, is the real deploy inventory. Already verified on 2026-10-06, so nobody needs to repeat these:
+   - **Storage settings:** argocd prod sets the legacy `DEFAULT_FILE_STORAGE` and `STATICFILES_STORAGE`, which Django 5.1 removed. They are still honoured because `lms/envs/production.py` and `cms/envs/production.py` map them into `STORAGES` (look for "For backward compatibility"). No `get_storage_class` callers remain; the only mention is a docstring in `common/djangoapps/util/storage.py`.
+   - **Fork-only settings** from the learner-state and bulk-unenroll work are present in `lms/envs/common.py`: `INCREMENTAL_LOAD_PROBLEM_THRESHOLD`, `INCREMENTAL_LOAD_EAGER_COUNT`, `XBLOCK_CHILDREN_BATCH_MAX`, `BULK_UNENROLL_*`.
+   - **Intentionally deferred commits:** the only `temp:` commit relative to `release-ulmo` is `582e345108` (SAML SSRF revert). Its "should be reapplied" note is satisfied by upstream's equivalent in this branch (see the audit).
+   - **MariaDB UUID migrations** are no-ops unless the engine is MariaDB. The engine is unconfirmed until step 5 query 4.
+   - **Breaking changes:** see [Breaking changes in the range](#breaking-changes-in-the-range). Still to check there: the forked authoring MFE, and any DB-backed `legacy_studio.*` waffle overrides.
+8. **Owner reviews** (open items below), before merging.
+9. **Write the rollout and rollback plan** (next section) into this document, then deploy to stage, then prod.
+10. **Mark #505 ready for review and merge it.** Do the step 1 sync gate first, and again just before merging. The plan docs land with it.
+11. **Once stable in production**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`'s list. First make sure every item in [Feed to playbook](#feed-to-playbook) is resolved with an edx-internal edit or consciously dropped.
+
+## Breaking changes in the range
+
+The merge audit checks that nothing was lost in merging. It does not check what upstream deliberately broke. These are the commits marked `!` in `242a69d06b..openedx/release/ulmo` (the pre-ulmo.1 base, not the merge-base with `release-ulmo`, which spans only 25 commits because of the revert trap). The `BREAKING CHANGE:` footers were also searched and found nothing beyond these.
+
+| Commit | What | Check before landing |
+|---|---|---|
+| `ae8996f68b` | Django 5.2 | Covered by CI, devstack (step 6) and the storage-settings check in step 7. |
+| `0077058e37`, `e64d4cee8d`, `fcfa4138fd` | Legacy Studio home, course outline and files/uploads pages removed, with their `legacy_studio.*` waffle flags | Forked authoring MFE works without the legacy pages. No DB-backed course/org overrides still selecting a legacy page (needs the toggles API or DB). |
+| `20bc7113e3` | Studio Maintenance and Announcements app removed (`openedx/features/announcements`) | Nothing in fork templates or menus links to it. argocd prod config has no reference. The app's migration is deleted (step 5). |
+| `4c051378d0` | Last calls to `cs_comments_service` removed | The audit covers `thread.py` (the fork keeps its soft-delete `_delete_thread`). Prod still sets `COMMENTS_SERVICE_URL`/`KEY` in argocd; confirm nothing in this branch still reads them. |
+| `f7a1a9d990` | `version` removed from the library serializer | Forked authoring MFE does not read `version`. |
+| `09e86e24b2` | `top_level_downstream_parent_key` changed from a Dict field to a String field | The commit has no migration; it touches the upstream-sync code (`cms/lib/xblock/upstream_sync.py`, `contentstore/tasks.py`, `xmodule/util/keys.py`). Confirm whether prod has downstream blocks that stored the old dict form, and whether the new code reads them. Not yet investigated. |
+| `fca21c955f` | Survey `redirect_url` (GHSA-2843-x998-f8r2) | Already in prod independently as `e46653783d`; the files are identical. No action. Verify by content, not ancestry. |
+
+Cross-repo: the first three rows and `f7a1a9d990` change what the authoring MFE can call. Confirm the forked `frontend-app-authoring` (and `frontend-app-learner-dashboard` where it touches the same APIs) before deploying, and decide the deploy order if a fix is needed on the MFE side.
 
 ## Rollout and rollback
 
-To be completed before step 8. Points already known:
+To be completed before step 9. Points already known:
 
 - **Watch:** XBlockSaveError, 500s on courseware state saves (`goto_position`, `xblock/handler`), Django 5.2 deprecation and runtime errors, video and PDF errors.
 - **Prefer rolling back by redeploying the previous image** over reverting the merge on `release-ulmo`. Reverting the merge recreates the revert trap: re-landing would then need a revert of that revert, as `010ea66478` did for ulmo.1. If a revert is unavoidable, record here how to re-land.
 - **Database migrations:** check whether any ulmo.1→ulmo.4 migrations are irreversible before relying on a rollback. A code-only rollback after forward-only migrations needs care.
+- **`contentstore 0014` makes a code-only rollback unsafe.** It drops `downstream_is_modified` from `ComponentLink` and `ContainerLink` and adds `downstream_customized`. The previous image (`release-ulmo`) still expects `downstream_is_modified`, so after this migration is applied, redeploying it breaks anything that queries those tables. The options are to reverse-migrate with `migrate contentstore 0013` (the reverse re-adds the column but loses `downstream_customized` data), or to accept that library upstream-sync is broken until forward again. Decide before deploying, using the step 5 results (are the tables used, how big are they, was `0014` already applied in May). If the answer is that they are in use, consider splitting the migration out (expand now, contract later) as the playbook's principles suggest.
+- Because ulmo.1 was already deployed once, prod may already be past some of these migrations. That is not a rollback hazard for this batch (the file sets are identical), but it does mean the first-deploy behaviour of `0014` may already have been exercised in May.
 
 ## Open items for owning teams
 
@@ -110,13 +142,30 @@ To be completed before step 8. Points already known:
    - With `course_or_org=org`, a moderator of one course can bulk-delete a learner's posts across the whole org.
    - Suggested narrow fix, separate from this upgrade: require global staff for org-scope bulk delete in `BulkDeleteUserPosts.post`.
 3. **studio-frontend** (Studio owners): the branch drops it, following upstream, while `release-ulmo` still has 18 references. Confirm nothing still needs it.
+4. **Authoring MFE and legacy Studio removal** (Studio/authoring owners): see [Breaking changes in the range](#breaking-changes-in-the-range). Confirm the forked `frontend-app-authoring` does not depend on the removed legacy home, course outline or files pages, or on the library serializer `version` field. Also check for DB-backed `legacy_studio.*` course/org waffle overrides (toggles API or DB), since static config cannot show them.
+5. **Announcements app removed** (whoever owns the learner-facing site content): nothing in argocd prod config references it, but confirm no fork template, menu or link depends on `openedx/features/announcements`.
 
 ## Follow-ups (separate from landing)
 
 - Delete the unused RequireJS copy `xmodule/js/src/video/09_video_audio_description.js`. Upstream deleted that directory's other files; the live module is under `xmodule/assets/video/public/js/`.
 - Optionally re-add the fork-only IPv6 and reserved-address cases to `TestValidateSAMLMetadataURL`. This is coverage only; the validator code is unchanged.
-- Feed the methodology into the edx-internal playbook (v0.2): the hunk-level survival check, the revert trap, and the moved-files class of silent merge loss.
 - Retitle LP-1148 to reflect ulmo.4+.
 - Remove the Open edX tutorial workflow `.github/workflows/check-for-tutorial-prs.yml` from `release-ulmo` (it comments on any PR touching `lms/templates/dashboard.html`, including this one). Tracked in a separate PR.
 - Report upstream that openedx-learning 0.30.2's `PublishableEntityVersionDependency` docstring says `.. no_pii` without the colon (fixed on openedx-learning main).
 - Report the two pycodestyle errors upstream (E302 in `openedx/core/lib/tests/test_extract_archive.py`, E303 in `cms/djangoapps/contentstore/rest_api/v1/views/tests/test_videos.py`, on `openedx/release/ulmo`), so the next upstream merge doesn't conflict with our whitespace fix.
+
+## Feed to playbook
+
+The edx-internal playbook ([PR #14962](https://github.com/edx/edx-internal/pull/14962), `docs/openedx-upgrade-process/`) is for learning how to continue upgrades; this plan is the source of truth for landing ulmo. Lessons from this upgrade that belong there, so that `docs/plans/LP-1148-*` can be deleted without losing them. Mark each one resolved when the edx-internal edit has merged, or dropped with a reason.
+
+| Lesson | Playbook home | Status |
+|---|---|---|
+| Hunk-level survival check, and the moved-files / dead-copy class of silent merge loss (scripts are in the audit appendix; copy them, since this appendix will be deleted) | `01-playbook.md` | Open |
+| The revert trap: a plain merge omits content that was merged and reverted; also applies to rollback | `01-playbook.md` | Open |
+| Breaking-commit detection needs the true prior content base. With reverts, the merge-base spans 25 commits here instead of 157 | `01-playbook.md`, breaking-commit detection | Open |
+| Prior-deploy state: when an earlier attempt was deployed and rolled back, query `django_migrations` in every environment before re-landing | `01-playbook.md`, migration review | Open |
+| Rollback section: a code-only rollback is unsafe after contract-phase migrations (`contentstore 0014`) | `01-playbook.md`, new section | Open |
+| MariaDB UUID migrations are no-ops on MySQL but are in this batch; "not applicable" assumed the engine | `04-...preflight`, `02-...digest` | Open |
+| `openedx/features/announcements` is retired upstream, so it is not a pluginize candidate; batch-state wording in registry rows 3 and 16 belongs here, not there | `03-...registry` | Open |
+| `05-...ulmo3-batch` open review items are superseded by this upgrade | `05-...ulmo3-batch` | Open |
+| First retrospective entry: the playbook, applied before any deploy, surfaced the breaking-change inventory and the rollback caveat that the merge audit alone missed | `01-playbook.md`, retrospectives | Open |

@@ -20,6 +20,12 @@ If any of these move, re-run the checks; the scripts are in the appendix.
 - Nothing else was lost: every other flagged item is present in combined form, or deliberately superseded.
 - Merging the branch into `release-ulmo` is conflict-free and yields the branch's tree exactly.
 
+## Scope
+
+This audit checks that nothing was **lost in merging**. It does not check what upstream **deliberately broke**, nor database state. For those, see the plan: [Breaking changes in the range](LP-1148-ulmo4-upgrade.md#breaking-changes-in-the-range) (nine `!` commits, including the legacy Studio removals) and step 5 (migration state in stage and prod).
+
+Migration inventory, for reference. Files under `*/migrations/` that differ from `edx/release-ulmo` (`git diff --name-status edx/release-ulmo HEAD -- '*/migrations/*.py'`): added `contentstore 0014`, `modulestore_migrator 0002`, `0003`, `0004`, `0006`, `survey_report 0006`, and five `*_mariadb_uuid_conversion` migrations (`student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`); deleted `announcements 0001_initial` (the app was removed upstream by `20bc7113e3`). `release/ulmo.1` and `release/ulmo.4` have identical migration file sets (`git diff --name-status release/ulmo.1 release/ulmo.4 -- '*/migrations/*.py'` is empty).
+
 ## Why not compare against a "from scratch" branch
 
 `release-ulmo` contains two merged-then-reverted ulmo.1 attempts (#212, #304), so a plain merge of upstream into it silently omits all of ulmo.1, Django 5.2 included. The plan describes this "revert trap".
