@@ -12,11 +12,13 @@ import ddt
 from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import reverse
+from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.locator import CourseKey, LibraryLocator
 from organizations.api import get_organization_by_short_name
 from organizations.exceptions import InvalidOrganizationException
 
 from cms.djangoapps.contentstore.tests.utils import AjaxEnabledTestClient, CourseTestCase, parse_json
+from cms.djangoapps.contentstore.toggles import EXPANDED_LIBRARY_CREATION_ORGS
 from cms.djangoapps.contentstore.utils import reverse_course_url, reverse_library_url
 from cms.djangoapps.course_creators.views import add_user_with_status_granted as grant_course_creator_status
 from common.djangoapps.student.roles import LibraryUserRole, CourseStaffRole, CourseInstructorRole
@@ -519,18 +521,29 @@ class UnitTestLibraries(CourseTestCase):
                         organizations = get_allowed_organizations_for_libraries(self.user)
                         self.assertEqual(organizations, ['org3'])
 
-    @ddt.data(True, False)
-    def test_allowed_organizations_for_library_global_staff(self, org_staff_access_enabled):
+    @ddt.data(
+        # flag_active, org_staff_access_enabled, creator_group_enabled, expected_organizations
+        (True, True, True, ['org1', 'org2']),
+        (True, False, True, ['org1', 'org2']),
+        (True, False, False, ['org1', 'org2']),
+        (False, False, False, []),
+    )
+    @ddt.unpack
+    def test_allowed_organizations_for_library_global_staff(
+        self, flag_active, org_staff_access_enabled, creator_group_enabled, expected_organizations
+    ):
         """
-        Global staff should be able to select any organization when creating a library,
-        regardless of the roles they hold or which Feature Flags are enabled.
+        With the LP-1102 flag on, global staff should be able to select any organization when creating
+        a library, regardless of the roles they hold or which Feature Flags are enabled. With the flag
+        off, they fall back to the role-based organization list.
         """
         assert self.user.is_staff
-        with patch('organizations.models.Organization.objects.all') as mock_all:
-            mock_all.return_value.values_list.return_value = ['org1', 'org2']
-            with mock.patch.dict('django.conf.settings.FEATURES', {
-                "ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES": org_staff_access_enabled,
-                "ENABLE_CREATOR_GROUP": True,
-            }):
-                organizations = get_allowed_organizations_for_libraries(self.user)
-        self.assertEqual(organizations, ['org1', 'org2'])
+        with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active):
+            with patch('organizations.models.Organization.objects.all') as mock_all:
+                mock_all.return_value.values_list.return_value = ['org1', 'org2']
+                with mock.patch.dict('django.conf.settings.FEATURES', {
+                    "ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES": org_staff_access_enabled,
+                    "ENABLE_CREATOR_GROUP": creator_group_enabled,
+                }):
+                    organizations = get_allowed_organizations_for_libraries(self.user)
+        self.assertEqual(organizations, expected_organizations)

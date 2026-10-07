@@ -9,6 +9,7 @@ import pytz
 from django.conf import settings
 from django.test import override_settings
 from django.urls import reverse
+from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.locator import LibraryLocatorV2
 from openedx_learning.api import authoring as authoring_api
 from organizations.tests.factories import OrganizationFactory
@@ -16,6 +17,7 @@ from rest_framework import status
 
 from cms.djangoapps.contentstore.tests.test_libraries import LibraryTestCase
 from cms.djangoapps.contentstore.tests.utils import CourseTestCase
+from cms.djangoapps.contentstore.toggles import EXPANDED_LIBRARY_CREATION_ORGS
 from cms.djangoapps.modulestore_migrator import api as migrator_api
 from cms.djangoapps.modulestore_migrator.data import CompositionLevel, RepeatHandlingStrategy
 from cms.djangoapps.modulestore_migrator.tests.factories import ModulestoreSourceFactory
@@ -92,16 +94,25 @@ class HomePageViewTest(CourseTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertDictEqual(expected_response, response.data)
 
+    @ddt.data(
+        (True, ["org1", "org2"]),
+        (False, []),
+    )
+    @ddt.unpack
     @override_settings(ORGANIZATIONS_AUTOCREATE=False)
-    def test_home_page_staff_sees_all_orgs_for_libraries(self):
-        """Global staff can pick any org for a new library, even when org autocreate is disabled"""
+    def test_home_page_staff_sees_all_orgs_for_libraries(self, flag_active, expected_organizations):
+        """
+        With the LP-1102 flag on, global staff can pick any org for a new library, even when org
+        autocreate is disabled. With the flag off, they only get their role-based orgs.
+        """
         OrganizationFactory.create(short_name="org1")
         OrganizationFactory.create(short_name="org2")
 
-        response = self.client.get(self.url)
+        with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active):
+            response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertCountEqual(response.data["allowed_organizations_for_libraries"], ["org1", "org2"])
+        self.assertCountEqual(response.data["allowed_organizations_for_libraries"], expected_organizations)
 
     def test_taxonomy_list_link(self):
         response = self.client.get(self.url)

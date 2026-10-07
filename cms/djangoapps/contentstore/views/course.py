@@ -86,6 +86,7 @@ from ..courseware_index import CoursewareSearchIndexer, SearchIndexingError
 from ..tasks import rerun_course as rerun_course_task
 from ..toggles import (
     default_enable_flexible_peer_openassessments,
+    expanded_library_creation_orgs_enabled,
     use_new_course_outline_page,
     use_new_home_page,
     use_new_updates_page,
@@ -1853,8 +1854,8 @@ def get_allowed_organizations_for_libraries(user):
     """
     # Global staff may create libraries in any organization, so offer all of them. Without this,
     # when ORGANIZATIONS_AUTOCREATE is disabled the Authoring MFE only shows staff the orgs they
-    # hold a role in.
-    if user.is_staff:
+    # hold a role in. Gated by a temporary flag (LP-1102) so it can be verified in stage first.
+    if user.is_staff and expanded_library_creation_orgs_enabled():
         return list(Organization.objects.all().values_list('short_name', flat=True))
     if settings.FEATURES.get('ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES', False):
         return get_organizations_for_non_course_creators(user)

@@ -748,3 +748,29 @@ def enable_outline_component_creation(course_key):
     Returns a boolean if the Add Component in Outline feature is enabled for the given course.
     """
     return ENABLE_OUTLINE_COMPONENT_CREATION.is_enabled(course_key)
+
+
+# .. toggle_name: contentstore.expanded_library_creation_orgs
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, global staff are offered every organization in the "New Library"
+#   organization dropdown (allowed_organizations_for_libraries), instead of only the organizations they
+#   hold a role in. This matters when ORGANIZATIONS_AUTOCREATE is disabled, because the Authoring MFE then
+#   builds the dropdown from that list.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-10-07
+# .. toggle_target_removal_date: 2027-01-07
+# .. toggle_tickets: LP-1102
+# .. toggle_warning: Once verified in production, remove this flag and keep the enabled behavior.
+EXPANDED_LIBRARY_CREATION_ORGS = WaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.expanded_library_creation_orgs',
+    __name__,
+    CONTENTSTORE_LOG_PREFIX,
+)
+
+
+def expanded_library_creation_orgs_enabled():
+    """
+    Returns whether the expanded organization list for library creation (LP-1102) is enabled.
+    """
+    return EXPANDED_LIBRARY_CREATION_ORGS.is_enabled()
