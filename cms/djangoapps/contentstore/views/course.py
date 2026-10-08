@@ -1881,13 +1881,9 @@ def get_organizations_for_non_course_creators(user):
     When the LP-1102 flag is enabled, organizations where the user is an admin (instructor) are
     included too, since course admins can already create libraries in those organizations.
     """
-    orgs_map = set()
-    orgs = list(OrgStaffRole().get_orgs_for_user(user))
+    orgs_map = set(OrgStaffRole().get_orgs_for_user(user))
     if expanded_library_creation_orgs_enabled():
-        orgs.extend(OrgInstructorRole().get_orgs_for_user(user))
-    # deduplicate
-    for org in orgs:
-        orgs_map.add(org)
+        orgs_map.update(OrgInstructorRole().get_orgs_for_user(user))
     return list(orgs_map)
 
 
