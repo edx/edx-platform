@@ -753,11 +753,12 @@ def enable_outline_component_creation(course_key):
 # .. toggle_name: contentstore.expanded_library_creation_orgs
 # .. toggle_implementation: WaffleFlag
 # .. toggle_default: False
-# .. toggle_description: When enabled, expands the "New Library" organization dropdown
-#   (allowed_organizations_for_libraries): global staff are offered every organization instead of only
-#   the organizations they hold a role in, and course admins (instructors) are offered the organizations
-#   of their courses, as course staff already are. This matters when ORGANIZATIONS_AUTOCREATE is disabled,
-#   because the Authoring MFE then builds the dropdown from that list.
+# .. toggle_description: When enabled, expands allowed_organizations_for_libraries: global staff get every
+#   active organization instead of only the organizations they hold a role in, and course admins (instructors)
+#   get the organizations of their courses, as course staff already do. When ORGANIZATIONS_AUTOCREATE is
+#   disabled, the Authoring MFE builds the "New Library" organization dropdown from this list, and v2 library
+#   creation uses it to authorize the organization, so course creators who are course admins can also create
+#   v2 libraries in their courses' organizations. Legacy library permissions are unchanged.
 # .. toggle_use_cases: temporary
 # .. toggle_creation_date: 2026-10-07
 # .. toggle_target_removal_date: 2027-01-07

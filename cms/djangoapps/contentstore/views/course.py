@@ -1879,7 +1879,8 @@ def get_organizations_for_non_course_creators(user):
     Returns the list of organizations which the user is a staff member of, as a list of strings.
 
     When the LP-1102 flag is enabled, organizations where the user is an admin (instructor) are
-    included too, since course admins can already create libraries in those organizations.
+    included too. Course admins can already create legacy libraries in those organizations, and v2
+    library creation authorizes the organization with this list.
     """
     orgs_map = set(OrgStaffRole().get_orgs_for_user(user))
     if expanded_library_creation_orgs_enabled():

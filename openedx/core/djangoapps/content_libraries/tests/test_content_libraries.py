@@ -9,12 +9,18 @@ import ddt
 from django.contrib.auth.models import Group
 from django.test import override_settings
 from django.test.client import Client
+from edx_toggles.toggles.testutils import override_waffle_flag
 from freezegun import freeze_time
+from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import LibraryLocatorV2, LibraryUsageLocatorV2
 from organizations.models import Organization
 from rest_framework.test import APITestCase
 
+from cms.djangoapps.contentstore.toggles import EXPANDED_LIBRARY_CREATION_ORGS
+from cms.djangoapps.course_creators.models import CourseCreator
+from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
 from common.djangoapps.student.tests.factories import UserFactory
+from openedx.core.djangoapps.content_libraries import permissions
 from openedx.core.djangoapps.content_libraries.constants import CC_4_BY
 from openedx.core.djangoapps.content_libraries.tests.base import (
     URL_BLOCK_GET_HANDLER_URL,
@@ -165,6 +171,46 @@ class ContentLibrariesTestCase(ContentLibrariesRestApiTest):
         )
         assert mock_can_create_organizations.call_count == 2
         assert mock_get_allowed_organizations.call_count == 2
+
+    @ddt.data(
+        # role, flag_active, expected_response
+        (CourseInstructorRole, False, 400),
+        (CourseInstructorRole, True, 200),
+        (CourseStaffRole, False, 200),
+    )
+    @ddt.unpack
+    @override_settings(ORGANIZATIONS_AUTOCREATE=False)
+    @patch.dict('django.conf.settings.FEATURES', {
+        'ENABLE_CREATOR_GROUP': True,
+        'ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES': True,
+    })
+    @patch.dict(permissions.perms, {
+        # The test settings disable the creator group, which fixes this rule at import time.
+        permissions.CAN_CREATE_CONTENT_LIBRARY: (
+            permissions.is_global_staff | (permissions.is_user_active & permissions.is_course_creator)
+        ),
+    })
+    def test_library_org_course_role_no_autocreate(self, role, flag_active, expected_response):
+        """
+        With edx.org settings, a course creator who is not global staff may create a library in the
+        organization of a course where they are Course Staff. With the LP-1102 flag on, Course Admins
+        (instructors) may too, because the org check uses get_allowed_organizations_for_libraries().
+        """
+        org = "LP1102X"
+        Organization.objects.get_or_create(short_name=org, defaults={"name": "LP-1102 Test Org"})
+        user = UserFactory.create(is_staff=False)
+        CourseCreator.objects.create(user=user, state=CourseCreator.GRANTED, all_organizations=False)
+        role(CourseKey.from_string(f"course-v1:{org}+C101+2026")).add_users(user)
+
+        with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active), self.as_user(user):
+            response = self._create_library(
+                slug=f"lp1102-{role.ROLE}-{flag_active}",
+                org=org,
+                title="Library in a course role org",
+                expect_response=expected_response,
+            )
+        if expected_response == 400:
+            assert response == {'org': f"User not allowed to create libraries in '{org}'."}
 
     @skip("This endpoint shouldn't support num_blocks and has_unpublished_*.")
     @patch(
