@@ -14,8 +14,22 @@ Written 2026-10-08 so that a fresh session can continue from this file alone. St
 - **Batch 1 = ulmo.1 only.** The branch exists and holds only these docs; **the code work has not started.**
 - **Next action: the merge work** in [Next step: the merge work (batch 1)](#next-step-the-merge-work-batch-1).
 - #505 (`robrap/lp1148-ulmo4-continue`) is a superseded reference branch; its docs are to be removed and the PR closed once this PR exists (see [What happens to #505](#what-happens-to-505)).
-- **Housekeeping still pending** (do these early, they are quick): (a) repoint references to #505 as "source of truth" to #514: edx-internal#14962 (several places), LP-1148, LP-1309; (b) retitle LP-1148; (c) **close #505** once (a) is done (its docs were removed and its description now points to #514; keep its branch); (d) ask `release-ulmo` owners for a soft freeze once manual testing starts.
+- **Housekeeping still pending** (do these early, they are quick): (a) repoint references to #505 as "source of truth" to #514: edx-internal#14962 (several places), LP-1148, LP-1309; (b) retitle LP-1148; (c) **close #505** once (a) is done (its docs were removed and its description now points to #514; keep its branch); (d) before manual testing starts, ask the `release-ulmo` owners for a **soft freeze**: a request to the people who merge to `release-ulmo` to hold non-urgent merges until this PR lands, so the tree under test does not keep changing (every new `release-ulmo` commit forces a re-merge, a re-audit and a re-test of what it touches). Urgent fixes are still allowed and are merged in at the start of the next test pass. It is a request, not an enforced branch rule.
 - Nothing about the decisions below lives only in a conversation; if something here looks wrong, check it against git (every claim cites commits).
+
+## What is verified and what is not
+
+Written 2026-10-08. This plan has no tests behind it; the claims come from read-only git and `gh` checks, plus reading the edx-internal playbook PR. Re-check before relying on any of them.
+
+- **Verified from git (cite commits; cheap to re-run):** the deploy/revert history table; that `e45e7825ea` contains upstream `release/ulmo.1` and not ulmo.2/.3/.4, and pins Django 5.2.7; that `010ea66478` is the revert of `3a8fdad2fd` and is not in `release-ulmo`; the 3-file difference between `010ea66478` and `e45e7825ea`; that the ulmo.1-range breaking commits listed are ancestors of `release/ulmo.1` (and `fca21c955f`, `4d2e220d6f` are not); that the asset-sandbox fix exists on `release-ulmo` as `723014f37b` (#481) with the same flag; the dependency pins at ulmo.1, ulmo.4 and `release-ulmo`.
+- **Weakly verified (needs re-running on fresh refs before use):** the "already in `release-ulmo`" vs "not in" split in the post-ulmo.1 table. It used exact `git patch-id` matches against the last 400 `release-ulmo` commits, so a modified cherry-pick shows as "not in", and the refs were last fetched 2026-10-08. The claim that post-ulmo.1 fixes target code `release-ulmo` already has was judged from commit messages only, not code, and the ulmo.2/.3/.4 release notes were not read.
+- **Not checked at all:**
+  - Whether #481 (the asset-sandbox fix) is **deployed**. It is merged on `release-ulmo`; deployment state needs the gocd/argocd manifests in edx-internal.
+  - Whether the `010ea66478` / #505 conflict resolutions are correct (see the cross-check section; five days in prod is weak evidence).
+  - How many conflicts the revert of `3a8fdad2fd` produces on the current tip (never tried; expect many, since `release-ulmo` has moved about 230 commits).
+  - Anything database-related (migration state in stage/prod, `SELECT VERSION()`).
+  - Which of #505's audit fixes and CI fixes apply to the ulmo.1 range (the plan says to check each).
+  - The edx-internal playbook claims (open question 4, principle 2, ADR 0001) were read on branch `robrap/openedx-upgrade-process` of PR #14962 and may have changed.
 
 ## Where things are
 
@@ -154,7 +168,7 @@ Open question from LP-1304: for plugins already Django 5.2-compatible (`ai-aside
    - Until manual testing starts: check once a day (`git fetch edx --tags && git fetch openedx`, then `git log --oneline HEAD..edx/release-ulmo`), and merge promptly. Small merges are easier to audit. Merge the branch tip; do not cherry-pick.
    - Sync gate right before manual testing starts, again before marking ready, and again right before merging: merge, re-run CI, record the tested `release-ulmo` and upstream SHAs here, confirm the PR is still conflict-free.
    - Freeze during a manual test pass; merge new commits at the start of the next pass, re-testing what they touch (video JS, courseware state, PDF viewer).
-   - Ask the `release-ulmo` owners for a soft freeze (urgent fixes only) from the start of manual testing until the PR merges.
+   - Ask the `release-ulmo` owners for a soft freeze (non-urgent merges held, urgent fixes allowed) from the start of manual testing until the PR merges; see Housekeeping in [Start here](#start-here-handoff) for what it means.
    - Wide commits (like #503, 39 files) need the survival check most.
    - Re-run the survival check and the lockfile downgrade check on every sync.
 2. **CI.** Fix failures as separate commits. Pay particular attention to `lms/djangoapps/courseware/tests/test_fields.py`, the video tests, query-count tests (ulmo.3 needed "Update queries expected"), `make lint-imports`, migrations checks and `makemigrations --check --dry-run` for lms and cms. `make check_keywords` runs after `pii_check` in the same job.
