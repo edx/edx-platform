@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-24.04]
         python-version:
           - "3.11"
-        node-version: [20]
+        node-version: [24]
 
     steps:
       - uses: actions/checkout@v5
