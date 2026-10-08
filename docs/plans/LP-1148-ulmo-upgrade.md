@@ -2,7 +2,7 @@
 
 Ticket: [LP-1148](https://2u-internal.atlassian.net/browse/LP-1148) ("Prepare and test edxapp Ulmo.1 branch"; the title is stale, see [Follow-ups](#follow-ups-separate-from-landing)). Parent epic: [LP-1309](https://2u-internal.atlassian.net/browse/LP-1309) ("Ulmo.3 Deployment").
 
-This plan and the audit files next to it live in the **batch-1 PR** (branch `robrap/lp1148-ulmo1-batch1`) and are the single copy. They were moved here from the superseded reference PR [#505](https://github.com/edx/edx-platform/pull/505). Keep them up to date in whichever PR is current, and delete them in a small follow-up once the upgrade is in production and stable; see `docs/plans/README.rst`.
+This plan and the audit files next to it live in the **batch-1 PR** [#514](https://github.com/edx/edx-platform/pull/514) (branch `robrap/lp1148-ulmo1-batch1`) and are the single copy. They were moved here from the superseded reference PR [#505](https://github.com/edx/edx-platform/pull/505). Keep them up to date in whichever PR is current, and delete them in a small follow-up once the upgrade is in production and stable; see `docs/plans/README.rst`.
 
 Related: the upgrade-process playbook in edx-internal ([PR #14962](https://github.com/edx/edx-internal/pull/14962), `docs/openedx-upgrade-process/`). It holds the reusable method; this plan is the concrete execution.
 
@@ -14,13 +14,14 @@ Written 2026-10-08 so that a fresh session can continue from this file alone. St
 - **Batch 1 = ulmo.1 only.** The branch exists and holds only these docs; **the code work has not started.**
 - **Next action: the merge work** in [Next step: the merge work (batch 1)](#next-step-the-merge-work-batch-1).
 - #505 (`robrap/lp1148-ulmo4-continue`) is a superseded reference branch; its docs are to be removed and the PR closed once this PR exists (see [What happens to #505](#what-happens-to-505)).
+- **Housekeeping still pending** (do these early, they are quick): (a) repoint references to #505 as "source of truth" to #514: edx-internal#14962 (several places), LP-1148, LP-1309; (b) retitle LP-1148; (c) **close #505** once (a) is done (its docs were removed and its description now points to #514; keep its branch); (d) ask `release-ulmo` owners for a soft freeze once manual testing starts.
 - Nothing about the decisions below lives only in a conversation; if something here looks wrong, check it against git (every claim cites commits).
 
 ## Where things are
 
 | What | Ref |
 |---|---|
-| Batch-1 branch (this PR) | `robrap/lp1148-ulmo1-batch1` on `edx/edx-platform`, based on `edx/release-ulmo` `3c3fbbad34` |
+| Batch-1 branch (this PR, [#514](https://github.com/edx/edx-platform/pull/514)) | `robrap/lp1148-ulmo1-batch1` on `edx/edx-platform`, based on `edx/release-ulmo` `3c3fbbad34` |
 | Deploy branch | `edx/release-ulmo` |
 | Upstream | `openedx/release/ulmo` (tags `release/ulmo.1` 2026-01-15, `.2` 2026-02-18, `.3` 2026-04-24, `.4` 2026-07-13; tip `2efdce0760`) |
 | Reference branch #505 | `robrap/lp1148-ulmo4-continue` @ `be17bd60ca`, draft PR [#505](https://github.com/edx/edx-platform/pull/505). ulmo.3 base plus ulmo.4+ merge. Source of ports, the 4-loss audit, and a second opinion on conflicts. |
