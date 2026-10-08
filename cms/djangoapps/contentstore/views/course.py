@@ -55,6 +55,7 @@ from common.djangoapps.student.roles import (
     CourseStaffRole,
     GlobalStaff,
     UserBasedRole,
+    OrgInstructorRole,
     OrgStaffRole,
     strict_role_checking,
 )
@@ -1856,7 +1857,8 @@ def get_allowed_organizations_for_libraries(user):
     # when ORGANIZATIONS_AUTOCREATE is disabled the Authoring MFE only shows staff the orgs they
     # hold a role in. Gated by a temporary flag (LP-1102) so it can be verified in stage first.
     if user.is_staff and expanded_library_creation_orgs_enabled():
-        return list(Organization.objects.all().values_list('short_name', flat=True))
+        # Only active organizations, matching the Studio organizations list and ensure_organization().
+        return list(Organization.objects.filter(active=True).values_list('short_name', flat=True))
     if settings.FEATURES.get('ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES', False):
         return get_organizations_for_non_course_creators(user)
     elif settings.FEATURES.get('ENABLE_CREATOR_GROUP', False):
@@ -1875,9 +1877,14 @@ def user_can_create_organizations(user):
 def get_organizations_for_non_course_creators(user):
     """
     Returns the list of organizations which the user is a staff member of, as a list of strings.
+
+    When the LP-1102 flag is enabled, organizations where the user is an admin (instructor) are
+    included too, since course admins can already create libraries in those organizations.
     """
     orgs_map = set()
-    orgs = OrgStaffRole().get_orgs_for_user(user)
+    orgs = list(OrgStaffRole().get_orgs_for_user(user))
+    if expanded_library_creation_orgs_enabled():
+        orgs.extend(OrgInstructorRole().get_orgs_for_user(user))
     # deduplicate
     for org in orgs:
         orgs_map.add(org)

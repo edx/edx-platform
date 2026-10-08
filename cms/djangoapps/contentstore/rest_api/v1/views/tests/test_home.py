@@ -102,11 +102,12 @@ class HomePageViewTest(CourseTestCase):
     @override_settings(ORGANIZATIONS_AUTOCREATE=False)
     def test_home_page_staff_sees_all_orgs_for_libraries(self, flag_active, expected_organizations):
         """
-        With the LP-1102 flag on, global staff can pick any org for a new library, even when org
+        With the LP-1102 flag on, global staff can pick any active org for a new library, even when org
         autocreate is disabled. With the flag off, they only get their role-based orgs.
         """
         OrganizationFactory.create(short_name="org1")
         OrganizationFactory.create(short_name="org2")
+        OrganizationFactory.create(short_name="inactive_org", active=False)
 
         with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active):
             response = self.client.get(self.url)

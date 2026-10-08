@@ -26,6 +26,7 @@ from xmodule.modulestore.tests.factories import LibraryFactory  # lint-amnesty, 
 from cms.djangoapps.course_creators.models import CourseCreator
 
 from common.djangoapps.student import auth
+from common.djangoapps.student.tests.factories import UserFactory
 
 from ..component import get_component_templates
 from ..library import user_can_create_library
@@ -489,8 +490,8 @@ class UnitTestLibraries(CourseTestCase):
         course_creator = CourseCreator.objects.create(user=self.user, all_organizations=True)
         with patch('cms.djangoapps.course_creators.models.CourseCreator.objects.filter') as mock_filter:
             mock_filter.return_value.first.return_value = course_creator
-            with patch('organizations.models.Organization.objects.all') as mock_all:
-                mock_all.return_value.values_list.return_value = ['org1', 'org2']
+            with patch('organizations.models.Organization.objects.filter') as mock_filter:
+                mock_filter.return_value.values_list.return_value = ['org1', 'org2']
                 with patch('common.djangoapps.student.roles.OrgStaffRole.get_orgs_for_user') as get_user_orgs:
                     get_user_orgs.return_value = ['org3']
                     # Call the method under test
@@ -539,11 +540,34 @@ class UnitTestLibraries(CourseTestCase):
         """
         assert self.user.is_staff
         with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active):
-            with patch('organizations.models.Organization.objects.all') as mock_all:
-                mock_all.return_value.values_list.return_value = ['org1', 'org2']
+            with patch('organizations.models.Organization.objects.filter') as mock_filter:
+                mock_filter.return_value.values_list.return_value = ['org1', 'org2']
                 with mock.patch.dict('django.conf.settings.FEATURES', {
                     "ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES": org_staff_access_enabled,
                     "ENABLE_CREATOR_GROUP": creator_group_enabled,
                 }):
                     organizations = get_allowed_organizations_for_libraries(self.user)
+        self.assertEqual(organizations, expected_organizations)
+
+    @ddt.data(
+        # role, flag_active, expected_organizations
+        (CourseStaffRole, True, ['SnowflakeX']),
+        (CourseStaffRole, False, ['SnowflakeX']),
+        (CourseInstructorRole, True, ['SnowflakeX']),
+        (CourseInstructorRole, False, []),
+    )
+    @ddt.unpack
+    def test_allowed_organizations_for_library_course_role(self, role, flag_active, expected_organizations):
+        """
+        Course staff can select the organization of their course when creating a library. With the
+        LP-1102 flag on, course admins (instructors) can too.
+        """
+        user = UserFactory(is_staff=False)
+        role(CourseKey.from_string('course-v1:SnowflakeX+SF105+3T2026')).add_users(user)
+        with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active):
+            with mock.patch.dict('django.conf.settings.FEATURES', {
+                "ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES": True,
+                "ENABLE_CREATOR_GROUP": True,
+            }):
+                organizations = get_allowed_organizations_for_libraries(user)
         self.assertEqual(organizations, expected_organizations)
