@@ -12,11 +12,14 @@ import ddt
 from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import reverse
+from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.locator import CourseKey, LibraryLocator
 from organizations.api import get_organization_by_short_name
 from organizations.exceptions import InvalidOrganizationException
+from organizations.tests.factories import OrganizationFactory
 
 from cms.djangoapps.contentstore.tests.utils import AjaxEnabledTestClient, CourseTestCase, parse_json
+from cms.djangoapps.contentstore.toggles import EXPANDED_LIBRARY_CREATION_ORGS
 from cms.djangoapps.contentstore.utils import reverse_course_url, reverse_library_url
 from cms.djangoapps.course_creators.views import add_user_with_status_granted as grant_course_creator_status
 from common.djangoapps.student.roles import LibraryUserRole, CourseStaffRole, CourseInstructorRole
@@ -24,6 +27,7 @@ from xmodule.modulestore.tests.factories import LibraryFactory  # lint-amnesty, 
 from cms.djangoapps.course_creators.models import CourseCreator
 
 from common.djangoapps.student import auth
+from common.djangoapps.student.tests.factories import UserFactory
 
 from ..component import get_component_templates
 from ..library import user_can_create_library
@@ -515,3 +519,71 @@ class UnitTestLibraries(CourseTestCase):
                     ):
                         organizations = get_allowed_organizations_for_libraries(self.user)
                         self.assertEqual(organizations, ['org3'])
+
+    @ddt.data(
+        # role, flag_active, expected_organizations
+        (CourseStaffRole, True, ['SnowflakeX']),
+        (CourseStaffRole, False, ['SnowflakeX']),
+        (CourseInstructorRole, True, ['SnowflakeX']),
+        (CourseInstructorRole, False, []),
+    )
+    @ddt.unpack
+    def test_allowed_organizations_for_library_course_role(self, role, flag_active, expected_organizations):
+        """
+        Course staff can select the organization of their course when creating a library. With the
+        LP-1102 flag on, course admins (instructors) can too.
+        """
+        user = UserFactory(is_staff=False)
+        role(CourseKey.from_string('course-v1:SnowflakeX+SF105+3T2026')).add_users(user)
+        with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active):
+            with mock.patch.dict('django.conf.settings.FEATURES', {
+                "ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES": True,
+                "ENABLE_CREATOR_GROUP": True,
+            }):
+                organizations = get_allowed_organizations_for_libraries(user)
+        self.assertEqual(organizations, expected_organizations)
+
+    @ddt.data(
+        # user_type, flag_active, org_active, expected_offered, expected_create_status
+        ('course_admin', True, True, True, 200),
+        ('course_admin', False, True, False, 200),
+        ('global_staff', True, True, True, 200),
+        ('global_staff', False, True, False, 200),
+        ('global_staff', True, False, False, 400),
+    )
+    @ddt.unpack
+    @override_settings(ORGANIZATIONS_AUTOCREATE=False)
+    @patch.dict('django.conf.settings.FEATURES', {
+        'ENABLE_CREATOR_GROUP': True,
+        'ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES': True,
+    })
+    def test_legacy_library_org_offered_and_created(
+        self, user_type, flag_active, org_active, expected_offered, expected_create_status
+    ):
+        """
+        Legacy (v1) library flow with stage/prod settings (LP-1102): the organization is offered in the
+        Studio home "New library" dropdown, and creating a legacy library in it succeeds.
+
+        Course admins are offered their course's organization and global staff any active organization.
+        The server already allowed both creates, so with the flag off only the dropdown is missing it.
+        Inactive organizations are not offered, because creating a library in one fails.
+        """
+        if user_type == 'course_admin':
+            org = self.course.org
+            user, password = self.create_non_staff_user()
+            CourseInstructorRole(self.course.id).add_users(user)
+            self.client.logout()
+            self.client.login(username=user.username, password=password)
+        else:
+            org = 'PartnerX'
+        OrganizationFactory.create(short_name=org, active=org_active)
+
+        with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active):
+            home_response = self.client.get(reverse('cms.djangoapps.contentstore:v1:home'))
+            create_response = self.client.ajax_post(LIBRARY_REST_URL, {
+                'org': org, 'library': 'lp1102lib', 'display_name': 'LP-1102 Library',
+            })
+
+        self.assertEqual(home_response.status_code, 200)
+        self.assertEqual(org in home_response.data['allowed_organizations_for_libraries'], expected_offered)
+        self.assertEqual(create_response.status_code, expected_create_status)
