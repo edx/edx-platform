@@ -17,7 +17,6 @@ from organizations.models import Organization
 from rest_framework.test import APITestCase
 
 from cms.djangoapps.contentstore.toggles import EXPANDED_LIBRARY_CREATION_ORGS
-from cms.djangoapps.course_creators.models import CourseCreator
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
 from common.djangoapps.student.tests.factories import UserFactory
 from openedx.core.djangoapps.content_libraries import permissions
@@ -196,6 +195,9 @@ class ContentLibrariesTestCase(ContentLibrariesRestApiTest):
         organization of a course where they are Course Staff. With the LP-1102 flag on, Course Admins
         (instructors) may too, because the org check uses get_allowed_organizations_for_libraries().
         """
+        # CMS-only model: importing it at module level breaks test collection under LMS settings.
+        from cms.djangoapps.course_creators.models import CourseCreator  # pylint: disable=import-outside-toplevel
+
         org = "LP1102X"
         Organization.objects.get_or_create(short_name=org, defaults={"name": "LP-1102 Test Org"})
         user = UserFactory.create(is_staff=False)
