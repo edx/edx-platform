@@ -12,6 +12,7 @@ from opaque_keys.edx.locator import CourseLocator
 from rest_framework.exceptions import PermissionDenied
 
 from common.djangoapps.student.models import CourseEnrollment
+from common.djangoapps.student.roles import CourseDataResearcherRole
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
 from openedx.core.djangoapps.util.test_forms import FormTestMixin
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
@@ -128,6 +129,23 @@ class TestBlockListGetForm(FormTestMixin, SharedModuleStoreTestCase):
 
         self.form_data.pop('username')
         self.assert_error('username', "This field is required unless all_blocks is requested.")
+
+    def test_all_blocks_by_staff_is_unfiltered(self):
+        # global staff also hold instructor.research, but should still get the tree without per-user transformers
+        self.initial = {'requesting_user': self.staff}
+        self.form_data.pop('username')
+        self.form_data['all_blocks'] = True
+        form = self.get_form(expected_valid=True)
+        assert form.cleaned_data['user'] is None
+
+    def test_all_blocks_by_data_researcher_is_as_self(self):
+        data_researcher = UserFactory.create()
+        CourseDataResearcherRole(self.course.id).add_users(data_researcher)
+        self.initial = {'requesting_user': data_researcher}
+        self.form_data.pop('username')
+        self.form_data['all_blocks'] = True
+        form = self.get_form(expected_valid=True)
+        assert form.cleaned_data['user'] == data_researcher
 
     def test_no_user_non_staff(self):
         self.form_data.pop('username')
