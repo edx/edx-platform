@@ -70,4 +70,4 @@ Dead-copy sweep (files on the branch but not in `release/ulmo.1`): 75 files, the
 ## Not done here
 
 - CI results (pending on the PR).
-- The release-notes part of the ulmo.1-regression check.
+- The decision on `15f39ae1aa` (see the plan's ulmo.1-regression check).
