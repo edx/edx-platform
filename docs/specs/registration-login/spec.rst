@@ -43,7 +43,7 @@ request/response contract. Summary:
 * ``GET|POST /api/user/v2/account/registration/`` - form description /
   create account (current version).
 * ``GET|POST /api/user/v1/account/registration/`` - deprecated alias
-  (requires ``confirm_email``).
+  (does not require ``confirm_email``).
 * ``POST /api/user/v1/validation/registration`` - inline field validation,
   no account created.
 * ``GET|POST /api/user/v2/account/login_session/`` - login form
@@ -76,7 +76,7 @@ A registration attempt resolves to exactly one of these terminal outcomes:
    (``partial_pipeline`` present in session), the pending social-auth
    association is completed as part of this request.
 2. **Validation failed** (``400``) - one or more fields failed validation;
-   response includes ``field_errors`` keyed by field name. No account is
+  response is keyed directly by field name. No account is
    created. Safe to retry after fixing the reported field(s).
 3. **Conflict** (``409``) - a non-retired account already exists with the
    given email and/or username. Response includes ``error_code`` in
@@ -103,17 +103,18 @@ Login state machine
    (e.g. finishing a paused TPA pipeline or enrollment deep link).
 2. **Rejected - retryable** (``400``) with ``error_code`` in
    ``{incorrect-email-or-password, inactive-user, require-password-change,
-   nudge-password-change}``. The caller may retry immediately (subject to
+  nudge-password-change, account-locked-out, failed-login-attempt}``. The
+  caller may retry immediately (subject to
    rate limits).
-3. **Rejected - locked out** (``403``) with ``error_code=account-locked-out``
+3. **Rejected - locked out** (``400``) with ``error_code=account-locked-out``
    after repeated failures within the configured window
    (``settings.MAX_FAILED_LOGIN_ATTEMPTS_ALLOWED`` /
    ``...LOCKOUT_PERIOD_SECS``). Retrying before the lockout window elapses
    will continue to fail even with correct credentials.
 4. **Rejected - TPA required** (``403``) with
-   ``error_code=third-party-auth-with-no-linked-account`` when the account
-   has no usable password (SSO-only account) and no third-party-auth
-   session is present.
+  ``error_code=third-party-auth-with-no-linked-account`` when a pending
+  third-party-auth login cannot resolve a linked account and no
+  first-party credentials were supplied.
 
 Rate limiting is applied on two independent axes -
 ``LOGISTRATION_PER_EMAIL_RATELIMIT_RATE`` (per submitted identifier) and
@@ -130,7 +131,7 @@ Password reset flow
       |                              |-- looks up account by email
       |                              |-- always returns 200 (never reveals
       |                              |   whether the address is registered)
-      |<--- 200 {success:true} ------|
+      |<--- 200 (empty body) --------|
       |                              |-- (async) sends email containing
       |                              |   /password/reset/{uidb36}-{token}/
       |
@@ -141,7 +142,6 @@ Password reset flow
       |                              |-- enforces password policy
       |                              |   (complexity + reuse history +
       |                              |   Have I Been Pwned compromise check)
-      |                              |-- activates account if still inactive
       |                              |-- on ?is_account_recovery=true,
       |                              |   promotes the recovery email to
       |                              |   primary email
@@ -154,16 +154,16 @@ Invariants:
 * The "request reset" endpoint response is intentionally
   identity-independent (always ``200``) to avoid user-enumeration; only the
   rate-limit response differs observably.
-* Successful confirmation always leaves the account ``is_active=True``,
-  even if it was inactive before (this doubles as an implicit activation
-  path).
+* Successful confirmation updates credentials and recovery state but does
+  not, by itself, guarantee ``is_active=True``.
 
 Security requirements
 ======================
 
-* All state-changing endpoints (``POST``) require a valid CSRF token when
-  called with session/cookie auth (``X-CSRFToken`` header, matching the
-  ``csrftoken`` cookie).
+* State-changing endpoints that enforce session CSRF checks require a valid
+  ``X-CSRFToken`` header matching the ``csrftoken`` cookie.
+* Registration endpoints and ``/login_refresh`` are CSRF-exempt in current
+  implementation; session login and logout POSTs enforce CSRF.
 * Registration, login, and password-reset-request endpoints are rate
   limited per-IP and, where applicable, per-identifier; limits are
   configuration-driven (``settings.py``) and MUST fail closed (reject) when

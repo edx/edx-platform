@@ -78,8 +78,8 @@ paths:
         '302':
           description: >-
             Redirect to the dashboard (existing linked account), the
-            registration/login form (new account, pipeline paused for
-            additional info), or `/auth/exception/` on failure.
+            registration/login entry point (new account, pipeline paused for
+            additional info), or another configured error redirect on failure.
         '400':
           description: Invalid provider response (e.g. bad OAuth `state`, expired SAML assertion).
     post:
@@ -144,7 +144,7 @@ paths:
           description: Request method was not POST.
         '401':
           description: LTI OAuth signature validation failed.
-  /auth/idp_redirect/{provider_slug}/:
+  /auth/idp_redirect/{provider_slug}:
     get:
       operationId: tpa_idp_redirect
       summary: Redirect helper that resolves a provider slug to its `/auth/login/<backend>/` URL.
@@ -164,11 +164,6 @@ paths:
           in: query
           schema:
             type: string
-        - name: auth_entry
-          in: query
-          schema:
-            type: string
-            enum: [login, register, account_settings]
       responses:
         '302':
           description: Redirect to `/auth/login/<backend>/?...`.
@@ -207,14 +202,18 @@ paths:
       tags: [tpa-pipeline]
       security:
         - SessionAuth: []
-        - CsrfToken: []
+          CsrfToken: []
       parameters:
         - $ref: '#/components/parameters/Backend'
-        - name: association_id
-          in: query
-          schema:
-            type: integer
-          description: Specific social-auth association to remove, if the account has more than one for this backend.
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                association_id:
+                  type: string
+                  description: Specific social-auth association to remove, if the account has more than one for this backend.
       responses:
         '200':
           description: Disconnected successfully.
@@ -231,7 +230,7 @@ paths:
                   backend:
                     type: string
                   association_id:
-                    type: integer
+                    type: string
                     nullable: true
         '400':
           description: Invalid request parameters.
@@ -258,14 +257,14 @@ paths:
       tags: [tpa-pipeline]
       security:
         - SessionAuth: []
-        - CsrfToken: []
+          CsrfToken: []
       parameters:
         - $ref: '#/components/parameters/Backend'
         - name: association_id
           in: path
           required: true
           schema:
-            type: integer
+            type: string
       responses:
         '200':
           description: Disconnected successfully.
@@ -281,7 +280,7 @@ paths:
                   backend:
                     type: string
                   association_id:
-                    type: integer
+                    type: string
         '400':
           description: Invalid request parameters.
         '403':
@@ -299,7 +298,7 @@ paths:
       tags: [tpa-pipeline]
       security:
         - SessionAuth: []
-        - CsrfToken: []
+          CsrfToken: []
       parameters:
         - $ref: '#/components/parameters/Backend'
       responses:
@@ -314,18 +313,17 @@ paths:
       operationId: tpa_exception_handler
       summary: Error handler for pipeline exceptions.
       description: >-
-        Reached (via middleware) whenever the third-party-auth pipeline
-        raises an `AuthException`. Surfaces a user-facing message via
-        Django messages and redirects back to `/login`, `/register`, or
-        `/account/settings` depending on the `auth_entry` recorded in the
-        session.
+        Exception helper endpoint used by some legacy paths. In current
+        middleware flow, third-party-auth exceptions are typically mapped
+        directly to configured entry-point redirects with a user-facing
+        Django message.
       tags: [tpa-pipeline]
       security: []
       responses:
         '302':
           description: Redirect to the appropriate entry point with an error message queued.
   /auth/custom_auth_entry:
-    post:
+    get:
       operationId: tpa_custom_auth_entry
       summary: Render an auto-submitting form used by custom auth-entry integrations.
       tags: [tpa-pipeline]
@@ -428,10 +426,13 @@ paths:
           description: User not found.
     delete:
       operationId: tpa_user_view_v2_delete
-      summary: Delete a specific third-party-auth association (admin only).
+      summary: Delete a specific third-party-auth association (self-service or privileged caller).
       tags: [tpa-rest-api]
       security:
         - JwtAuth: []
+        - BearerAuth: []
+        - SessionAuth: []
+          CsrfToken: []
       parameters:
         - name: username
           in: query
@@ -501,7 +502,9 @@ paths:
       tags: [tpa-rest-api]
       security:
         - JwtAuth: []
+        - BearerAuth: []
         - OAuth2: [tpa:read]
+        - ApiKeyAuth: []
       parameters:
         - name: provider_id
           in: path
@@ -566,6 +569,8 @@ paths:
                           type: string
         '401':
           description: Missing or invalid credentials.
+        '403':
+          description: Credentials are authenticated but lack required TPA permissions or provider filter scope.
         '404':
           description: Unknown `provider_id`.
   /api/third_party_auth/v0/providers/user_status:
@@ -635,3 +640,7 @@ components:
           tokenUrl: /oauth2/access_token/
           scopes:
             tpa:read: Read access to third-party-auth user mapping data.
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-EDX-API-KEY

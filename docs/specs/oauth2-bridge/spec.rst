@@ -85,9 +85,10 @@ Every grant can mint either:
 
 Signing: symmetric (HS256, shared secret) by default; asymmetric (RS512)
 when the client is a *restricted application* or ``asymmetric_jwt=true`` is
-passed. Restricted-application tokens are additionally issued with
+passed. Restricted-application opaque tokens are additionally issued with
 ``expires_in <= 0`` (immediately expired) so they carry an audit trail
-without granting live API access.
+without granting live API access; restricted-application JWTs use the
+configured JWT lifetime.
 
 JWT claim contract
 ====================
@@ -115,7 +116,7 @@ JWT claim contract
       "name": "Jane Doe", "given_name": "Jane", "family_name": "Doe",
       "administrator": false, "superuser": false,
 
-      // present only if "user_id" scope was granted (password grant only):
+      // present only if "user_id" scope was granted:
       "user_id": 42,
 
       // present only if the user has edx-rbac role assignments:
@@ -164,11 +165,10 @@ Relationship to other auth surfaces
   pipeline entirely, provided the backend's `social_django` pipeline can
   resolve that token to a linked edX account.
 * ``/oauth2/login/`` is the inverse of the login flow: it converts a
-  previously-issued OAuth2 token back into a session cookie, restricted to
-  tokens from the ``password`` grant or ``skip_authorization`` apps, and
-  only for asymmetric JWTs (symmetric JWTs are rejected, since they cannot
-  be cheaply distinguished from tokens minted for a different, less
-  trusted, audience).
+  previously-issued OAuth2 token back into a session cookie with
+  format-specific eligibility: opaque tokens require an application
+  configured with ``skip_authorization``; JWT tokens must be
+  asymmetrically signed and come from the ``password`` grant.
 
 Security requirements
 ======================
@@ -185,14 +185,13 @@ Security requirements
   ``ApplicationAccess`` model at token-mint time, not at resource-access
   time; a token's ``filters``/``scopes`` claims are authoritative for its
   entire lifetime.
-* Restricted applications always receive immediately-expired tokens
-  (``expires_in <= 0``); relying parties MUST treat any restricted-app
-  token as unusable for live API access regardless of the nominal
-  ``token_type``.
-* JWT signature verification MUST use the key identified by the token's
-  ``kid`` header looked up via ``/auth/jwks.json``; relying parties MUST
-  reject tokens signed with an unknown ``kid`` rather than falling back to
-  a default key.
+* Restricted applications receive immediately-expired opaque tokens
+  (``expires_in <= 0``); this immediate-expiry rule does not apply to
+  restricted-application JWTs.
+* Asymmetric JWT verification uses trusted JWKS keys; when ``kid`` is
+  present it MUST map to a trusted key id, and unknown ids MUST be
+  rejected. Symmetric JWT verification uses the configured shared signing
+  secret, and tokens may validly omit ``kid``.
 
 Consequences
 ************

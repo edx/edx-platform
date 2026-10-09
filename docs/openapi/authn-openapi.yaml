@@ -41,7 +41,9 @@ paths:
     get:
       operationId: registration_v1_get_form
       summary: Get the registration form description (v1).
-      description: Same as the `v2` form description, except `confirm_email` is included as a required field.
+      description: >-
+        Deprecated alias for the v2 form description. In current
+        implementation, `confirm_email` is removed from the v1 flow.
       tags: [registration]
       responses:
         '200':
@@ -55,27 +57,18 @@ paths:
       summary: Create a new user account (v1, deprecated in favor of v2).
       deprecated: true
       description: >-
-        Identical to `POST /api/user/v2/account/registration/`, except the
-        client must resubmit the email address a second time via a
-        `confirm_email` field, and some duplicate-account error codes use
-        the legacy `duplicate` value instead of the more specific
-        `duplicate-email`/`duplicate-username` codes.
+        Deprecated alias of `POST /api/user/v2/account/registration/`.
+        Uses form-encoded request data and is CSRF-exempt. Unlike v2, this
+        variant removes `confirm_email` from both form metadata and
+        validation behavior.
       tags: [registration]
-      security:
-        - CsrfToken: []
+      security: []
       requestBody:
         required: true
         content:
           application/x-www-form-urlencoded:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/RegistrationRequest'
-                - type: object
-                  properties:
-                    confirm_email:
-                      type: string
-                      format: email
-                  required: [confirm_email]
+                $ref: '#/components/schemas/RegistrationRequest'
       responses:
         '200':
           description: Account created successfully.
@@ -135,16 +128,15 @@ paths:
         association is completed.
 
 
-        The `v2` variant differs from `v1` in that it does not require the
-        `confirm_email` field to be resubmitted and aligns duplicate-account
-        error codes with the logistration MFE's expectations.
+  This endpoint is CSRF-exempt. Depending on deployment settings,
+  `confirm_email` may be present in the dynamic form description and
+  should be submitted when required by that form metadata.
       tags: [registration]
-      security:
-        - CsrfToken: []
+      security: []
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/RegistrationRequest'
             examples:
@@ -156,9 +148,6 @@ paths:
                   name: Jane Doe
                   honor_code: true
                   terms_of_service: true
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/RegistrationRequest'
       responses:
         '200':
           description: Account created successfully.
@@ -278,15 +267,7 @@ paths:
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              properties:
-                email:
-                  type: string
-                password:
-                  type: string
-                analytics:
-                  type: object
-              required: [email, password]
+              $ref: '#/components/schemas/LoginRequestV1'
       responses:
         '200':
           description: Login succeeded.
@@ -301,7 +282,7 @@ paths:
               schema:
                 $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
         '403':
-          description: Forbidden - account locked out, rate limited, or TPA-only account.
+          description: Forbidden - pending TPA flow cannot resolve a linked account and no first-party credentials were supplied.
           content:
             application/json:
               schema:
@@ -336,10 +317,7 @@ paths:
         content:
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/LoginRequest'
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
+              $ref: '#/components/schemas/LoginRequestV2'
       responses:
         '200':
           description: Login succeeded.
@@ -354,10 +332,7 @@ paths:
               schema:
                 $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
         '403':
-          description: >-
-            Forbidden - account locked out after repeated failures, rate
-            limited, or the account is linked to a third-party-auth provider
-            and no password is usable.
+          description: Forbidden - pending TPA flow cannot resolve a linked account and no first-party credentials were supplied.
           content:
             application/json:
               schema:
@@ -379,7 +354,7 @@ paths:
         content:
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/LoginRequest'
+                $ref: '#/components/schemas/LoginRequestV1'
       responses:
         '200':
           description: Login succeeded.
@@ -388,13 +363,13 @@ paths:
               schema:
                 $ref: 'components.yaml#/components/schemas/LoginSuccessResponse'
         '400':
-          description: Invalid credentials.
+          description: Invalid credentials, account lockout, rate limit, or other retryable authentication failure.
           content:
             application/json:
               schema:
                 $ref: 'components.yaml#/components/schemas/LoginErrorResponse'
         '403':
-          description: Forbidden - locked out, rate limited, or TPA-only account.
+          description: Forbidden - pending TPA flow cannot resolve a linked account and no first-party credentials were supplied.
           content:
             application/json:
               schema:
@@ -477,7 +452,6 @@ paths:
       summary: Log the user out (same behavior as `GET`).
       tags: [logout]
       security:
-        - SessionAuth: []
         - CsrfToken: []
       responses:
         '200':
@@ -521,29 +495,25 @@ paths:
               required: [email]
       responses:
         '200':
-          description: Reset email sent (or silently skipped for unknown addresses).
+          description: Reset email handler completed; empty response body.
+        '400':
+          description: Missing email input.
           content:
-            application/json:
+            text/plain:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  value:
-                    type: string
-                    description: Rendered confirmation HTML fragment.
+                type: string
         '403':
           description: Rate limited - a previous request is still in progress.
           content:
-            application/json:
+            text/plain:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  value:
-                    type: string
+                type: string
+        '500':
+          description: Internal failure while preparing or dispatching reset email.
+          content:
+            text/plain:
+              schema:
+                type: string
   /password_reset_confirm/{uidb36}-{token}/:
     get:
       operationId: password_reset_confirm_get
@@ -620,9 +590,9 @@ paths:
   /password/reset/{uidb36}-{token}/:
     post:
       operationId: logistration_password_reset_confirm
-      summary: Submit a new password (JSON API used by the logistration MFE).
+      summary: Submit a new password (form-encoded API used by the logistration MFE).
       description: >-
-        JSON counterpart to `/password_reset_confirm/{uidb36}-{token}/`,
+        API counterpart to `/password_reset_confirm/{uidb36}-{token}/`,
         used by single-page-app clients. Also supports the account-recovery
         flow via `?is_account_recovery=true`, in which case the user's
         primary email is updated to the recovery email on success.
@@ -637,7 +607,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
               type: object
               properties:
@@ -873,17 +843,25 @@ components:
           type: object
           description: 'Free-form analytics context, e.g. `{"enroll_course_id": "..."}`.'
       required: [username, email, password, name]
-    LoginRequest:
+    LoginRequestV1:
       type: object
       properties:
         email:
           type: string
-          description: Required for `v1`. Ignored if `email_or_username` is present.
-        email_or_username:
-          type: string
-          description: Required for `v2`. Either the account's email address or username.
+          description: Required for `v1` password login.
         password:
           type: string
         analytics:
           type: object
-      required: [password]
+      required: [email, password]
+    LoginRequestV2:
+      type: object
+      properties:
+        email_or_username:
+          type: string
+          description: Required for `v2` password login. Either the account's email address or username.
+        password:
+          type: string
+        analytics:
+          type: object
+      required: [email_or_username, password]

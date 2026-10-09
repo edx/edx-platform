@@ -53,7 +53,7 @@ components:
             write: Write access to user resources.
             email: Include the user's email address in issued JWTs.
             profile: Include profile claims (name, given_name, family_name) in issued JWTs.
-            user_id: Include the numeric edX user id in issued JWTs (password grant only).
+            user_id: Include the numeric edX user id in issued JWTs.
             tpa:read: Read access to third-party-auth user mapping data (server-to-server).
         password:
           tokenUrl: /oauth2/access_token/
@@ -69,6 +69,9 @@ components:
           scopes:
             read: Read access to user resources.
             write: Write access to user resources.
+            email: Include the user's email address in issued JWTs.
+            profile: Include profile claims in issued JWTs.
+            user_id: Include the numeric edX user id in issued JWTs.
             tpa:read: Read access to third-party-auth user mapping data.
   schemas:
     FieldErrorDetail:
@@ -93,30 +96,21 @@ components:
       properties:
         error_code:
           type: string
-          description: Machine-readable error code.
-          enum:
-            - validation
-            - duplicate-email
-            - duplicate-username
-            - duplicate-email-username
-            - user-not-authorized
-            - forbidden-request
-            - outdated-terms-of-service
-            - rate-limit-exceeded
+          description: Machine-readable error code emitted by the registration flow.
+          example: validation-error
         username_suggestions:
           type: array
           items:
             type: string
           description: Suggested alternative usernames, present on duplicate-username conflicts.
-      allOf:
-        - $ref: '#/components/schemas/FieldErrors'
+      additionalProperties:
+        type: array
+        items:
+          $ref: '#/components/schemas/FieldErrorDetail'
     ValidationErrorDecision:
-      type: object
+      type: string
       nullable: true
-      description: 'Null if the field is valid, otherwise an error detail.'
-      properties:
-        user_message:
-          type: string
+      description: Empty string when valid; otherwise a user-facing validation message.
     FormFieldRestriction:
       type: object
       properties:
@@ -260,7 +254,8 @@ components:
           type: string
         grant_type:
           type: string
-          enum: [authorization_code, password, client_credentials, refresh_token]
+          description: Authorization grant configured on the OAuth application (for example `authorization-code`, `password`, `client-credentials`).
+          example: client-credentials
         scopes:
           type: array
           items:
@@ -292,7 +287,7 @@ components:
           type: boolean
         user_id:
           type: integer
-          description: Present when the `user_id` scope was granted (password grant only).
+          description: Present when the `user_id` scope was granted.
         roles:
           type: array
           items:
@@ -331,6 +326,7 @@ components:
             - unsupported_grant_type
             - unsupported_token_type
             - access_denied
+            - account_disabled
             - server_error
         error_description:
           type: string
