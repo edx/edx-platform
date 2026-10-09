@@ -15,7 +15,7 @@ Inputs:
 
 ## Summary
 
-- The branch is `edx/release-ulmo` plus: the revert of the revert (`9e4844198b`, 13 conflicted files), the four ports from #505, the Django 5.2.18 bump, and the PII safelist fix. Conflict resolutions are listed in the message of `9e4844198b`.
+- The branch is `edx/release-ulmo` plus: the revert of the revert (`9e4844198b`, 13 conflicted files), the four ports from #505, the Django 5.2.18 bump, the PII safelist fix, and the video `public_view` fix from `edx/ulmo.3` (`e123921eb7`). Conflict resolutions are listed in the message of `9e4844198b`.
 - **No merge losses beyond the four #505 already found and fixed** (the ports). Every other flagged hunk is present in combined form or deliberately superseded.
 - Outside the 13 conflicted files, the branch's revert commit is **identical** to `010ea66478` (the May revert of the revert) plus `release-ulmo`'s changes since then.
 - No production (`base.txt`) pin is downgraded. `openedx-authz` is `0.20.1`. The migration inventory matches the plan.
@@ -42,7 +42,7 @@ Inputs:
 | Branch vs #505 (`be17bd60ca`) on the 13 files | Same resolutions where #505 had the file (`models.py`, `test_access.py` apart from import order, constraints, the lockfile pins). `course.py`, `test_content_libraries.py`, `test_api.py` and the tutorial workflow differ only by #507, #509 and #517, which #505 does not have. |
 | Port files vs #505 | Identical. |
 | History-independent merge (`git merge-tree --merge-base 242a69d06b edx/release-ulmo release/ulmo.1`) | 39 conflicted files (48 at ulmo.4+). On the branch: 18 combined, 14 identical to the fork (the same discussion, progress, `pipeline.py`, `thread.py` and constraints files that #505's audit triaged), 7 absent as intended (the moved video JS, the tutorial workflow, `create_user_gdpr_testing.py`). |
-| `edx/edx/ulmo.3` | Not done. |
+| `edx/edx/ulmo.3` | Its fixes not in upstream `release/ulmo.3` or `release-ulmo`: `94963dbae2` (upstream #38012, video `public_view` loads the nonexistent bundle `VideoBlockMain`; a ulmo.1 regression, never backported to `openedx/release/ulmo`) is **taken** as `e123921eb7`. `efdb407b39` ("Clean up some merge errors") does not apply: its `third_party_auth/utils.py` fix is for `fetch_metadata_xml`, which the fork removed, and its `pylint` disable and query counts are already on the branch, as is `771c25ec54` ("Update queries expected"). `582e345108` (temporary SAML SSRF revert) is not applicable. |
 
 ## Check 1: change survival
 
@@ -70,5 +70,4 @@ Dead-copy sweep (files on the branch but not in `release/ulmo.1`): 75 files, the
 ## Not done here
 
 - CI results (pending on the PR).
-- `show_unapplied_migrations` against a stage snapshot.
-- The cross-check against `edx/edx/ulmo.3`, and the ulmo.1-regression check (release notes).
+- The release-notes part of the ulmo.1-regression check.
