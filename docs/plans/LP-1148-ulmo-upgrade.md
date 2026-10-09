@@ -12,7 +12,7 @@ Written 2026-10-08 and updated 2026-10-09 so that a fresh session can continue f
 
 - `edx/release-ulmo` tip was `3c3fbbad34` (2026-10-08). Production runs `release-ulmo` on Django `4.2.28`.
 - **Batch 1 = ulmo.1 only.** The branch exists and holds only these docs; **the code work has not started.**
-- **Next action: the migration review**, step 9 of [Merge work and audit (batch 1)](#merge-work-and-audit-batch-1) (read-only queries under LP-1148). Do it **first**, because its results can change what goes in the branch: whether prod is still at its pre-May migration state or was left partly migrated, and whether `contentstore 0014` must be split (expand now, contract later) to keep a code-only rollback safe. **Then** the rest of the merge work (steps 1-8), then the handoff to QA. The code-side part of the review is done (2026-10-09; see "Code-side findings" under Migration state): it added `openedx-authz`/casbin and three `openedx-learning` migrations to the list, and found that `openedx_authz 0006` cannot be reversed. The prod queries and stage's table listing have been run (see "Results" under Migration state); still to do: exact `COUNT(*)` on the tables listed there, stage's `django_migrations`, `showmigrations --plan` with the batch-1 code, and a decision on prod's one library permission. Open decisions for the migration review: who can run read-only queries on stage and prod, and whether a stage snapshot is available for `showmigrations --plan`.
+- **Next action: the merge work** (steps 1-8 of [Merge work and audit (batch 1)](#merge-work-and-audit-batch-1)), then the handoff to QA. The migration review is done on the data side (2026-10-09; see [Migration state in prod, edge and stage](#migration-state-in-prod-edge-and-stage)): **no manual migration steps are needed in any environment**; the normal deploy applies what is missing. One check remains because it needs the branch: run `show_unapplied_migrations` (or `showmigrations --plan`) with the batch-1 code against a stage snapshot, and redo the dependency-migration comparison on the real batch-1 `base.txt` (including that `openedx-authz` is `0.20.0` or `0.20.1`).
 - **Batch 2** is some set of changes after ulmo.1 on `openedx/release/ulmo`. How much goes in it is not decided; see [Batch 2](#batch-2-scope-open).
 - #505 (`robrap/lp1148-ulmo4-continue`) is a superseded reference branch, closed; its docs are to be removed (see [What happens to #505](#what-happens-to-505)).
 - **Pending housekeeping:**
@@ -21,7 +21,7 @@ Written 2026-10-08 and updated 2026-10-09 so that a fresh session can continue f
   - LP-1351 is not in a sprint (LP-1308 is in "Q4 Sprint 2", starting 2026-10-12, whose goal is "Deploy edxapp Ulmo.1").
   - Check the edx-internal playbook PR (#14962) for claims this plan corrected: "five days in prod", "ulmo.3 was deployed", "rolling back code never un-applies migrations".
   - LP-1148 and LP-1351 are not linked to each other; the handoff step covers it. Add a link if wanted.
-- Nothing about the decisions below lives only in a conversation; if something here looks wrong, check it against git (every claim cites commits).
+- Nothing about the decisions below lives only in a conversation or in notes outside this PR: this plan is the only record, and no memory notes were kept for it. If something here looks wrong, check it against git (every claim cites commits).
 
 ## Jira tickets
 
@@ -50,7 +50,7 @@ Written 2026-10-08, updated 2026-10-09. This plan has no tests behind it; the cl
 - **Not checked at all:**
   - Whether #481 (the asset-sandbox fix) is **deployed**. It is merged on `release-ulmo`; the edx-internal prod deploy commits (see the evidence section) could answer this.
   - Whether the `010ea66478` / #505 conflict resolutions are correct (see the cross-check section; hours in prod is weak evidence).
-  - **How long the ulmo.1 build really served prod, and what migration state prod is in.** The sources disagree; see [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy).
+  - **How long the ulmo.1 build really served prod.** The sources disagree; see [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy). (The migration state of prod, edge and stage is now known; see [Migration state](#migration-state-in-prod-edge-and-stage).)
   - How many conflicts the revert of `3a8fdad2fd` produces on the current tip (never tried; expect many, since `release-ulmo` has moved about 230 commits).
   - Which of #505's audit fixes and CI fixes apply to the ulmo.1 range (the plan says to check each).
   - The edx-internal playbook claims (open question 4, principle 2, ADR 0001) were read on branch `robrap/openedx-upgrade-process` of PR #14962 and may have changed.
@@ -68,6 +68,7 @@ Written 2026-10-08, updated 2026-10-09. This plan has no tests behind it; the cl
 | Audit of #505 | `LP-1148-ulmo4-merge-audit.md` (this directory). The batch-1 audit goes in `LP-1148-ulmo1-merge-audit.md`, not yet created. |
 | Playbook | edx-internal PR #14962, `docs/openedx-upgrade-process/` |
 | Deploy record | edx-internal commits "Deploy edxapp-lms to prod: app image lms-prod-<sha>-<build>" (`git log` on master) |
+| edx-internal locally | A clone at `../other/edx-internal` (relative to this repo); migrations and rollback are defined in `gocd/generated-pipelines/templates/edxapp.yaml.j2` and `argocd/applications/edxapp-migrations/` |
 
 ## History: what was deployed
 
@@ -128,9 +129,9 @@ The sources disagree on how long the ulmo.1 build served prod:
 - The incident page (Confluence, "AU-2968/BOMS-621") says: migrations 15:40-15:45 UTC, code deploy 15:46-15:52, **code rollback 16:39-16:45, migrations rollback 16:47-17:06**. No prod commit in edx-internal changes the image between 15:43 and 23:25 UTC.
 - LP-1326 says "reverted ~40 minutes later"; LP-846 said "live for approximately one hour".
 
-What the prod database adds (2026-10-09): the May migrations ran at 15:43 UTC, and afterwards the reversible ones are gone while `casbin_adapter` and `openedx_authz` (and `submissions 0006`) remain, which supports the incident page's migration rollback around 16:47-17:06 UTC. It does not tell us when the code was rolled back, and it does not explain why the manifests and Datadog still show the ulmo.1 image until 23:25 UTC. One possibility to check: a rollback done outside the manifest commits (for example in the deploy tool) while the `version` tag lagged.
+What the databases add (2026-10-09): on prod and edge the May migrations ran at 15:43 UTC, and afterwards the reversible ones are gone while `casbin_adapter`, `openedx_authz` and `submissions 0006` remain, which supports the incident page's migration rollback around 16:47-17:06 UTC. It does not tell us when the code was rolled back, and it does not explain why the manifests and Datadog still show the ulmo.1 image until 23:25 UTC. One possibility: a rollback done outside the manifest commits (for example in the deploy tool) while the `version` tag lagged.
 
-Why it matters: the migration state in prod depends on it. If migrations were rolled back at 17:06 UTC while code stayed up until 23:25 UTC, that is an inconsistent state worth understanding. Resolving this is a task under the QA ticket (LP-1351). Until then, treat the migration state as unknown and verify it with the queries in [Migration state in stage and prod](#migration-state-in-stage-and-prod).
+This no longer blocks anything: the migration state of every environment is now known (see [Migration state in prod, edge and stage](#migration-state-in-prod-edge-and-stage)) and needs no manual steps. The timeline is still unreconciled, and reconciling it is a task under the QA ticket (LP-1351) if someone wants the full incident story.
 
 ### The revert trap (important for anything that merges into `release-ulmo`)
 
@@ -165,17 +166,17 @@ Once ulmo.1 is genuinely in `release-ulmo`, the trap is gone and later batches a
 
 ## Merge work and audit (batch 1)
 
-Ticket: LP-1148. This is the meaty work. **Do the migration review (step 9) first**, since it can change the branch (see Start here). Do the merge in a throwaway worktree first to measure the conflicts, then on the branch.
+Ticket: LP-1148. This is the meaty work. The migration review (step 9) is done on the data side and did not change the branch plan. Do the merge in a throwaway worktree first to measure the conflicts, then on the branch.
 
 1. **Sync.** `git fetch edx openedx --tags`. Base is `edx/release-ulmo`; if it moved past `3c3fbbad34`, rebase/merge so the tested tree is the tree that lands.
 2. **Revert the revert.** `git revert -m1 3a8fdad2fd` on the branch. `release-ulmo` has moved about 230 commits since `010ea66478`, so expect conflicts. Resolve using, in this order of preference: the fork's own intent (divergence registry in the playbook, `03-...registry`), then the resolutions already made in `010ea66478` and, for the same files, in #505's `fef5916109` (merge of `release-ulmo`) and `fc8f1f0a8c`. Do not take a side wholesale: do not use `git checkout --theirs/--ours` on a whole file without diffing that side against the merge base, and before committing run `git diff --name-only --diff-filter=U` and `git status` to confirm every hand-edited file is staged. (Both mistakes happened once in #505 and were caught.)
 3. **Ports** (video JS moved from `xmodule/js/src/video/` to `xmodule/assets/video/public/js/` in ulmo.1, so fork changes to the old paths are not carried by git): cherry-pick or redo `6732d6fd28` (LP-1205 audio-description flag removal, #461), `687065c198` (HLS fragment retry limit and its spec), `c56841c5e4` (language menu sizing, #215 JS half), `91b8e72823` (drop the studio-frontend translations pull from the Makefile; upstream `28ab2ceb67` is in ulmo.1). Check whether `release-ulmo` gained any other fork changes to old-path video files since May (`git log 010ea66478..edx/release-ulmo -- xmodule/js/src/video xmodule/assets/video`; at last look: `353a5da311`, `43300f9143`, `fb8bc85234`). Delete the dead RequireJS copy follow-up later.
 4. **Take only the audit's merge-loss fixes that belong to the ulmo.1 range**, and skip ulmo.4-only fixes (the pycodestyle E302/E303 fixes in `test_extract_archive.py` / `test_videos.py`, and the `.annotation_safe_list.yml` entry for `oel_publishing.PublishableEntityVersionDependency`) unless CI shows they are needed. The `xmodule/` CODEOWNERS fix in #505 was for upstream's community owners; check whether ulmo.1 does the same.
 5. **Django bump** to 5.2.18 as its own commit (see Decisions).
-6. **Audit.** Re-run the audit scripts (appendix of `LP-1148-ulmo4-merge-audit.md`: `survival.sh`, `hunks.py`, the dead-copy sweep, `lockfile_downgrades.py`) with the ulmo.1 range: the pre-ulmo.1 common base `242a69d06b`, upstream `release/ulmo.1`, fork `edx/release-ulmo`. Write results in a new `LP-1148-ulmo1-merge-audit.md`. Also run the history-independent merge (`git merge-recursive 242a69d06b -- edx/release-ulmo release/ulmo.1`, 48 conflicted files at ulmo.4+; recount for ulmo.1) as the independent reference.
+6. **Audit.** Re-run the audit scripts (appendix of `LP-1148-ulmo4-merge-audit.md`: `survival.sh`, `hunks.py`, the dead-copy sweep, `lockfile_downgrades.py`) with the ulmo.1 range: the pre-ulmo.1 common base `242a69d06b`, upstream `release/ulmo.1`, fork `edx/release-ulmo`. Write results in a new `LP-1148-ulmo1-merge-audit.md`. Also run the history-independent merge (`git merge-recursive 242a69d06b -- edx/release-ulmo release/ulmo.1`, 48 conflicted files at ulmo.4+; recount for ulmo.1) as the independent reference. Also, on the batch-1 `base.txt`: confirm `openedx-authz` is `0.20.0` or `0.20.1` (both end at migration `0006`; `0.21.0` and later add a seventh, so review it if the version is newer), and repeat the dependency-migration comparison from [Migration state](#migration-state-in-prod-edge-and-stage).
 7. **Cross-check** per the next section.
 8. **CI.** Fix failures as separate commits. Pay particular attention to `lms/djangoapps/courseware/tests/test_fields.py`, the video tests, query-count tests (ulmo.3 needed "Update queries expected"), `make lint-imports`, migrations checks and `makemigrations --check --dry-run` for lms and cms. `make check_keywords` runs after `pii_check` in the same job. Also re-check `.github`: in #505 all differences from `release-ulmo` were modifications (mostly action version bumps), no added or removed workflows, and the `django-version: "5.2"` matrix leg of `unit-tests.yml` was dropped since `pinned` is now 5.2, so the "dj=pinned" jobs are the Django 5.2 tests.
-9. **Migration state in stage and prod** (below).
+9. **Migration state** (below): done on the data side. Remaining: `show_unapplied_migrations` or `showmigrations --plan` with the batch-1 code against a stage snapshot.
 10. **Handoff to QA.** When the migration review is done and the branch is ready for testing, update [QA and testing](#qa-and-testing-lp-1351) with anything the audit, cross-checks or migration review found (things to add or remove), and confirm the QA ticket (LP-1351) still matches it. Then push, open or update the batch-1 PR (draft) with these docs.
 
 ### Cross-checks and the disagreement rule
@@ -202,95 +203,83 @@ Comparisons to run (record results in the batch-1 audit file):
 
 Not every post-ulmo.1 upstream commit is safe to skip or take. Before finalizing batch 1, read the ulmo.2, ulmo.3 and ulmo.4 release notes and grep post-ulmo.1 commit bodies for "regression", "fixes #" and "fixes ulmo.1", and ask whether any fixes a bug **introduced by** ulmo.1 that `release-ulmo` would not have. First pass (by commit message only, not code): none found; the fixes below target code `release-ulmo` already has.
 
-### Migration state in stage and prod
+### Migration state in prod, edge and stage
 
-Read-only queries, done as part of LP-1148. The ulmo.1 build was deployed once in May (see [Prod deploy evidence](#prod-deploy-evidence)). The incident page says its migrations were rolled back; the timeline is not reconciled (see [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy)), so what the databases have applied is unknown from the repo. Run on stage and prod and record results (with dates) here:
+Ticket: LP-1148. Status: **the data-side review is done (2026-10-09).** Only one check remains, below, because it needs the batch-1 branch.
 
-1. `SELECT app, name, applied FROM django_migrations WHERE applied >= '2026-05-15' OR app IN ('openedx_authz', 'casbin_adapter', 'oel_publishing', 'oel_components', 'modulestore_migrator', 'contentstore') ORDER BY app, name;` Did May apply the ulmo.1 migrations, and were they unapplied afterwards? (A rolled-back migration has no row; a row with an `applied` date in May means it was applied and never un-applied.)
-2. `showmigrations --plan` for lms and cms with the batch-1 code against a stage snapshot.
-3. If `contentstore 0014` is applied in prod: check for ComponentLink/ContainerLink errors since May, and whether prod uses library upstream-sync at all.
-4. Row counts for `contentstore_componentlink`, `contentstore_containerlink` and `modulestore_migrator_*` (lock and duration risk of `0014` and the migrator migrations), `content_libraries_contentlibrarypermission` (migrated by `openedx_authz 0006`), and `oel_publishing_draft`, `oel_publishing_containerversion`, `oel_publishing_draftchangelogrecord` (the `oel_publishing 0010` backfill loops over them row by row).
+**Conclusion: no manual migration steps are needed in any environment.** The normal deploy applies what is missing (the `run_migrations` step of the GoCD edxapp pipeline). Nothing needs rolling back or re-running.
 
-The queries as SQL, read-only, for the main edxapp database on stage and then prod (query 2 is a command, not SQL). Record the results with dates below this list.
+Still to do once the batch-1 branch exists: run `show_unapplied_migrations` (or `showmigrations --plan`) for lms and cms with the batch-1 code against a stage snapshot, and redo the dependency-migration comparison below on the real batch-1 `base.txt`.
+
+#### State of each environment (queried 2026-10-09, read-only)
+
+| | Prod | Edge | Stage |
+|---|---|---|---|
+| In-repo ulmo.1 migrations (`contentstore 0014`, `modulestore_migrator 0002`-`0006`) and `openedx-learning` (`oel_components 0004`, `oel_publishing 0009`/`0010`) | Not applied (prod is at `contentstore 0013`, `modulestore_migrator 0001`, `oel_components 0003`, `oel_publishing 0008`) | Same as prod | **Applied**, 2026-05-19 (`modulestore_migrator 0002` was applied earlier, 2025-10-22) |
+| `casbin_adapter 0001`, `openedx_authz 0001`-`0006` | Applied 2026-05-27 15:43 UTC | Applied 2026-05-27 15:43 UTC | `0001`-`0005` on 2026-05-19; `0006` on 2026-05-22 |
+| Package no-ops: `submissions 0006`/`0007`, `lti_consumer 0019`, `user_tasks 0005`, `workflow 0006` | Only `submissions 0006` (from 2026-05-27) and `workflow 0006` (2026-06-01, `release-ulmo`'s own ora2 bump) | Same as prod | All applied (2026-05-19 and 05-22) |
+| In-repo MariaDB no-ops (`student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`) and `survey_report 0006` | Not applied | Not applied | Not applied |
+| Exact counts: libraries / permissions / casbin rules | **1 / 1 / 1** | 0 / 0 / 0 | 23 / 36 / 36 |
+| `oel_publishing_draft`; `contentstore_componentlink`, `contentstore_containerlink` | 0; 0, 0 | 0; 0, 0 | 26; 0, 0 |
+
+What this means:
+- **Prod and edge are not at their pre-May state.** The casbin, authz and `submissions 0006` migrations from the May 27 deploy are still applied and will be skipped. The reversible ones were rolled back. Batch 1 applies everything else fresh, including the package no-ops `lti_consumer 0019`, `user_tasks 0005` and `submissions 0007`.
+- **Prod's one library permission is already in authz.** The May 27 run of `openedx_authz 0006` copied it: the library `edxtest` has one admin permission and one casbin rule, scope and subject. (The first `table_rows` estimates said 0; the exact counts show 1. Never trust `information_schema` row counts; on stage it showed 34 where the real count was 36.) Edge has no libraries, so there is nothing to copy there.
+- **Stage was never rolled back,** and its library data and authz data are in sync (36 permissions, 36 rules).
+- **`contentstore 0014` is low-risk everywhere:** `contentstore_componentlink` and `contentstore_containerlink` are empty in all three, so nothing is lost and it is instant. Splitting it (expand now, contract later) is not needed.
+- **`oel_publishing 0010`** (a row-by-row backfill) has no rows to process in prod and edge (no drafts or containers); on stage it already ran.
+- **Stage's database is ahead of its code.** Stage already has `contentstore 0014` (it drops `downstream_is_modified`) while running `release-ulmo`, which still reads that column. Library-sync queries on stage may fail until batch 1 deploys. This is the same hazard as the code-only-rollback caveat in [Deploy and rollback](#deploy-and-rollback-lp-1308), seen in practice.
+- **Re-running the authz data copy would be safe if it were ever needed:** assigning a role that already exists is skipped, and the group path loops over the same call. It is not needed. Do not try to un-apply `openedx_authz 0006`: it has no reverse step, and leaving applied migrations alone is harmless.
+- The MariaDB conversions are no-ops: the database is MySQL (AWS Aurora; stage 8.0.42, prod 8.0.39, edge 8.0.28), and each migration returns early unless `SELECT VERSION()` contains "mariadb".
+
+#### How migrations run and roll back
+
+From edx-internal (`gocd/generated-pipelines/templates/edxapp.yaml.j2`, `argocd/applications/edxapp-migrations/`):
+- The GoCD edxapp pipeline has a `run_migrations` step that runs a Kubernetes job per variant before the code deploy. Forward: `show_unapplied_migrations`, then `run_migrations`; it uploads `migration_plan.yml` and `migration_result.yml` to a `<env>-gocd-artifacts` bucket.
+- Rollback restores each app to the state recorded in that plan (`run_specific_migrations`), app by app in the order they were migrated, and stops at the first failure.
+- The May 27 partial state (casbin, authz and `submissions 0006` left applied, everything reversible rolled back) is consistent with the rollback stopping at the irreversible `openedx_authz 0006`. This is an inference; the S3 artifacts were not pulled and are not needed, because the current state is known.
+- A rollback of batch 1 should not repeat that failure: authz and casbin are already applied in prod and edge, so they will not be in batch 1's forward plan.
+- `migrations: enabled: false` in the argocd per-environment config is not read by anything in edx-internal (the `django-ida` chart is external); it looks like a leftover from before GoCD ran migrations. It does not matter here.
+- There is no agreed way yet to run a one-off management command in an environment (a temporary GitHub Action is one option). None is needed for migrations.
+
+#### Queries as run (2026-10-09; read-only, main edxapp database)
 
 ```sql
--- 1. What was applied, and was it un-applied? (a row means "applied now"; none means not applied)
+-- A. What is applied? (a row means "applied now"; no row means not applied)
 SELECT app, name, applied FROM django_migrations
 WHERE applied >= '2026-05-15'
    OR app IN ('openedx_authz', 'casbin_adapter', 'oel_publishing', 'oel_components', 'modulestore_migrator', 'contentstore')
 ORDER BY app, name;
 
--- 3 and 4. Which of the new tables exist, and how big are they? (table_rows is an estimate on InnoDB;
--- use COUNT(*) on any table that matters)
-SELECT table_name, table_rows FROM information_schema.tables
-WHERE table_schema = DATABASE()
-  AND (table_name LIKE 'modulestore_migrator\_%' OR table_name LIKE 'oel\_%' OR table_name LIKE 'casbin%'
-       OR table_name LIKE 'openedx_authz%'
-       OR table_name IN ('contentstore_componentlink', 'contentstore_containerlink',
-                         'content_libraries_contentlibrary', 'content_libraries_contentlibrarypermission'))
-ORDER BY table_name;
-
--- Do v2 libraries exist at all? (decides whether openedx_authz 0006 and oel_publishing 0010 have data to process)
-SELECT COUNT(*) FROM content_libraries_contentlibrary;
-SELECT COUNT(*) FROM content_libraries_contentlibrarypermission;
-```
-
-If `content_libraries_contentlibrary` is empty on prod, the two data migrations are no-ops there. Stage may differ from prod, so run both.
-
-Migrations that the ulmo.1 range adds relative to pre-May `release-ulmo`: `contentstore 0014`, `modulestore_migrator 0002`, `0003`, `0004`, `0006` (`0004` has a squash-style name but no `replaces`), `survey_report 0006`, and five MariaDB conversions (no-ops on our Aurora MySQL; `student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`). `announcements 0001_initial` is deleted with the app; its `django_migrations` row will be stale, harmless unless a migration depends on it. `release/ulmo.1` and `release/ulmo.4` have identical migration file sets, so batch 2 adds none. Re-check the list against the batch-1 diff (it was computed for #505). The fork migrations `third_party_auth 0014/0015`, `support 0007` and `course_overviews 0030` are already in `release-ulmo`.
-
-#### Results (2026-10-09)
-
-**Prod** (`django_migrations`, table sizes and the library counts all returned):
-- **Applied on 2026-05-27 at 15:43 UTC and still applied** (never un-applied): `casbin_adapter 0001`, `openedx_authz 0001`-`0006`, and `submissions 0006_mariadb_uuid_conversion` (from edx-submissions 3.12.1; a no-op on Aurora MySQL). The timestamps match the May deploy.
-- **Not applied** (rolled back, or never applied): every in-repo ulmo.1 migration in the list above (`contentstore 0014` and later; prod is at `contentstore 0013`; `modulestore_migrator` is at `0001`; none of the five `*_mariadb_uuid_conversion` or `survey_report 0006`) and the three `openedx-learning` ones (`oel_components` stops at `0003`, `oel_publishing` at `0008`). Since the table cannot show an un-applied migration (its row is deleted), this fits the incident page's "migrations rollback 16:47-17:06 UTC" for the reversible migrations, and an irreversible `openedx_authz 0006` left in place with the casbin tables.
-- Other May-onward rows are `release-ulmo`'s own changes (for example `forum 0009` on 2026-05-22, `workflow 0006` on 2026-06-01, enterprise and `support 0007`) and are not part of this upgrade.
-- **Table sizes** (estimates; see the caveat below): `contentstore_componentlink`, `contentstore_containerlink`, `modulestore_migrator_*` and every `oel_*` table show 0 rows, except `oel_tagging_taxonomy` (2). The `openedx_authz_*` tables and `casbin_rule` show 0. **`content_libraries_contentlibrary` has 1 row and `content_libraries_contentlibrarypermission` has 1 row (exact `COUNT(*)`).**
-
-What this means for batch 1 (first reading; confirm with the follow-up queries):
-1. **Prod is not at its pre-May state.** The casbin, authz and `submissions 0006` migrations are already applied and will not run again. Batch 1 will apply the rest fresh.
-2. **`contentstore 0014` looks low-risk in prod.** Prod is at `0013` and both link tables look empty, so there is nothing to lose and the migration is instant. Splitting it (expand now, contract later) is probably unnecessary. Decide after the exact counts.
-3. **The authz data migration will not run again, so prod's one library permission may not be in the casbin tables.** `openedx_authz 0006` already ran on May 27, yet the authz tables look empty while one library and one permission row exist. Either that library or permission was created after May 27, or it failed to migrate, or the estimate is wrong. If the library needs authz roles, they would have to be created another way (for example by re-running `migrate_legacy_permissions`); legacy permissions are still checked by `user.has_perm` in the places checked (`user_can_create_library`), but not every path was verified. It is one library, so this is small, but it needs an owner's decision.
-4. **`oel_publishing 0010` is trivial in prod** (empty `oel_*` tables), unlike on stage.
-5. **Do not trust `table_rows`.** On stage it showed 34 for `content_libraries_contentlibrarypermission` where `COUNT(*)` returned 36. Run `COUNT(*)` before concluding any table is empty.
-
-**Stage** (table listing and the two library counts only; the `django_migrations` output has not been provided yet):
-- Stage already has the authz data: 23 libraries, 23 `openedx_authz_scope` rows and 13 users, and 36 `casbin_rule` rows against 36 permission rows. Stage also has the `openedx-learning` 0009 tables (`oel_publishing_publishsideeffect`, `oel_publishing_publishableentityversiondependency`). So **stage appears to be in the migrated ulmo.1 state for those apps** (it was deployed there in May and not rolled back, as far as the tables show), and it holds real v2 library data (23 libraries, about 26 components) that prod does not.
-- The link and `modulestore_migrator` tables are empty on stage too.
-
-Follow-up queries still to run (prod and stage unless noted):
-
-```sql
--- Exact counts for the tables whose estimates read 0 or are suspect
+-- B. Exact counts (use COUNT(*), not information_schema table_rows)
 SELECT 'casbin_rule' t, COUNT(*) n FROM casbin_rule
 UNION ALL SELECT 'openedx_authz_scope', COUNT(*) FROM openedx_authz_scope
 UNION ALL SELECT 'openedx_authz_subject', COUNT(*) FROM openedx_authz_subject
+UNION ALL SELECT 'openedx_authz_extendedcasbinrule', COUNT(*) FROM openedx_authz_extendedcasbinrule
+UNION ALL SELECT 'content_libraries_contentlibrary', COUNT(*) FROM content_libraries_contentlibrary
+UNION ALL SELECT 'content_libraries_contentlibrarypermission', COUNT(*) FROM content_libraries_contentlibrarypermission
 UNION ALL SELECT 'oel_publishing_learningpackage', COUNT(*) FROM oel_publishing_learningpackage
 UNION ALL SELECT 'oel_publishing_draft', COUNT(*) FROM oel_publishing_draft
 UNION ALL SELECT 'contentstore_componentlink', COUNT(*) FROM contentstore_componentlink
 UNION ALL SELECT 'contentstore_containerlink', COUNT(*) FROM contentstore_containerlink;
 
--- The one prod library and its permission: what are they, and when was it created?
+-- C. The library rows (small tables; shows which libraries and permissions exist)
 SELECT * FROM content_libraries_contentlibrary;
 SELECT * FROM content_libraries_contentlibrarypermission;
 ```
 
-and the first `django_migrations` query on **stage** (not yet provided).
-
-#### Code-side findings (2026-10-09)
+#### What the ulmo.1 range adds (code-side review, 2026-10-09)
 
 Read from git and GitHub only (`e45e7825ea` is the May build; "release-ulmo" is the tip, 2026-10-09).
 
-1. **The list above is incomplete: it missed migrations that come from dependency upgrades.** The May build also added or upgraded packages that ship their own migrations. Compared with `release-ulmo` today:
-   - **`openedx-authz` 0.20.1 (new package; also new `pycasbin` and `casbin-django-orm-adapter`).** Brings `openedx_authz 0001`-`0006` and, through `0001`'s dependency, `casbin_adapter 0001_initial` (the `CasbinRule` table). The first ulmo.1 attempt (#212) was reverted on 2026-05-19 (#300) for a "casbin migration error", so this is the most likely trouble spot. Not in the pre-May `release-ulmo` and not in it today.
-     - **`openedx_authz 0006_migrate_legacy_permissions` is a data migration (`RunPython`) with no reverse.** It copies `ContentLibraryPermission` rows (the `content_libraries` app) into the casbin tables. **That app is the v2 (Learning Core) library app**: `ContentLibrary` is keyed by `LibraryLocatorV2`, and its docstring says all content lives in Learning Core. If prod has no v2 libraries, the table is empty and the migration copies nothing. Supporting evidence, not proof: edx-internal prod, stage and edge CMS config all set `ENABLE_LIBRARY_AUTHORING_MICROFRONTEND: false`. The row counts in the queries below decide it. The same applies to `oel_publishing 0010` and the `oel_*` tables, which hold v2 library data. Django refuses to un-apply a `RunPython` that has no `reverse_code`, so it cannot be rolled back with `migrate openedx_authz zero`. That conflicts with the incident page's "migrations rollback 16:47-17:06"; see [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy). The prod results (below) show `openedx_authz 0001`-`0006` are still applied there, so the migration was left in place, not reversed.
-   - **`openedx-learning` 0.27.1 → 0.30.2.** Three new migrations: `oel_components 0004_remove_componentversioncontent_uuid` (drops a column), `oel_publishing 0009_dependencies_and_hashing` (new tables, columns, constraints) and `oel_publishing 0010_backfill_dependencies` (a data backfill; its own docstring calls the draft update "slow and expensive", looping row by row over `Draft`, `ContainerVersion` and change-log rows). Also `modulestore_migrator 0004` depends on `oel_publishing 0008`, which exists in 0.27.1.
-   - **Patch bumps not checked for migrations:** `django-user-tasks` 3.4.3 → 3.4.4, `edx-submissions` 3.12.0 → 3.12.1, `lti-consumer-xblock` 9.14.2 → 9.14.3 (the tags could not be found by the repo names used; check the changelogs).
-2. **In-repo migrations match the list above.** `e45e7825ea` adds exactly the 11 files listed (`contentstore 0014`, `modulestore_migrator 0002`/`0003`/`0004`/`0006`, five `*_mariadb_uuid_conversion`, `survey_report 0006`), deletes `announcements 0001_initial`, and keeps the fork migrations `support 0007`, `course_overviews 0030` and `third_party_auth 0014`/`0015`. Upstream `release/ulmo.1` has no `third_party_auth 0014`/`0015` (they are fork-only and exist in `e45e7825ea` and `release-ulmo`).
-3. **`contentstore 0014`.** Schema-wise it is reversible: `0013` adds `downstream_is_modified` as `BooleanField(default=False)`, so un-applying re-adds it with a default. It loses data both ways: going forward it drops `downstream_is_modified` with no data migration, and un-applying drops `downstream_customized`.
-4. **MariaDB conversions are no-ops here** (confirmed engine is Aurora MySQL; the code returns early unless `SELECT VERSION()` contains "mariadb").
-5. **Batch 1 must not downgrade dependency pins.** `e45e7825ea` had older pins than `release-ulmo` has now, for packages that carry migrations: `edx-enterprise` 8.0.15 (now 8.17.0), `enterprise-integrated-channels` 0.1.58 (now 0.1.70), `openedx-django-wiki` 3.1.1 (now 3.1.2), `ora2` 6.17.1 (now 6.17.2). Keep `release-ulmo`'s versions. This is what the lockfile downgrade check is for; it matters for migrations because the database already has those packages' newer migrations applied.
-6. **Not reviewed yet:** the `modulestore_migrator` numbering gap (there is no `0005`; `0004` has "squashed_0005" in its name but no `replaces`, and `0006` depends on `0004`), which is only a problem if some database has recorded a `0005`; and whether other dependency upgrades between `release-ulmo` and the batch-1 lockfile (once built) add migrations. Redo this comparison on the real batch-1 `base.txt` once the branch exists.
+1. **In-repo migrations added relative to pre-May `release-ulmo`** (the 11 files in `e45e7825ea`): `contentstore 0014`, `modulestore_migrator 0002`/`0003`/`0004`/`0006` (`0004` has "squashed_0005" in its name but no `replaces`; there is no `0005`, and `0006` depends on `0004`), `survey_report 0006`, and five MariaDB conversions (`student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`). `announcements 0001_initial` is deleted with the app; its `django_migrations` row will be stale, harmless unless a migration depends on it. `release/ulmo.1` and `release/ulmo.4` have identical migration file sets, so batch 2 adds none. The fork migrations `third_party_auth 0014/0015`, `support 0007` and `course_overviews 0030` are already in `release-ulmo` (upstream `release/ulmo.1` lacks `third_party_auth 0014/0015`, which are fork-only). Re-check this list against the batch-1 diff.
+2. **Dependency upgrades also ship migrations** (not in the list above, and not in `release-ulmo` today):
+   - **`openedx-authz` (new; also new `pycasbin` and `casbin-django-orm-adapter`).** Brings `openedx_authz 0001`-`0006` and, through `0001`'s dependency, `casbin_adapter 0001_initial`. The first ulmo.1 attempt (#212) was reverted on 2026-05-19 (#300) for a "casbin migration error". `openedx_authz 0006_migrate_legacy_permissions` is a `RunPython` data migration with **no reverse**: it copies `ContentLibraryPermission` rows (the `content_libraries` app, which holds v2 Learning Core libraries, keyed by `LibraryLocatorV2`) into the casbin tables, so it cannot be un-applied with `migrate openedx_authz zero`. Prod, edge and stage already have it applied (above). Upstream `release/ulmo.1` pins `0.20.0`, the May build pinned `0.20.1`; both end at migration `0006`, and `0.21.0` and later add a seventh. `release-ulmo` has no `openedx-authz` today, so there is nothing to pin there; the package arrives with batch 1. After batch 1 lands, a constraint so that a dependency bot does not bump it unreviewed is an optional follow-up.
+   - **`openedx-learning` 0.27.1 → 0.30.2.** Three new migrations: `oel_components 0004_remove_componentversioncontent_uuid` (drops a column), `oel_publishing 0009_dependencies_and_hashing` (new tables, columns, constraints) and `oel_publishing 0010_backfill_dependencies` (a row-by-row data backfill; its docstring calls the draft update "slow and expensive"). `modulestore_migrator 0004` depends on `oel_publishing 0008`, which exists in 0.27.1.
+   - **Patch bumps ship MariaDB no-ops too:** `edx-submissions` 3.12.1 (`submissions 0006`, `0007`), `lti-consumer-xblock` 9.14.3 (`lti_consumer 0019`), `django-user-tasks` 3.4.4 (`user_tasks 0005`); `ora2` (`workflow 0006`) arrived with `release-ulmo`'s own bump.
+3. **`contentstore 0014`.** `0013` adds `downstream_is_modified` as `BooleanField(default=False)`, so un-applying `0014` re-adds it with a default; the schema is reversible. It loses data both ways: going forward it drops `downstream_is_modified` with no data migration, and un-applying drops `downstream_customized`. The tables are empty in every environment, so this does not matter in practice.
+4. **Batch 1 must not downgrade dependency pins.** `e45e7825ea` had older pins than `release-ulmo` has now, for packages that carry migrations: `edx-enterprise` 8.0.15 (now 8.17.0), `enterprise-integrated-channels` 0.1.58 (now 0.1.70), `openedx-django-wiki` 3.1.1 (now 3.1.2), `ora2` 6.17.1 (now 6.17.2). Keep `release-ulmo`'s versions; the lockfile downgrade check is for this, and it matters for migrations because the databases already have those packages' newer migrations applied.
+5. **Check on the batch-1 `base.txt`** (part of the audit step above): `openedx-authz` is `0.20.0` or `0.20.1` (if newer, review the new authz migrations), and no other dependency change adds a migration that this section does not list.
 
 ## QA and testing (LP-1351)
 
@@ -316,7 +305,7 @@ Ticket: LP-1351. This is the single place for review and testing information; th
 - **The fork's learner-state work:** incremental loading of large assessment xblocks and hydrating learner state for paginated assessment children (`courseware/model_data.py`, `block_render.py`). Exercise a large problem bank or assessment.
 - **Video:** HLS playback, audio description (upload in Studio, playback in LMS), language menu height with many caption languages.
 - **PDF textbooks:** batch 1 keeps the old pdf.js plus the fork's guards; confirm they still work.
-- **Content library permissions (new openedx-authz):** ulmo.1 moves library permissions into casbin tables (`openedx_authz 0006` copies existing `ContentLibraryPermission` rows). Exercise Studio library access (view, edit, team management) after the migrations, and check the migration log for permissions that failed to migrate. This was the area of the first revert (#300).
+- **Content library permissions (new openedx-authz):** ulmo.1 moves library permissions into casbin tables (`openedx_authz 0006` copies existing `ContentLibraryPermission` rows). Exercise Studio library access (view, edit, team management) after the migrations. This was the area of the first revert (#300). Stage already has the migrated data (23 libraries, 36 permissions, 36 casbin rules), so stage is the place to test it; prod has one library (`edxtest`) and edge none.
 - **Proctortrack** on a sandbox (LP-846): the May 27 "Decoding attempt" error.
 - **SAML:** the May merge had SAML conflicts; test SAML login if at all possible (sandbox or local).
 - **Stage scenarios that failed on the sandbox in May** (due to sandbox errors): course import and export; the ulmo deployment bugs (LP-1298 to LP-1303).
@@ -368,10 +357,9 @@ Ticket: LP-1308. To be completed before deploying. Points already known:
 
 - **Watch:** XBlockSaveError, 500s on courseware state saves (`goto_position`, `xblock/handler`), Django 5.2 deprecation and runtime errors, video and PDF errors. Use the Datadog dashboard and monitors linked from LP-1308.
 - **Redeploy the previous image first** for a fast rollback: it touches no git history. While the upgrade merge is in `release-ulmo`, though, any other deploy from that branch ships the upgrade too. If `release-ulmo` must keep shipping unrelated changes, revert the merge (as #300 and #311 did) and write down that re-landing needs a **revert of the revert** (as `0972c91dc4` and `010ea66478` did).
-- **Database migrations:** check whether any batch migrations are irreversible before relying on a rollback. A code-only rollback after forward-only migrations needs care.
-- **`openedx_authz 0006` cannot be un-applied** (a `RunPython` with no reverse), so `migrate openedx_authz zero` fails. After it runs, a full migration rollback is not possible; the authz and casbin tables stay and the old code ignores them. `oel_publishing 0010` is a slow data backfill (see the code-side findings under Migration state), so plan for its duration.
-- **`contentstore 0014` makes a code-only rollback unsafe.** It drops `downstream_is_modified` from `ComponentLink` and `ContainerLink` and adds `downstream_customized`. The previous image (`release-ulmo`) still expects `downstream_is_modified`, so after this migration is applied, redeploying it breaks anything that queries those tables. The options are to reverse-migrate with `migrate contentstore 0013` (the reverse re-adds the column but loses `downstream_customized` data), or to accept that library upstream-sync is broken until forward again. Decide before deploying, using the migration-state results (are the tables used, how big are they, was `0014` applied in May and then rolled back). If they are in use, consider splitting the migration out (expand now, contract later), as the playbook's principles suggest.
-- Because ulmo.1 was deployed once (2026-05-27), prod may already have been through some of these migrations. The first-deploy behaviour of `0014` may already have been exercised in May.
+- **Database migrations: no manual steps.** The deploy's `run_migrations` step applies what is missing in each environment (see [Migration state in prod, edge and stage](#migration-state-in-prod-edge-and-stage)). `openedx_authz 0006` (a `RunPython` with no reverse) is already applied in prod, edge and stage, so it will not be in batch 1's forward plan and a rollback of batch 1 will not try to reverse it. `oel_publishing 0010` has no rows to process in prod and edge.
+- **`contentstore 0014` makes a code-only rollback unsafe.** It drops `downstream_is_modified` from `ComponentLink` and `ContainerLink` and adds `downstream_customized`. The previous image (`release-ulmo`) still expects `downstream_is_modified`, so after this migration is applied, redeploying it breaks anything that queries those tables (stage is in exactly this state today). The tables are empty in prod, edge and stage, so nothing is lost and splitting the migration (expand now, contract later) is not needed; the options if a rollback is ever needed are to reverse-migrate with `migrate contentstore 0013` (re-adds the column with its default; drops `downstream_customized`) or to accept that library upstream-sync is broken until forward again.
+- Ulmo.1 was deployed once (2026-05-27); prod and edge kept the casbin, authz and `submissions 0006` migrations from then (see the state table).
 
 After the QA ticket and the blockers are done:
 
