@@ -307,12 +307,13 @@ Ticket: LP-1351. This is the single place for review and testing information; th
 - **Video:** HLS playback, audio description (upload in Studio, playback in LMS), language menu height with many caption languages.
 - **PDF textbooks:** batch 1 keeps the old pdf.js plus the fork's guards; confirm they still work.
 - **Content library permissions (new openedx-authz):** ulmo.1 moves library permissions into casbin tables (`openedx_authz 0006` copies existing `ContentLibraryPermission` rows). Exercise Studio library access (view, edit, team management) after the migrations. This was the area of the first revert (#300). Stage already has the migrated data (23 libraries, 36 permissions, 36 casbin rules), so stage is the place to test it; prod has one library (`edxtest`) and edge none.
+- **Library creation org list (LP-1102, #509):** batch 1 combines #509's global-staff branch with upstream's ulmo.1 change that unions the org-staff and course-creator orgs (`670c81f0f2`), in `get_allowed_organizations_for_libraries` (`cms/djangoapps/contentstore/views/course.py`). This combination has never run anywhere: May's build had no #509, and `release-ulmo` has no `670c81f0f2`. Check the orgs offered when creating a library for global staff, org staff, course admins and course creators, with the `EXPANDED_LIBRARY_CREATION_ORGS` flag on and off.
 - **Proctortrack** on a sandbox (LP-846): the May 27 "Decoding attempt" error.
 - **SAML:** the May merge had SAML conflicts; test SAML login if at all possible (sandbox or local).
 - **Stage scenarios that failed on the sandbox in May** (due to sandbox errors): course import and export; the ulmo deployment bugs (LP-1298 to LP-1303).
 - **Pre-flight items** from the playbook (PR #14962 doc `04`, section B, Django 4.2→5.2) and its deployed-settings checks against `argocd/applications/edxapp-*/` in edx-internal (the real deploy inventory, not Datadog). Verified on 2026-10-06 against #505:
   - **Storage settings:** argocd prod sets the legacy `DEFAULT_FILE_STORAGE` and `STATICFILES_STORAGE`, which Django 5.1 removed. They are still honoured because `lms/envs/production.py` and `cms/envs/production.py` map them into `STORAGES` ("For backward compatibility"). No `get_storage_class` callers remain (only a docstring in `common/djangoapps/util/storage.py`).
-  - **Fork-only settings** from the learner-state and bulk-unenroll work are in `lms/envs/common.py`: `INCREMENTAL_LOAD_PROBLEM_THRESHOLD`, `INCREMENTAL_LOAD_EAGER_COUNT`, `XBLOCK_CHILDREN_BATCH_MAX`, `BULK_UNENROLL_*`. Re-confirm on the batch-1 tree.
+  - **Fork-only settings** from the learner-state and bulk-unenroll work are in `lms/envs/common.py`: `INCREMENTAL_LOAD_PROBLEM_THRESHOLD`, `INCREMENTAL_LOAD_EAGER_COUNT`, `XBLOCK_CHILDREN_BATCH_MAX`, `BULK_UNENROLL_*`. Re-confirmed on the batch-1 tree (2026-10-09), as were the storage-settings mapping and the absence of `get_storage_class` callers.
   - **Intentionally deferred commits:** the only `temp:` commit relative to `release-ulmo` was `582e345108` (SAML SSRF revert, on `edx/ulmo.3`). Not applicable to batch 1.
   - **MariaDB UUID migrations** are no-ops: the database is MySQL (AWS Aurora), not MariaDB (confirmed by the team; no query needed).
   - **Breaking changes:** see below.
@@ -365,7 +366,7 @@ Ticket: LP-1308. To be completed before deploying. Points already known:
 After the QA ticket and the blockers are done:
 
 1. **Write the rollout and rollback plan** (above), then deploy to stage, then prod. Include a maintenance banner (BOMS-503).
-2. **Mark the PR ready and merge it.** Do the final sync (see QA section) first, and again just before merging.
+2. **Mark the PR ready and merge it** with GitHub's **"Create a merge commit"** (as #212 and #304 were), not squash or rebase. Squash would also bring ulmo.1 back, since its upstream commits are already ancestors of `release-ulmo`, but it would collapse the revert, ports, Django bump and PII fix into one commit (so the bump could no longer be reverted on its own) and orphan the commit SHAs cited in this plan and the audit. Rebase would rewrite those SHAs and replay the `release-ulmo` merge. Do the final sync (see QA section) first, and again just before merging.
 3. **Once stable in production**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`. First make sure every item in [Feed to playbook](#feed-to-playbook) is resolved with an edx-internal edit or consciously dropped. Delete the saved May 27 spans and logs from Google Drive (listed in LP-1308).
 
 ## Batch 2 (scope open)
