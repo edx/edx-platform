@@ -43,6 +43,7 @@ from .image_helpers import get_profile_image_urls_for_user
 from .utils import format_social_link, validate_social_link
 
 PROGRESSIVE_PROFILE_FIELD = "progressive_profile"
+PROGRESSIVE_PROFILE_UPDATED_AT_FIELD = "updated_at"
 
 PROGRESSIVE_PROFILE_QUESTIONS = [
     "learning_goal",
