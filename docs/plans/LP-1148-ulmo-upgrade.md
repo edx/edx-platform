@@ -209,6 +209,32 @@ Read-only queries, done as part of LP-1148. The ulmo.1 build was deployed once i
 3. If `contentstore 0014` is applied in prod: check for ComponentLink/ContainerLink errors since May, and whether prod uses library upstream-sync at all.
 4. Row counts for `contentstore_componentlink`, `contentstore_containerlink` and `modulestore_migrator_*` (lock and duration risk of `0014` and the migrator migrations), `content_libraries_contentlibrarypermission` (migrated by `openedx_authz 0006`), and `oel_publishing_draft`, `oel_publishing_containerversion`, `oel_publishing_draftchangelogrecord` (the `oel_publishing 0010` backfill loops over them row by row).
 
+The queries as SQL, read-only, for the main edxapp database on stage and then prod (query 2 is a command, not SQL). Record the results with dates below this list.
+
+```sql
+-- 1. What was applied, and was it un-applied? (a row means "applied now"; none means not applied)
+SELECT app, name, applied FROM django_migrations
+WHERE applied >= '2026-05-15'
+   OR app IN ('openedx_authz', 'casbin_adapter', 'oel_publishing', 'oel_components', 'modulestore_migrator', 'contentstore')
+ORDER BY app, name;
+
+-- 3 and 4. Which of the new tables exist, and how big are they? (table_rows is an estimate on InnoDB;
+-- use COUNT(*) on any table that matters)
+SELECT table_name, table_rows FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND (table_name LIKE 'modulestore_migrator\_%' OR table_name LIKE 'oel\_%' OR table_name LIKE 'casbin%'
+       OR table_name LIKE 'openedx_authz%'
+       OR table_name IN ('contentstore_componentlink', 'contentstore_containerlink',
+                         'content_libraries_contentlibrary', 'content_libraries_contentlibrarypermission'))
+ORDER BY table_name;
+
+-- Do v2 libraries exist at all? (decides whether openedx_authz 0006 and oel_publishing 0010 have data to process)
+SELECT COUNT(*) FROM content_libraries_contentlibrary;
+SELECT COUNT(*) FROM content_libraries_contentlibrarypermission;
+```
+
+If `content_libraries_contentlibrary` is empty on prod, the two data migrations are no-ops there. Stage may differ from prod, so run both.
+
 Migrations that the ulmo.1 range adds relative to pre-May `release-ulmo`: `contentstore 0014`, `modulestore_migrator 0002`, `0003`, `0004`, `0006` (`0004` has a squash-style name but no `replaces`), `survey_report 0006`, and five MariaDB conversions (no-ops on our Aurora MySQL; `student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`). `announcements 0001_initial` is deleted with the app; its `django_migrations` row will be stale, harmless unless a migration depends on it. `release/ulmo.1` and `release/ulmo.4` have identical migration file sets, so batch 2 adds none. Re-check the list against the batch-1 diff (it was computed for #505). The fork migrations `third_party_auth 0014/0015`, `support 0007` and `course_overviews 0030` are already in `release-ulmo`.
 
 #### Code-side findings (2026-10-09; the database queries above are still to run)
@@ -217,7 +243,7 @@ Read from git and GitHub only (`e45e7825ea` is the May build; "release-ulmo" is 
 
 1. **The list above is incomplete: it missed migrations that come from dependency upgrades.** The May build also added or upgraded packages that ship their own migrations. Compared with `release-ulmo` today:
    - **`openedx-authz` 0.20.1 (new package; also new `pycasbin` and `casbin-django-orm-adapter`).** Brings `openedx_authz 0001`-`0006` and, through `0001`'s dependency, `casbin_adapter 0001_initial` (the `CasbinRule` table). The first ulmo.1 attempt (#212) was reverted on 2026-05-19 (#300) for a "casbin migration error", so this is the most likely trouble spot. Not in the pre-May `release-ulmo` and not in it today.
-     - **`openedx_authz 0006_migrate_legacy_permissions` is a data migration (`RunPython`) with no reverse.** It copies `ContentLibraryPermission` rows (the `content_libraries` app) into the casbin tables. Django refuses to un-apply a `RunPython` that has no `reverse_code`, so it cannot be rolled back with `migrate openedx_authz zero`. That conflicts with the incident page's "migrations rollback 16:47-17:06"; see [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy). Query 1 will show whether those rows exist in prod now.
+     - **`openedx_authz 0006_migrate_legacy_permissions` is a data migration (`RunPython`) with no reverse.** It copies `ContentLibraryPermission` rows (the `content_libraries` app) into the casbin tables. **That app is the v2 (Learning Core) library app**: `ContentLibrary` is keyed by `LibraryLocatorV2`, and its docstring says all content lives in Learning Core. If prod has no v2 libraries, the table is empty and the migration copies nothing. Supporting evidence, not proof: edx-internal prod, stage and edge CMS config all set `ENABLE_LIBRARY_AUTHORING_MICROFRONTEND: false`. The row counts in the queries below decide it. The same applies to `oel_publishing 0010` and the `oel_*` tables, which hold v2 library data. Django refuses to un-apply a `RunPython` that has no `reverse_code`, so it cannot be rolled back with `migrate openedx_authz zero`. That conflicts with the incident page's "migrations rollback 16:47-17:06"; see [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy). Query 1 will show whether those rows exist in prod now.
    - **`openedx-learning` 0.27.1 → 0.30.2.** Three new migrations: `oel_components 0004_remove_componentversioncontent_uuid` (drops a column), `oel_publishing 0009_dependencies_and_hashing` (new tables, columns, constraints) and `oel_publishing 0010_backfill_dependencies` (a data backfill; its own docstring calls the draft update "slow and expensive", looping row by row over `Draft`, `ContainerVersion` and change-log rows). Also `modulestore_migrator 0004` depends on `oel_publishing 0008`, which exists in 0.27.1.
    - **Patch bumps not checked for migrations:** `django-user-tasks` 3.4.3 → 3.4.4, `edx-submissions` 3.12.0 → 3.12.1, `lti-consumer-xblock` 9.14.2 → 9.14.3 (the tags could not be found by the repo names used; check the changelogs).
 2. **In-repo migrations match the list above.** `e45e7825ea` adds exactly the 11 files listed (`contentstore 0014`, `modulestore_migrator 0002`/`0003`/`0004`/`0006`, five `*_mariadb_uuid_conversion`, `survey_report 0006`), deletes `announcements 0001_initial`, and keeps the fork migrations `support 0007`, `course_overviews 0030` and `third_party_auth 0014`/`0015`. Upstream `release/ulmo.1` has no `third_party_auth 0014`/`0015` (they are fork-only and exist in `e45e7825ea` and `release-ulmo`).
