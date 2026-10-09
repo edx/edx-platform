@@ -34,5 +34,5 @@ Current plans
   production and stable.
 * ``LP-1148-ulmo4-merge-audit.md`` -- merge audit of the superseded reference
   branch (#505), including the scripts used. Delete together with the plan.
-* ``LP-1148-ulmo1-merge-audit.md`` -- (to be created) merge audit of the
-  batch-1 branch. Delete together with the plan.
+* ``LP-1148-ulmo1-merge-audit.md`` -- merge audit of the batch-1 branch.
+  Delete together with the plan.
