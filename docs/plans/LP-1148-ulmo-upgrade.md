@@ -52,7 +52,6 @@ Written 2026-10-08, updated 2026-10-09. This plan has no tests behind it; the cl
   - Whether the `010ea66478` / #505 conflict resolutions are correct (see the cross-check section; hours in prod is weak evidence).
   - **How long the ulmo.1 build really served prod, and what migration state prod is in.** The sources disagree; see [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy).
   - How many conflicts the revert of `3a8fdad2fd` produces on the current tip (never tried; expect many, since `release-ulmo` has moved about 230 commits).
-  - Anything else database-related (`SELECT VERSION()`).
   - Which of #505's audit fixes and CI fixes apply to the ulmo.1 range (the plan says to check each).
   - The edx-internal playbook claims (open question 4, principle 2, ADR 0001) were read on branch `robrap/openedx-upgrade-process` of PR #14962 and may have changed.
 
@@ -208,10 +207,9 @@ Read-only queries, done as part of LP-1148. The ulmo.1 build was deployed once i
 1. `SELECT app, name, applied FROM django_migrations WHERE applied >= '2026-05-15' ORDER BY applied;` Did May apply the ulmo.1 migrations, and were they unapplied afterwards?
 2. `showmigrations --plan` for lms and cms with the batch-1 code against a stage snapshot.
 3. If `contentstore 0014` is applied in prod: check for ComponentLink/ContainerLink errors since May, and whether prod uses library upstream-sync at all.
-4. `SELECT VERSION();` on `prod-edx-edxapp.rds.edx.org` (argocd shows `django.db.backends.mysql`, which cannot tell MySQL from MariaDB). The five `*_mariadb_uuid_conversion` migrations are no-ops unless the version contains "mariadb".
-5. Row counts for `contentstore_componentlink`, `contentstore_containerlink` and `modulestore_migrator_*` (lock and duration risk of `0014` and the migrator migrations).
+4. Row counts for `contentstore_componentlink`, `contentstore_containerlink` and `modulestore_migrator_*` (lock and duration risk of `0014` and the migrator migrations).
 
-Migrations that the ulmo.1 range adds relative to pre-May `release-ulmo`: `contentstore 0014`, `modulestore_migrator 0002`, `0003`, `0004`, `0006` (`0004` has a squash-style name but no `replaces`), `survey_report 0006`, and five MariaDB conversions (`student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`). `announcements 0001_initial` is deleted with the app; its `django_migrations` row will be stale, harmless unless a migration depends on it. `release/ulmo.1` and `release/ulmo.4` have identical migration file sets, so batch 2 adds none. Re-check the list against the batch-1 diff (it was computed for #505). The fork migrations `third_party_auth 0014/0015`, `support 0007` and `course_overviews 0030` are already in `release-ulmo`.
+Migrations that the ulmo.1 range adds relative to pre-May `release-ulmo`: `contentstore 0014`, `modulestore_migrator 0002`, `0003`, `0004`, `0006` (`0004` has a squash-style name but no `replaces`), `survey_report 0006`, and five MariaDB conversions (no-ops on our Aurora MySQL; `student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`). `announcements 0001_initial` is deleted with the app; its `django_migrations` row will be stale, harmless unless a migration depends on it. `release/ulmo.1` and `release/ulmo.4` have identical migration file sets, so batch 2 adds none. Re-check the list against the batch-1 diff (it was computed for #505). The fork migrations `third_party_auth 0014/0015`, `support 0007` and `course_overviews 0030` are already in `release-ulmo`.
 
 ## QA and testing (LP-1351)
 
@@ -244,7 +242,7 @@ Ticket: LP-1351. This is the single place for review and testing information; th
   - **Storage settings:** argocd prod sets the legacy `DEFAULT_FILE_STORAGE` and `STATICFILES_STORAGE`, which Django 5.1 removed. They are still honoured because `lms/envs/production.py` and `cms/envs/production.py` map them into `STORAGES` ("For backward compatibility"). No `get_storage_class` callers remain (only a docstring in `common/djangoapps/util/storage.py`).
   - **Fork-only settings** from the learner-state and bulk-unenroll work are in `lms/envs/common.py`: `INCREMENTAL_LOAD_PROBLEM_THRESHOLD`, `INCREMENTAL_LOAD_EAGER_COUNT`, `XBLOCK_CHILDREN_BATCH_MAX`, `BULK_UNENROLL_*`. Re-confirm on the batch-1 tree.
   - **Intentionally deferred commits:** the only `temp:` commit relative to `release-ulmo` was `582e345108` (SAML SSRF revert, on `edx/ulmo.3`). Not applicable to batch 1.
-  - **MariaDB UUID migrations** are no-ops unless the engine is MariaDB; unconfirmed until migration query 4.
+  - **MariaDB UUID migrations** are no-ops: the database is MySQL (AWS Aurora), not MariaDB (confirmed by the team; no query needed).
   - **Breaking changes:** see below.
 - **May 27 timeline** (task under LP-1351): reconcile the sources in [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy).
 
@@ -348,7 +346,7 @@ The edx-internal playbook ([PR #14962](https://github.com/edx/edx-internal/pull/
 | Prior-deploy state: when an earlier attempt was deployed and rolled back, query `django_migrations` in every environment before re-landing | `01-playbook.md`, migration review | Open |
 | Proving what ran in prod and when, versus what was in git or on stage: the edx-internal "Deploy ... to prod" commit history (image tag = `<sha>-<build>`) plus a Datadog `version` tag check; use it in RCAs for rollbacks and before trusting ticket titles or prior claims (copy the "How to check what was in prod" subsection) | `01-playbook.md`, new section, and the RCA/rollback checklist | Open |
 | Rollback section: a code-only rollback is unsafe after contract-phase migrations (`contentstore 0014`); image rollback is only a stopgap while the branch keeps shipping | `01-playbook.md`, new section | Open |
-| MariaDB UUID migrations are no-ops on MySQL but are in this batch; "not applicable" assumed the engine | `04-...preflight`, `02-...digest` | Open |
+| MariaDB UUID migrations are no-ops on MySQL (we run AWS Aurora MySQL) but are in this batch; the preflight should state the engine up front instead of leaving it as a check | `04-...preflight`, `02-...digest` | Open |
 | `openedx/features/announcements` is retired upstream, so it is not a pluginize candidate; batch-state wording in registry rows 3 and 16 belongs here, not there | `03-...registry` | Open |
 | `05-...ulmo3-batch` open review items are superseded by the batch-1/batch-2 split | `05-...ulmo3-batch` | Open |
 | Branching strategy: keep `release-ulmo` through the ulmo catch-up, then cut `release-verawood` from it and merge upstream in batches; revisit `master` at parity (open question 4) | `00-index.md` | Open |
