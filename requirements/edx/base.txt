@@ -108,6 +108,7 @@ certifi==2025.10.5
     #   httpcore
     #   httpx
     #   requests
+    #   signxml
     #   snowflake-connector-python
 cffi==1.17.1
     # via
@@ -150,11 +151,13 @@ cryptography==45.0.7
     #   -r requirements/edx/kernel.in
     #   django-fernet-fields-v2
     #   edx-enterprise
+    #   enterprise-integrated-channels
     #   jwcrypto
     #   paramiko
     #   pgpy
     #   pyjwt
     #   pyopenssl
+    #   signxml
     #   snowflake-connector-python
     #   social-auth-core
 cssutils==2.11.1
@@ -563,7 +566,7 @@ enmerkar==0.7.1
     # via enmerkar-underscore
 enmerkar-underscore==2.4.0
     # via -r requirements/edx/kernel.in
-enterprise-integrated-channels==0.1.70
+enterprise-integrated-channels==0.1.77
     # via -r requirements/edx/bundled.in
 event-tracking==3.3.0
     # via
@@ -728,6 +731,7 @@ lxml[html-clean]==5.3.2
     #   openedx-calc
     #   ora2
     #   python3-saml
+    #   signxml
     #   xblock
     #   xmlsec
 lxml-html-clean==0.4.3
@@ -1084,6 +1088,8 @@ semantic-version==2.10.0
     # via edx-drf-extensions
 shapely==2.1.2
     # via -r requirements/edx/kernel.in
+signxml==5.1.0
+    # via enterprise-integrated-channels
 simplejson==3.20.2
     # via
     #   -r requirements/edx/kernel.in
