@@ -55,6 +55,7 @@ from common.djangoapps.student.roles import (
     CourseStaffRole,
     GlobalStaff,
     UserBasedRole,
+    OrgInstructorRole,
     OrgStaffRole,
     strict_role_checking,
 )
@@ -87,6 +88,7 @@ from ..courseware_index import CoursewareSearchIndexer, SearchIndexingError
 from ..tasks import rerun_course as rerun_course_task
 from ..toggles import (
     default_enable_flexible_peer_openassessments,
+    expanded_library_creation_orgs_enabled,
     use_new_course_outline_page,
     use_new_home_page,
     use_new_updates_page,
@@ -1852,6 +1854,12 @@ def get_allowed_organizations_for_libraries(user):
     """
     Helper method for returning the list of organizations for which the user is allowed to create libraries.
     """
+    # Global staff may create libraries in any organization, so offer all of them. Without this,
+    # when ORGANIZATIONS_AUTOCREATE is disabled the Authoring MFE only shows staff the orgs they
+    # hold a role in. Gated by a temporary flag (LP-1102) so it can be verified in stage first.
+    if user.is_staff and expanded_library_creation_orgs_enabled():
+        # Only active organizations, matching the Studio organizations list and ensure_organization().
+        return list(Organization.objects.filter(active=True).values_list('short_name', flat=True))
     if settings.FEATURES.get('ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES', False):
         return get_organizations_for_non_course_creators(user)
     elif settings.FEATURES.get('ENABLE_CREATOR_GROUP', False):
@@ -1870,12 +1878,14 @@ def user_can_create_organizations(user):
 def get_organizations_for_non_course_creators(user):
     """
     Returns the list of organizations which the user is a staff member of, as a list of strings.
+
+    When the LP-1102 flag is enabled, organizations where the user is an admin (instructor) are
+    included too. Course admins can already create legacy libraries in those organizations, and v2
+    library creation authorizes the organization with this list.
     """
-    orgs_map = set()
-    orgs = OrgStaffRole().get_orgs_for_user(user)
-    # deduplicate
-    for org in orgs:
-        orgs_map.add(org)
+    orgs_map = set(OrgStaffRole().get_orgs_for_user(user))
+    if expanded_library_creation_orgs_enabled():
+        orgs_map.update(OrgInstructorRole().get_orgs_for_user(user))
     return list(orgs_map)
 
 

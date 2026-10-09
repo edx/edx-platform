@@ -748,3 +748,31 @@ def enable_outline_component_creation(course_key):
     Returns a boolean if the Add Component in Outline feature is enabled for the given course.
     """
     return ENABLE_OUTLINE_COMPONENT_CREATION.is_enabled(course_key)
+
+
+# .. toggle_name: contentstore.expanded_library_creation_orgs
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, expands allowed_organizations_for_libraries: global staff get every
+#   active organization instead of only the organizations they hold a role in, and course admins (instructors)
+#   get the organizations of their courses, as course staff already do. When ORGANIZATIONS_AUTOCREATE is
+#   disabled, the Authoring MFE builds the "New Library" organization dropdown from this list, and v2 library
+#   creation uses it to authorize the organization, so course creators who are course admins can also create
+#   v2 libraries in their courses' organizations. Legacy library permissions are unchanged.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-10-07
+# .. toggle_target_removal_date: 2027-01-07
+# .. toggle_tickets: LP-1102
+# .. toggle_warning: Once verified in production, remove this flag and keep the enabled behavior.
+EXPANDED_LIBRARY_CREATION_ORGS = WaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.expanded_library_creation_orgs',
+    __name__,
+    CONTENTSTORE_LOG_PREFIX,
+)
+
+
+def expanded_library_creation_orgs_enabled():
+    """
+    Returns whether the expanded organization list for library creation (LP-1102) is enabled.
+    """
+    return EXPANDED_LIBRARY_CREATION_ORGS.is_enabled()

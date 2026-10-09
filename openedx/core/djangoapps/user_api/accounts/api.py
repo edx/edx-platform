@@ -9,6 +9,7 @@ import re
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.validators import ValidationError, validate_email
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.utils.translation import override as override_language
 from eventtracking import tracker
@@ -42,7 +43,14 @@ from openedx.core.lib.api.view_utils import add_serializer_errors
 from common.djangoapps.third_party_auth.utils import get_saml_provider_for_user
 from openedx.features.name_affirmation_api.utils import is_name_affirmation_installed
 
-from .serializers import AccountLegacyProfileSerializer, AccountUserSerializer, UserReadOnlySerializer, _visible_fields
+from .serializers import (
+    PROGRESSIVE_PROFILE_FIELD,
+    PROGRESSIVE_PROFILE_UPDATED_AT_FIELD,
+    AccountLegacyProfileSerializer,
+    AccountUserSerializer,
+    UserReadOnlySerializer,
+    _visible_fields,
+)
 
 name_affirmation_installed = is_name_affirmation_installed()
 if name_affirmation_installed:
@@ -369,9 +377,32 @@ def _update_extended_profile_if_needed(data, user_profile):
         for field in new_extended_profile:
             field_name = field['field_name']
             new_value = field['field_value']
+            if field_name == PROGRESSIVE_PROFILE_FIELD:
+                new_value = _with_progressive_profile_timestamp(new_value)
             meta[field_name] = new_value
         user_profile.set_meta(meta)
         user_profile.save()
+
+
+def _with_progressive_profile_timestamp(progressive_profile):
+    """
+    Return a copy of the submitted progressive profile with a
+    server-generated updated_at timestamp.
+    """
+    if not isinstance(progressive_profile, dict):
+        return progressive_profile
+
+    stamped = {
+        key: value
+        for key, value in progressive_profile.items()
+        if key != PROGRESSIVE_PROFILE_UPDATED_AT_FIELD
+    }
+
+    stamped[PROGRESSIVE_PROFILE_UPDATED_AT_FIELD] = (
+        timezone.now().replace(microsecond=0).isoformat()
+    )
+
+    return stamped
 
 
 def _update_state_if_needed(data, user_profile):

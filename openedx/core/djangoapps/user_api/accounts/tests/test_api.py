@@ -16,6 +16,7 @@ from django.http import HttpResponse
 from django.test import TestCase
 from django.test.client import RequestFactory
 from django.urls import reverse
+from django.utils import timezone
 from pytz import UTC
 from social_django.models import UserSocialAuth
 
@@ -151,6 +152,110 @@ class TestAccountApi(UserSettingsEventTestMixin, EmailTemplateTagMixin, CreateAc
         request.user = self.user
         with pytest.raises(UserNotFound):
             get_account_settings(request)
+
+    @patch(
+        'openedx.core.djangoapps.user_api.accounts.api.timezone.now'
+    )
+    def test_progressive_profile_sets_updated_at_on_submission(self, mock_now):
+        """Progressive Profile submission should save a server-generated timestamp."""
+
+        expected_time = datetime.datetime(2026, 10, 9, 10, 0, 0, tzinfo=UTC)
+        mock_now.return_value = expected_time
+
+        progressive_profile = {
+            "learning_goal": {
+                "selected_values": ["career_growth"]
+            },
+            "learning_motivation": {
+                "selected_values": ["professional_growth"]
+            },
+            "interests_declared": {
+                "selected_values": ["technology"]
+            },
+            "work_status": {
+                "selected_values": ["employed"]
+            },
+        }
+
+        update_account_settings(
+            self.user,
+            {
+                "extended_profile": [
+                    {
+                        "field_name": "progressive_profile",
+                        "field_value": progressive_profile,
+                    }
+                ]
+            },
+        )
+
+        user_profile = UserProfile.objects.get(user=self.user)
+        saved_profile = user_profile.get_meta()["progressive_profile"]
+
+        self.assertEqual(
+            saved_profile["updated_at"],
+            timezone.now().replace(microsecond=0).isoformat(),
+        )
+        self.assertEqual(
+            saved_profile["learning_goal"]["selected_values"],
+            ["career_growth"],
+        )
+
+    @patch(
+        'openedx.core.djangoapps.user_api.accounts.api.timezone.now'
+    )
+    def test_progressive_profile_updates_timestamp(self, mock_now):
+        """Updating Progressive Profile answers should refresh updated_at."""
+        first_time = datetime.datetime(2026, 10, 9, 10, 0, 0, tzinfo=UTC)
+        second_time = datetime.datetime(2026, 10, 9, 11, 0, 0, tzinfo=UTC)
+
+        progressive_profile = {
+            "learning_goal": {
+                "selected_values": ["career_growth"]
+            }
+        }
+
+        mock_now.return_value = first_time
+        update_account_settings(
+            self.user,
+            {
+                "extended_profile": [
+                    {
+                        "field_name": "progressive_profile",
+                        "field_value": progressive_profile,
+                    }
+                ]
+            },
+        )
+
+        mock_now.return_value = second_time
+        progressive_profile["learning_goal"]["selected_values"] = [
+            "new_career_goal"
+        ]
+
+        update_account_settings(
+            self.user,
+            {
+                "extended_profile": [
+                    {
+                        "field_name": "progressive_profile",
+                        "field_value": progressive_profile,
+                    }
+                ]
+            },
+        )
+
+        user_profile = UserProfile.objects.get(user=self.user)
+        saved_profile = user_profile.get_meta()["progressive_profile"]
+
+        self.assertEqual(
+            saved_profile["updated_at"],
+            second_time.replace(microsecond=0).isoformat(),
+        )
+        self.assertEqual(
+            saved_profile["learning_goal"]["selected_values"],
+            ["new_career_goal"],
+        )
 
     def test_update_username_provided(self):
         """Test the difference in behavior when a username is supplied to update_account_settings."""
