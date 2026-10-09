@@ -2,7 +2,7 @@
 
 Ticket: [LP-1148](https://2u-internal.atlassian.net/browse/LP-1148). Companion to `LP-1148-ulmo-upgrade.md` (the plan), delete together with it. Method and scripts: the appendix of `LP-1148-ulmo4-merge-audit.md`.
 
-Audit date: 2026-10-09, at branch commit `bddf02888f` (the Django bump; before the PII safelist fix and these docs).
+Audit date: 2026-10-09, at branch commit `4e4bb665ca` (the Django bump; before the PII safelist fix and these docs).
 
 Inputs:
 
@@ -15,7 +15,7 @@ Inputs:
 
 ## Summary
 
-- The branch is `edx/release-ulmo` plus: the revert of the revert (`f606a0c596`, 13 conflicted files), the four ports from #505, the Django 5.2.18 bump, and the PII safelist fix. Conflict resolutions are listed in the message of `f606a0c596`.
+- The branch is `edx/release-ulmo` plus: the revert of the revert (`9e4844198b`, 13 conflicted files), the four ports from #505, the Django 5.2.18 bump, and the PII safelist fix. Conflict resolutions are listed in the message of `9e4844198b`.
 - **No merge losses beyond the four #505 already found and fixed** (the ports). Every other flagged hunk is present in combined form or deliberately superseded.
 - Outside the 13 conflicted files, the branch's revert commit is **identical** to `010ea66478` (the May revert of the revert) plus `release-ulmo`'s changes since then.
 - No production (`base.txt`) pin is downgraded. `openedx-authz` is `0.20.1`. The migration inventory matches the plan.
@@ -27,7 +27,7 @@ Inputs:
 | Files | Resolution | Why |
 |---|---|---|
 | `.github/workflows/check-for-tutorial-prs.yml`, `create_user_gdpr_testing.py` | Keep deleted | Deliberate fork removals (#507, ENT-11576). |
-| `xmodule/js/src/video/02_html5_hls_video.js` | Accept upstream's move | The fork's HLS retry change is re-applied at the new path by the port `b4b74bc4f3`. |
+| `xmodule/js/src/video/02_html5_hls_video.js` | Accept upstream's move | The fork's HLS retry change is re-applied at the new path by the port `3871216bf3`. |
 | `cms/djangoapps/contentstore/views/course.py` | Combined | #509's LP-1102 staff branch first, then upstream's set-based org logic (`670c81f0f2`); drop imports of the toggles upstream removed. |
 | `cms/djangoapps/modulestore_migrator/models.py` | Fork | Keep the `.. no_pii:` annotations (#352). Same as #505. |
 | `test_content_libraries.py`, user_api `test_api.py`, `test_access.py` | Combined imports | Keep the fork's new imports (#509, #517, `RequestCache`) and upstream's `ZoneInfo`. `test_api.py` keeps `pytz` for #517's tests; `pytz` is still pinned. |
@@ -46,7 +46,7 @@ Inputs:
 
 ## Check 1: change survival
 
-`survival.sh` with `A=bddf02888f`, `UP=release/ulmo.1`: fork 150 present, 294 superseded, 34 flagged; upstream 66 present, 36 superseded, 30 flagged. Each flagged hunk was then checked against #505's tree:
+`survival.sh` with `A=4e4bb665ca`, `UP=release/ulmo.1`: fork 150 present, 294 superseded, 34 flagged; upstream 66 present, 36 superseded, 30 flagged. Each flagged hunk was then checked against #505's tree:
 
 - 88 lost hunks are also missing on #505 and were triaged in #505's audit (old-path video JS, superseded constraints and CI, the fork's soft-delete `thread.py`, and so on).
 - 7 hunks are missing here but present on #505, and the hunks of #509 and #517 (not in #505) were checked by hand. All are context-only: the change is present, but a neighbouring line differs because of #507, #509, #517 or an upstream import removal.
@@ -64,7 +64,7 @@ Dead-copy sweep (files on the branch but not in `release/ulmo.1`): 75 files, the
 ## Merge-loss fixes from #505 that apply to ulmo.1
 
 - The four ports: all apply (cherry-picked unchanged).
-- `.annotation_safe_list.yml` entry for `oel_publishing.PublishableEntityVersionDependency` (`feac70ecd4`): **applies**, because openedx-learning 0.30.2 is in ulmo.1, not only ulmo.4. Ported as `d4b4954744`.
+- `.annotation_safe_list.yml` entry for `oel_publishing.PublishableEntityVersionDependency` (`feac70ecd4`): **applies**, because openedx-learning 0.30.2 is in ulmo.1, not only ulmo.4. Ported as `1af9d598aa`.
 - pycodestyle E302/E303 fixes: not needed. `test_extract_archive.py` is not in ulmo.1, and `pycodestyle .` (2.8.0, as pinned) passes on the whole tree.
 
 ## Not done here
