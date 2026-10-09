@@ -15,8 +15,9 @@ info:
 
     Tokens can be issued as opaque bearer tokens (default, DOT-native) or as
     self-contained JWTs carrying edX-specific claims (`token_type=jwt`).
-    JWTs are validated by other IDAs via the public JWKS at
-    `/auth/jwks.json` (see `authn-openapi.yaml`).
+    Asymmetric JWTs are validated by other IDAs via the public JWKS at
+    `/auth/jwks.json` (see `authn-openapi.yaml`); symmetric JWTs require
+    the configured shared signing secret.
 
 
     See also: `authn-openapi.yaml` (session login) and
@@ -110,7 +111,6 @@ paths:
       tags: [oauth2]
       security:
         - SessionAuth: []
-        - CsrfToken: []
       requestBody:
         content:
           application/x-www-form-urlencoded:
@@ -274,6 +274,9 @@ paths:
             schema:
               type: object
               properties:
+                client_id:
+                  type: string
+                  description: OAuth client id for a public application configured for token exchange.
                 access_token:
                   type: string
                   description: Third-party provider's access token.
@@ -284,7 +287,7 @@ paths:
                   type: boolean
                 scope:
                   type: string
-              required: [access_token]
+              required: [client_id, access_token]
       responses:
         '200':
           description: edX-native token issued.
@@ -293,13 +296,13 @@ paths:
               schema:
                 $ref: 'components.yaml#/components/schemas/OAuthTokenResponse'
         '400':
-          description: Invalid request.
+          description: Invalid request or provider token verification failure (`invalid_grant`).
           content:
             application/json:
               schema:
                 $ref: 'components.yaml#/components/schemas/OAuthErrorResponse'
-        '401':
-          description: The third-party access token could not be verified with the provider.
+        '403':
+          description: Linked edX account is disabled (`error=account_disabled`, `error_code=403`).
           content:
             application/json:
               schema:
@@ -311,9 +314,14 @@ paths:
       description: >-
         Converts a previously-issued access token (opaque or asymmetric
         JWT) into a browser session, for clients that need to switch from
-        token-based to cookie/session-based auth. Restricted to tokens
-        issued via the `password` grant, or applications configured with
-        `skip_authorization`; symmetric JWTs are rejected.
+        token-based to cookie/session-based auth.
+
+
+        Eligibility differs by token format:
+        * Opaque tokens: the issuing application must be configured with
+          `skip_authorization`.
+        * JWT tokens: only `password`-grant JWTs are eligible, and they
+          must be asymmetrically signed.
       tags: [oauth2-exchange]
       security:
         - BearerAuth: []
@@ -393,6 +401,8 @@ components:
         token_type:
           type: string
           enum: [jwt]
+        asymmetric_jwt:
+          type: boolean
       required: [grant_type, client_id, username, password]
     ClientCredentialsGrant:
       type: object
@@ -409,6 +419,8 @@ components:
         token_type:
           type: string
           enum: [jwt]
+        asymmetric_jwt:
+          type: boolean
       required: [grant_type, client_id, client_secret]
     RefreshTokenGrant:
       type: object
@@ -425,4 +437,6 @@ components:
         token_type:
           type: string
           enum: [jwt]
+        asymmetric_jwt:
+          type: boolean
       required: [grant_type, client_id, refresh_token]

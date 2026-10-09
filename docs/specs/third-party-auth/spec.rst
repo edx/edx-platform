@@ -48,14 +48,14 @@ for the full request/response contract. Summary:
 * ``GET|POST /auth/complete/{backend}/`` - provider callback; resumes the
   pipeline.
 * ``POST /auth/login/lti/`` - LTI 1.x signed launch login.
-* ``GET /auth/idp_redirect/{provider_slug}/`` - resolve a stable slug to
+* ``GET /auth/idp_redirect/{provider_slug}`` - resolve a stable slug to
   ``/auth/login/{backend}/``.
 * ``GET /auth/inactive`` - landing page for a linked-but-inactive account.
 * ``POST /auth/disconnect_json/{backend}/[{association_id}/]`` - unlink a
   provider (JSON, CORS-friendly).
 * ``POST /auth/disconnect/{backend}/`` - unlink a provider (legacy,
   redirect-based).
-* ``GET|POST /auth/exception/`` - pipeline error handler.
+* ``GET /auth/exception/`` - pipeline exception helper endpoint.
 * ``GET /auth/saml/metadata.xml`` - this instance's SAML SP metadata.
 * ``GET /auth/saml/v0/saml_configuration/`` - public SAML configuration
   records.
@@ -79,10 +79,11 @@ The pipeline is a fixed, ordered sequence of steps
 
    * If a ``UserSocialAuth`` row already links this remote identity to an
      edX account, the pipeline short-circuits straight to **Login**.
-   * Otherwise the pipeline *pauses* (``partial_pipeline`` persisted to the
-     session) and control returns to the client as a ``302``/``200`` to
-     ``/api/mfe_context`` with ``pipelineUserDetails`` populated from the
-     provider's claims (email, name, username hint). The client must
+    * Otherwise the pipeline *pauses* (``partial_pipeline`` persisted to the
+      session) and redirects the browser to the login/register UI entry point;
+      the client then fetches ``/api/mfe_context`` to read
+      ``pipelineUserDetails`` populated from the provider's claims (email,
+      name, username hint). The client must
      collect any additional required registration fields and submit them
      to `registration <../registration-login/spec.rst>`_ or
      `login <../registration-login/spec.rst>`_, which resumes and
@@ -131,11 +132,11 @@ Account linking / unlinking
 Error handling
 ==============
 
-All pipeline exceptions (``AuthException`` and subclasses) are funneled
-through the ``ExceptionMiddleware`` to ``/auth/exception/``, which:
+Pipeline exceptions (``AuthException`` and subclasses) are handled by
+``ExceptionMiddleware``, which typically redirects directly to a configured
+entry-point URL. The ``/auth/exception/`` endpoint remains available as a
+helper route in legacy flows.
 
-* reads ``auth_entry`` from the session to decide where to redirect
-  (``/login``, ``/register``, or ``/account/settings``);
 * surfaces a user-facing message via the Django messages framework;
 * never exposes raw provider error payloads to the browser.
 
@@ -152,10 +153,10 @@ Security requirements
   authenticated session and only allow a user to unlink their own
   associations (never another user's).
 * The server-to-server mapping endpoint
-  (``/api/third_party_auth/v0/providers/{id}/users``) requires either a JWT
-  with ``tpa:read`` scope or an OAuth2 client-credentials token; it MUST
-  NOT be reachable with only a browser session, since it is designed for
-  trusted backend services.
+  (``/api/third_party_auth/v0/providers/{id}/users``) requires privileged
+  credentials: staff/superuser context, or legacy ``X-EDX-API-KEY`` access,
+  or restricted OAuth/JWT credentials that include both ``tpa:read`` and a
+  matching ``tpa_provider:<provider_id>`` filter.
 * `/auth/saml/v0/saml_configuration/` only returns configuration rows
   flagged ``is_public=true``; private SAML configuration (keys, secrets)
   is never exposed via this endpoint.
