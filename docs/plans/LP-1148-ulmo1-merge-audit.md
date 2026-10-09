@@ -67,6 +67,6 @@ Dead-copy sweep (files on the branch but not in `release/ulmo.1`): 75 files, the
 - `.annotation_safe_list.yml` entry for `oel_publishing.PublishableEntityVersionDependency` (`feac70ecd4`): **applies**, because openedx-learning 0.30.2 is in ulmo.1, not only ulmo.4. Ported as `1af9d598aa`.
 - pycodestyle E302/E303 fixes: not needed. `test_extract_archive.py` is not in ulmo.1, and `pycodestyle .` (2.8.0, as pinned) passes on the whole tree.
 
-## Not done here
+## CI
 
-- CI: green at `91ee0858ac` (2026-10-09).
+Green at `91ee0858ac` (2026-10-09).
