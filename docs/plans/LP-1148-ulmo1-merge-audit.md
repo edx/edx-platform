@@ -69,5 +69,4 @@ Dead-copy sweep (files on the branch but not in `release/ulmo.1`): 75 files, the
 
 ## Not done here
 
-- CI results (pending on the PR).
-- The decision on `15f39ae1aa` (see the plan's ulmo.1-regression check).
+- CI: green at `91ee0858ac` (2026-10-09).
