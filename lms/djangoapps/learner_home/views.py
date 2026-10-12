@@ -97,9 +97,20 @@ def get_user_account_confirmation_info(user):
         or settings.SUPPORT_SITE_LINK
     )
 
+    opt_in_value = (
+        user.attributes.filter(
+            name="is_marketable",
+        )
+        .values_list("value", flat=True)
+        .first()
+    )
+
     email_confirmation = {
         "isNeeded": not user.is_active,
         "sendEmailUrl": send_activation_email_url,
+        "email_opt_in": (
+            opt_in_value is not None and opt_in_value.lower() == "true"
+        ),
     }
 
     return email_confirmation
