@@ -129,6 +129,24 @@ class TestCourseListing(ModuleStoreTestCase):
         course = self.store.get_course(new_course_key)
         self.assertTrue(course.cert_html_view_enabled)
 
+    def test_rerun_has_web_certs_enabled(self):
+        """
+        Tests a rerun has web certs enabled even if the source course has them disabled.
+        """
+        source_course = self.store.get_course(self.source_course_key)
+        source_course.cert_html_view_enabled = False
+        self.store.update_item(source_course, self.user.id)
+
+        response = self.client.ajax_post(self.course_create_rerun_url, {
+            'source_course_key': str(self.source_course_key),
+            'org': self.source_course_key.org, 'course': self.source_course_key.course, 'run': 'copy',
+            'display_name': 'Rerun with web certs enabled',
+        })
+        self.assertEqual(response.status_code, 200)
+        data = parse_json(response)
+        dest_course = self.store.get_course(CourseKey.from_string(data['destination_course_key']))
+        self.assertTrue(dest_course.cert_html_view_enabled)
+
     def test_course_creation_for_unknown_organization_relaxed(self):
         """
         Tests that when ORGANIZATIONS_AUTOCREATE is True,

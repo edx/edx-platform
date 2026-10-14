@@ -1052,6 +1052,9 @@ def rerun_course(user, source_course_key, org, number, run, fields, background=T
     fields['enrollment_end'] = None
     fields['video_upload_pipeline'] = {}
 
+    # Enable web certs, as for new courses. Do not copy a disabled value from the source course.
+    fields['cert_html_view_enabled'] = True
+
     # Enable certain fields rolling forward, where configured
     if default_enable_flexible_peer_openassessments(source_course_key):
         fields['force_on_flexible_peer_openassessments'] = True
