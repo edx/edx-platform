@@ -8,11 +8,15 @@ behavior without coupling certificate code to a provider implementation.
 import logging
 
 from edx_django_utils.monitoring.utils import increment
+from opaque_keys.edx.keys import CourseKey
 
 from lms.djangoapps.certificates.config import (
     CERTIFICATE_PROCTORING_REVIEW_BLOCK,
+    CERTIFICATE_PROCTORING_REVIEW_BLOCK_EXAMS,
     get_certificate_proctoring_review_block_effective_at,
 )
+from lms.djangoapps.certificates.exams_client import ExamsServiceError, get_exam_proctoring_statuses
+from openedx.core.djangoapps.content.course_overviews.api import get_course_overview_or_none
 from openedx.core.lib.cache_utils import request_cached
 
 log = logging.getLogger(__name__)
@@ -40,6 +44,36 @@ ALLOWED_ATTEMPT_STATUSES = frozenset({
 })
 
 REVIEW_PENDING_STATUSES = frozenset({'submitted', 'second_review_required'})
+
+# Courses on an LTI proctoring provider (for example Proctorio) keep their attempts in edx-exams.
+# The statuses below classify those attempts.  ``rejected`` blocks here, unlike the legacy
+# edx-proctoring table above, because a rejected attempt must keep the certificate unavailable.
+EXAMS_PROVIDER = 'lti_external'
+
+EXAMS_BLOCKING_ATTEMPT_STATUSES = frozenset({
+    'created',
+    'download_software_clicked',
+    'ready_to_start',
+    'started',
+    'ready_to_submit',
+    'submitted',
+    'second_review_required',
+    'error',
+})
+
+EXAMS_ALLOWED_ATTEMPT_STATUSES = frozenset({
+    'verified',
+    'timed_out',
+    'expired',
+})
+
+# Legacy edx-proctoring records left behind on a course that moved to an LTI provider.  These
+# statuses mean the learner never actually started the old exam, so they must not block.
+LEGACY_NEVER_STARTED_STATUSES = frozenset({
+    'created',
+    'download_software_clicked',
+    'ready_to_start',
+})
 
 
 def _cache_key_part(value):
@@ -71,6 +105,53 @@ def _reason_for_status(status):
     if status == 'error':
         return 'proctoring_error'
     return 'proctored_exam_incomplete'
+
+
+def _course_uses_exams_service(course_key):
+    """Return whether certificate access should also consult edx-exams for this course."""
+    if not CERTIFICATE_PROCTORING_REVIEW_BLOCK_EXAMS.is_enabled():
+        return False
+
+    overview = get_course_overview_or_none(CourseKey.from_string(str(course_key)))
+    return bool(overview) and overview.proctoring_provider == EXAMS_PROVIDER
+
+
+def _get_exams_service_result(user, course_key):
+    """Return the access decision from the learner's edx-exams proctoring statuses."""
+    try:
+        exams = get_exam_proctoring_statuses(user, course_key)
+    except ExamsServiceError:
+        log.exception(
+            'Unable to retrieve edx-exams proctoring status while checking certificate access. '
+            'user_id=%s course_key=%s', user.id, course_key
+        )
+        return _lookup_error_result()
+
+    for exam in exams:
+        status = exam.get('status')
+
+        # No attempt is not a review-required state, matching the legacy behavior.
+        if status is None:
+            continue
+
+        if status == 'rejected':
+            return _result(True, 'proctoring_rejected', [status])
+
+        if status in EXAMS_BLOCKING_ATTEMPT_STATUSES:
+            return _result(True, _reason_for_status(status), [status])
+
+        if status in EXAMS_ALLOWED_ATTEMPT_STATUSES:
+            continue
+
+        # A status nobody has classified must not silently bypass the integrity check.
+        log.error(
+            'Unclassified edx-exams proctoring status while checking certificate access. '
+            'user_id=%s course_key=%s content_id=%s status=%s',
+            user.id, course_key, exam.get('content_id'), status
+        )
+        return _lookup_error_result([status])
+
+    return _result()
 
 
 def _certificate_was_downloadable_at_policy_start(certificate, effective_at):
@@ -138,6 +219,16 @@ def get_certificate_proctoring_status(user, course_key, certificate=None):
     effective_at = get_certificate_proctoring_review_block_effective_at()
     if _certificate_was_downloadable_at_policy_start(certificate, effective_at):
         return _result()
+
+    try:
+        use_exams_service = _course_uses_exams_service(course_key)
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Fail closed: falling back to the legacy path would ignore edx-exams attempts.
+        log.exception(
+            'Unable to load course overview while checking certificate access. '
+            'user_id=%s course_key=%s', user.id, course_key
+        )
+        return _lookup_error_result()
 
     try:
         from edx_proctoring.api import get_all_exams_for_course, get_attempt_status_summary
@@ -233,6 +324,11 @@ def get_certificate_proctoring_status(user, course_key, certificate=None):
         if status == ProctoredExamStudentAttemptStatus.eligible:
             continue
 
+        # On a course that moved to an LTI provider, an old record whose exam never started is
+        # not a reason to hold the certificate.  Real legacy attempts are still respected below.
+        if use_exams_service and status in LEGACY_NEVER_STARTED_STATUSES:
+            continue
+
         if status in BLOCKING_ATTEMPT_STATUSES:
             return _result(True, _reason_for_status(status), [status])
 
@@ -248,5 +344,8 @@ def get_certificate_proctoring_status(user, course_key, certificate=None):
             user.id, course_key, content_id, status
         )
         return _lookup_error_result([status])
+
+    if use_exams_service:
+        return _get_exams_service_result(user, course_key)
 
     return _result()
