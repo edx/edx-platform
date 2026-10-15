@@ -8,7 +8,12 @@ from rest_framework.parsers import JSONParser
 from rest_framework.request import Request
 
 from common.djangoapps.student import auth
+from common.djangoapps.student.middleware import UserStandingMiddleware
 from common.djangoapps.student.roles import CourseInstructorRole
+
+# UserStandingMiddleware checks request.user before a view runs. JWT cookie users are
+# set later, in allow_jwt_cookie_auth, so it runs the same check again through this.
+_user_standing_check = UserStandingMiddleware(get_response=lambda request: None)
 
 
 def allow_jwt_cookie_auth(view_func):
@@ -22,7 +27,8 @@ def allow_jwt_cookie_auth(view_func):
 
     Put it above @login_required. It does nothing when the user already has a Studio
     session. It checks the cookie with the same JwtAuthentication class (token and
-    CSRF) that the Studio REST APIs use, and it does not create a session.
+    CSRF) that the Studio REST APIs use, and it does not create a session. A disabled
+    account gets the same 403 as with a session.
     """
     @wraps(view_func)
     def _wrapped_view(request, *args, **kwargs):
@@ -30,6 +36,9 @@ def allow_jwt_cookie_auth(view_func):
             user = _get_jwt_cookie_user(request)
             if user is not None:
                 request.user = user
+                disabled_account_response = _user_standing_check.process_request(request)
+                if disabled_account_response is not None:
+                    return disabled_account_response
         return view_func(request, *args, **kwargs)
 
     return _wrapped_view

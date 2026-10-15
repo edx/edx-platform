@@ -11,6 +11,7 @@ from opaque_keys.edx.locator import CourseLocator
 from cms.djangoapps.contentstore.tests.utils import AjaxEnabledTestClient, CourseTestCase
 from cms.djangoapps.contentstore.utils import reverse_course_url, reverse_usage_url
 from common.djangoapps.student.auth import add_users
+from common.djangoapps.student.models import UserStanding
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
 from common.djangoapps.student.tests.factories import AdminFactory, UserFactory
 from openedx.core.djangoapps.oauth_dispatch.jwt import create_jwt_for_user
@@ -140,4 +141,27 @@ class AllowJwtCookieAuthTest(CourseTestCase):
         )
 
         assert response.status_code == 403
+        assert not modulestore().has_published_version(modulestore().get_item(self.unit.location))
+
+    def test_jwt_cookie_disabled_account_is_denied(self):
+        client = AjaxEnabledTestClient(enforce_csrf_checks=True)
+        self.set_jwt_cookie(client, self.course_admin)
+        # This GET sets the CSRF cookie (ensure_csrf_cookie), before the account is disabled.
+        assert client.get_json(self.updates_url).status_code == 200
+        csrf_token = client.cookies[settings.CSRF_COOKIE_NAME].value
+        UserStanding.objects.create(
+            user=self.course_admin, account_status=UserStanding.ACCOUNT_DISABLED, changed_by=self.user,
+        )
+
+        response = client.get_json(self.updates_url)
+        assert response.status_code == 403
+        assert b'Your account has been disabled' in response.content
+
+        response = client.ajax_post(
+            reverse_usage_url('xblock_handler', self.unit.location),
+            {'publish': 'make_public'},
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+        assert b'Your account has been disabled' in response.content
         assert not modulestore().has_published_version(modulestore().get_item(self.unit.location))
