@@ -139,7 +139,11 @@ class BlockListGetForm(Form):
             return self._verify_anonymous_user(requested_username, course_key, all_blocks)
 
         if all_blocks:
-            if requesting_user.has_perm('instructor.research', course_key):
+            # Data researchers without course staff access see the blocks as themselves. Anyone who can access
+            # all blocks gets the unfiltered tree; global staff also hold instructor.research, and serving them as
+            # themselves applies per-user transformers, e.g. a random item bank selection instead of the full pool.
+            if (requesting_user.has_perm('instructor.research', course_key)
+                    and not permissions.can_access_all_blocks(requesting_user, course_key)):
                 return requesting_user
             return self._verify_all_blocks(requesting_user, course_key)
         elif requesting_user.username.lower() == requested_username.lower():
