@@ -127,6 +127,7 @@ from ..utils import (
     update_course_details,
     update_course_discussions_settings,
 )
+from .access import allow_jwt_cookie_auth
 from .component import ADVANCED_COMPONENT_TYPES
 
 log = logging.getLogger(__name__)
@@ -1103,6 +1104,7 @@ def course_info_handler(request, course_key_string):
             return HttpResponseBadRequest("Only supports html requests")
 
 
+@allow_jwt_cookie_auth
 @login_required
 @ensure_csrf_cookie
 @require_http_methods(("GET", "POST", "PUT", "DELETE"))

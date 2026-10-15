@@ -46,6 +46,7 @@ from xmodule.x_module import (
 from ..helpers import (
     is_unit,
 )
+from .access import allow_jwt_cookie_auth
 from .preview import get_preview_fragment
 from .component import _get_item_in_course
 from ..utils import get_container_handler_context
@@ -87,6 +88,7 @@ ALWAYS = lambda x: True
 # following PR: https://github.com/openedx/edx-platform/pull/34020
 @transaction.non_atomic_requests
 @require_http_methods(("DELETE", "GET", "PUT", "POST", "PATCH"))
+@allow_jwt_cookie_auth
 @login_required
 @expect_json
 def xblock_handler(request, usage_key_string=None):
@@ -383,6 +385,7 @@ def xblock_edit_view(request, usage_key_string):
 
 
 @require_http_methods("GET")
+@allow_jwt_cookie_auth
 @login_required
 @expect_json
 def xblock_outline_handler(request, usage_key_string):
