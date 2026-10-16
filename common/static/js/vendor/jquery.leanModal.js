@@ -46,6 +46,22 @@
                         "top": o.top + "px"
                     });
                     $(modal_id).fadeTo(200, 1);
+                    if ($("body").hasClass("view-in-mfe")) {
+                        // Inside the learning MFE the iframe is stretched to its full content
+                        // height and never scrolls, so a fixed top lands at the top of the page.
+                        // IntersectionObserver reports the part of this document visible in the
+                        // parent viewport (even cross-origin); center the modal in that region.
+                        new IntersectionObserver(function(entries, observer) {
+                            observer.disconnect();
+                            var visible = entries[0].intersectionRect;
+                            if (visible.height > 0) {
+                                $(modal_id).css({
+                                    "top": visible.top + 40 + "px",
+                                    "max-height": visible.height - 80 + "px"
+                                });
+                            }
+                        }).observe(document.body);
+                    }
                     e.preventDefault()
                 })
             });
