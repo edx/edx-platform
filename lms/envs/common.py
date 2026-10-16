@@ -1036,12 +1036,7 @@ CERTIFICATE_DATE_FORMAT = "%B %-d, %Y"
 # effective. Production deployment configuration supplies the rollout value.
 CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT = None
 
-# EXAMS_SERVICE_URL (base URL of the edx-exams API) is inherited from openedx.envs.common.
-
-# .. setting_name: EXAMS_SERVICE_USERNAME
-# .. setting_default: edx_exams_worker
-# .. setting_description: Username of the LMS service user whose JWT is used to call the edx-exams API.
-EXAMS_SERVICE_USERNAME = 'edx_exams_worker'
+# EXAMS_SERVICE_URL and EXAMS_SERVICE_USERNAME are inherited from openedx.envs.common.
 
 # .. setting_name: EXAMS_SERVICE_REQUEST_TIMEOUT
 # .. setting_default: (3.05, 5)
