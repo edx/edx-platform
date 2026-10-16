@@ -53,10 +53,31 @@ class ExamsClientTests(TestCase):
         self.assertEqual(result, exams)
         self.create_jwt.assert_called_once_with(self.worker)
         get.assert_called_once_with(
-            f'http://exams.example.com/api/v1/certificate_proctoring/course_id/{COURSE_KEY}/status',
+            'http://exams.example.com/api/v1/certificate_proctoring/course_id/'
+            'course-v1%3AedX%2BDemoX%2BDemo_Course/status',
             params={'lms_user_id': 42},
             timeout=(1, 2),
         )
+
+    def test_course_key_is_url_encoded(self):
+        _, get = self._get(self._response({'exams': []}))
+
+        url = get.call_args.args[0]
+        self.assertNotIn(COURSE_KEY, url)
+        self.assertTrue(url.endswith('/course-v1%3AedX%2BDemoX%2BDemo_Course/status'))
+
+    def test_session_is_closed_after_success(self):
+        with mock.patch.object(requests.Session, 'close') as close:
+            self._get(self._response({'exams': []}))
+
+        close.assert_called_once_with()
+
+    def test_session_is_closed_after_failure(self):
+        with mock.patch.object(requests.Session, 'close') as close:
+            with self.assertRaises(ExamsServiceError):
+                self._get(error=requests.ConnectionError('down'))
+
+        close.assert_called_once_with()
 
     def test_http_error_raises_service_error(self):
         response = self._response(status_error=requests.HTTPError('403'))

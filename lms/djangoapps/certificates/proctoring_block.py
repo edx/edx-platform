@@ -52,6 +52,10 @@ REVIEW_PENDING_STATUSES = frozenset({'submitted', 'second_review_required'})
 # could release a certificate before review.
 EXAMS_PROVIDER = 'lti_external'
 
+# Only exams of this type can hold a certificate.  edx-exams already omits practice and
+# onboarding exams; the LMS ignores them as well so an unfinished practice exam never blocks.
+EXAMS_PROCTORED_EXAM_TYPE = 'proctored'
+
 EXAMS_BLOCKING_ATTEMPT_STATUSES = frozenset({
     'created',
     'download_software_clicked',
@@ -115,7 +119,12 @@ def _course_uses_exams_service(course_key):
         return False
 
     overview = get_course_overview_or_none(CourseKey.from_string(str(course_key)))
-    return bool(overview) and overview.proctoring_provider == EXAMS_PROVIDER
+    if overview is None:
+        # Without an overview the provider is unknown, so the legacy path alone could silently
+        # ignore edx-exams attempts.  Report it so the caller fails closed.
+        raise ValueError('Course overview not found')
+
+    return overview.proctoring_provider == EXAMS_PROVIDER
 
 
 def _safe_course_uses_exams_service(user, course_key):
@@ -145,6 +154,10 @@ def _get_exams_service_result(user, course_key):
         return _lookup_error_result()
 
     for exam in exams:
+        exam_type = exam.get('exam_type')
+        if exam_type is not None and exam_type != EXAMS_PROCTORED_EXAM_TYPE:
+            continue
+
         status = exam.get('status')
 
         # No attempt is not a review-required state, matching the legacy behavior.

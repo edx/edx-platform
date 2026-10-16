@@ -1036,11 +1036,7 @@ CERTIFICATE_DATE_FORMAT = "%B %-d, %Y"
 # effective. Production deployment configuration supplies the rollout value.
 CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT = None
 
-# .. setting_name: EXAMS_SERVICE_URL
-# .. setting_default: http://localhost:18740/api/v1
-# .. setting_description: Base URL of the edx-exams API. The LMS reads learners' proctoring status from it
-#     when deciding certificate access for courses that use an LTI proctoring provider.
-EXAMS_SERVICE_URL = 'http://localhost:18740/api/v1'
+# EXAMS_SERVICE_URL (base URL of the edx-exams API) is inherited from openedx.envs.common.
 
 # .. setting_name: EXAMS_SERVICE_USERNAME
 # .. setting_default: edx_exams_worker

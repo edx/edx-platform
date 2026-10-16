@@ -8,8 +8,8 @@ from django.test import SimpleTestCase, override_settings
 from edx_django_utils.cache import RequestCache
 
 from lms.djangoapps.certificates import proctoring_block
-from lms.djangoapps.certificates.exams_client import ExamsServiceError
 from lms.djangoapps.certificates.config import get_certificate_proctoring_review_block_effective_at
+from lms.djangoapps.certificates.exams_client import ExamsServiceError
 
 
 @ddt.ddt
@@ -367,11 +367,20 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
         provider='lti_external',
         exams_switch=True,
         exams_error=None,
+        exam_types=None,
+        overview_missing=False,
+        overview_error=None,
     ):
         """Return the access decision with edx-exams statuses and one optional legacy exam mocked."""
         legacy_exams = [self.legacy_exam] if legacy_status is not None else []
         statuses = [
-            {'exam_id': index, 'content_id': f'exam-{index}', 'attempt_id': index, 'status': status}
+            {
+                'exam_id': index,
+                'content_id': f'exam-{index}',
+                'exam_type': (exam_types or {}).get(index, 'proctored'),
+                'attempt_id': index,
+                'status': status,
+            }
             for index, status in enumerate(exams_statuses, start=1)
         ]
         client = mock.patch.object(
@@ -387,7 +396,8 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
         ), mock.patch.object(
             proctoring_block,
             'get_course_overview_or_none',
-            return_value=mock.Mock(proctoring_provider=provider),
+            return_value=None if overview_missing else mock.Mock(proctoring_provider=provider),
+            side_effect=overview_error,
         ), mock.patch(
             'edx_proctoring.api.get_all_exams_for_course', return_value=legacy_exams,
         ), mock.patch(
@@ -456,6 +466,37 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['reason'], 'proctoring_status_unavailable')
+
+    @ddt.data('practice', 'onboarding', 'timed')
+    def test_non_proctored_exam_types_are_ignored(self, exam_type):
+        result, _ = self._check(['started', 'verified'], exam_types={1: exam_type})
+
+        self.assertFalse(result['blocked'])
+
+    def test_unfinished_proctored_exam_still_blocks_next_to_practice_exam(self):
+        result, _ = self._check(['verified', 'started'], exam_types={1: 'practice'})
+
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['blocking_statuses'], ['started'])
+
+    def test_missing_course_overview_blocks_and_is_logged(self):
+        with mock.patch(
+            'lms.djangoapps.certificates.proctoring_block.increment'
+        ) as increment, self.assertLogs(proctoring_block.log, level='ERROR'):
+            result, exams_client = self._check(['verified'], overview_missing=True)
+
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['reason'], 'proctoring_status_unavailable')
+        increment.assert_any_call('certificates.proctoring_block.lookup_error')
+        exams_client.assert_not_called()
+
+    def test_course_overview_lookup_failure_blocks_and_is_logged(self):
+        with self.assertLogs(proctoring_block.log, level='ERROR'):
+            result, exams_client = self._check(['verified'], overview_error=RuntimeError('db down'))
+
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['reason'], 'proctoring_status_unavailable')
+        exams_client.assert_not_called()
 
     def test_exams_switch_off_does_not_call_edx_exams(self):
         result, exams_client = self._check(['submitted'], exams_switch=False)

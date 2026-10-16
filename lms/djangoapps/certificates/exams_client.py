@@ -6,6 +6,7 @@ The edx-exams service owns attempt state for courses that use an LTI proctoring 
 """
 
 import logging
+from urllib.parse import quote
 
 import requests
 from django.conf import settings
@@ -40,16 +41,18 @@ def get_exam_proctoring_statuses(user, course_key):
         ExamsServiceError: the service could not be reached, rejected the request, or returned
             a malformed response.  Callers must not treat this as "no exams".
     """
-    url = f'{settings.EXAMS_SERVICE_URL}/certificate_proctoring/course_id/{course_key}/status'
+    encoded_course_key = quote(str(course_key), safe='')
+    url = f'{settings.EXAMS_SERVICE_URL}/certificate_proctoring/course_id/{encoded_course_key}/status'
 
     try:
-        response = _get_exams_api_client().get(
-            url,
-            params={'lms_user_id': user.id},
-            timeout=settings.EXAMS_SERVICE_REQUEST_TIMEOUT,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        with _get_exams_api_client() as client:
+            response = client.get(
+                url,
+                params={'lms_user_id': user.id},
+                timeout=settings.EXAMS_SERVICE_REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
     except (requests.RequestException, ValueError, User.DoesNotExist) as exc:
         raise ExamsServiceError(f'Unable to read proctoring status from edx-exams: {exc!r}') from exc
 
