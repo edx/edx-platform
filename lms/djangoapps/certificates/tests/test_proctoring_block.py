@@ -394,8 +394,7 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
             'edx_proctoring.api.get_attempt_status_summary', return_value={'status': legacy_status},
         ), client as exams_client:
             result = proctoring_block.get_certificate_proctoring_status(self.user, self.COURSE_KEY)
-        self.exams_client = exams_client
-        return result
+        return result, exams_client
 
     @ddt.data(
         ('created', 'proctored_exam_incomplete'),
@@ -411,7 +410,7 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
     )
     @ddt.unpack
     def test_blocking_statuses(self, status, reason):
-        result = self._check([status])
+        result, _ = self._check([status])
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['reason'], reason)
@@ -419,23 +418,23 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
 
     @ddt.data('verified', 'expired')
     def test_allowed_statuses(self, status):
-        self.assertFalse(self._check([status])['blocked'])
+        self.assertFalse(self._check([status])[0]['blocked'])
 
     def test_no_attempt_is_non_blocking(self):
-        self.assertFalse(self._check([None])['blocked'])
+        self.assertFalse(self._check([None])[0]['blocked'])
 
     def test_no_proctored_exams_is_non_blocking(self):
-        self.assertFalse(self._check([])['blocked'])
+        self.assertFalse(self._check([])[0]['blocked'])
 
     def test_one_blocking_exam_blocks_among_allowed_exams(self):
-        result = self._check(['verified', 'submitted', 'verified'])
+        result, _ = self._check(['verified', 'submitted', 'verified'])
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['reason'], 'proctoring_review_pending')
 
     def test_unclassified_status_blocks_and_is_logged(self):
         with self.assertLogs(proctoring_block.log, level='ERROR'):
-            result = self._check(['brand_new_status'])
+            result, _ = self._check(['brand_new_status'])
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['reason'], 'proctoring_status_unavailable')
@@ -445,7 +444,7 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
         with mock.patch(
             'lms.djangoapps.certificates.proctoring_block.increment'
         ) as increment, self.assertLogs(proctoring_block.log, level='ERROR'):
-            result = self._check(exams_error=ExamsServiceError('boom'))
+            result, _ = self._check(exams_error=ExamsServiceError('boom'))
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['reason'], 'proctoring_status_unavailable')
@@ -453,49 +452,49 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
 
     def test_unexpected_client_error_blocks_and_is_not_silent(self):
         with self.assertLogs(proctoring_block.log, level='ERROR'):
-            result = self._check(exams_error=RuntimeError('jwt misconfigured'))
+            result, _ = self._check(exams_error=RuntimeError('jwt misconfigured'))
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['reason'], 'proctoring_status_unavailable')
 
     def test_exams_switch_off_does_not_call_edx_exams(self):
-        result = self._check(['submitted'], exams_switch=False)
+        result, exams_client = self._check(['submitted'], exams_switch=False)
 
         self.assertFalse(result['blocked'])
-        self.exams_client.assert_not_called()
+        exams_client.assert_not_called()
 
     @ddt.data('proctortrack', 'software_secure', None)
     def test_course_not_on_lti_provider_does_not_call_edx_exams(self, provider):
-        result = self._check(['submitted'], provider=provider)
+        result, exams_client = self._check(['submitted'], provider=provider)
 
         self.assertFalse(result['blocked'])
-        self.exams_client.assert_not_called()
+        exams_client.assert_not_called()
 
     @ddt.data('created', 'download_software_clicked', 'ready_to_start')
     def test_never_started_legacy_record_is_ignored_on_lti_course(self, status):
-        result = self._check(['verified'], legacy_status=status)
+        result, _ = self._check(['verified'], legacy_status=status)
 
         self.assertFalse(result['blocked'])
 
     @ddt.data('started', 'ready_to_submit', 'submitted', 'second_review_required', 'error')
     def test_real_legacy_attempt_is_still_respected_on_lti_course(self, status):
-        result = self._check(['verified'], legacy_status=status)
+        result, exams_client = self._check(['verified'], legacy_status=status)
 
         self.assertTrue(result['blocked'])
-        self.exams_client.assert_not_called()
+        exams_client.assert_not_called()
 
     def test_never_started_legacy_record_still_blocks_when_exams_switch_off(self):
-        result = self._check(legacy_status='created', exams_switch=False)
+        result, _ = self._check(legacy_status='created', exams_switch=False)
 
         self.assertTrue(result['blocked'])
 
     def test_never_started_legacy_record_still_blocks_on_non_lti_course(self):
-        result = self._check(legacy_status='created', provider='proctortrack')
+        result, _ = self._check(legacy_status='created', provider='proctortrack')
 
         self.assertTrue(result['blocked'])
 
     def test_legacy_rejected_stays_allowed_on_non_lti_course(self):
-        result = self._check(legacy_status='rejected', provider='proctortrack')
+        result, _ = self._check(legacy_status='rejected', provider='proctortrack')
 
         self.assertFalse(result['blocked'])
 
