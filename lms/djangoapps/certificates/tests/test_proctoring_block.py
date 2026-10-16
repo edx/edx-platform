@@ -405,6 +405,7 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
         ('ready_to_submit', 'proctored_exam_incomplete'),
         ('submitted', 'proctoring_review_pending'),
         ('second_review_required', 'proctoring_review_pending'),
+        ('timed_out', 'proctored_exam_incomplete'),
         ('error', 'proctoring_error'),
         ('rejected', 'proctoring_rejected'),
     )
@@ -416,7 +417,7 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
         self.assertEqual(result['reason'], reason)
         self.assertEqual(result['blocking_statuses'], [status])
 
-    @ddt.data('verified', 'timed_out', 'expired')
+    @ddt.data('verified', 'expired')
     def test_allowed_statuses(self, status):
         self.assertFalse(self._check([status])['blocked'])
 
@@ -449,6 +450,13 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
         self.assertTrue(result['blocked'])
         self.assertEqual(result['reason'], 'proctoring_status_unavailable')
         increment.assert_any_call('certificates.proctoring_block.lookup_error')
+
+    def test_unexpected_client_error_blocks_and_is_not_silent(self):
+        with self.assertLogs(proctoring_block.log, level='ERROR'):
+            result = self._check(exams_error=RuntimeError('jwt misconfigured'))
+
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['reason'], 'proctoring_status_unavailable')
 
     def test_exams_switch_off_does_not_call_edx_exams(self):
         result = self._check(['submitted'], exams_switch=False)

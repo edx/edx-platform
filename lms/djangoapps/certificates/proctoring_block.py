@@ -48,6 +48,8 @@ REVIEW_PENDING_STATUSES = frozenset({'submitted', 'second_review_required'})
 # Courses on an LTI proctoring provider (for example Proctorio) keep their attempts in edx-exams.
 # The statuses below classify those attempts.  ``rejected`` blocks here, unlike the legacy
 # edx-proctoring table above, because a rejected attempt must keep the certificate unavailable.
+# ``timed_out`` also blocks: it is a transitional state just before ``submitted``, so allowing it
+# could release a certificate before review.
 EXAMS_PROVIDER = 'lti_external'
 
 EXAMS_BLOCKING_ATTEMPT_STATUSES = frozenset({
@@ -58,12 +60,12 @@ EXAMS_BLOCKING_ATTEMPT_STATUSES = frozenset({
     'ready_to_submit',
     'submitted',
     'second_review_required',
+    'timed_out',
     'error',
 })
 
 EXAMS_ALLOWED_ATTEMPT_STATUSES = frozenset({
     'verified',
-    'timed_out',
     'expired',
 })
 
@@ -120,7 +122,9 @@ def _get_exams_service_result(user, course_key):
     """Return the access decision from the learner's edx-exams proctoring statuses."""
     try:
         exams = get_exam_proctoring_statuses(user, course_key)
-    except ExamsServiceError:
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Fail closed on any failure (including ExamsServiceError and JWT misconfiguration)
+        # rather than surfacing a 500 from the certificate access check.
         log.exception(
             'Unable to retrieve edx-exams proctoring status while checking certificate access. '
             'user_id=%s course_key=%s', user.id, course_key
