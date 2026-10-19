@@ -25,7 +25,9 @@ from common.djangoapps.student.tests.factories import (
     UserFactory
 )
 from lms.djangoapps.support.models import BulkUnenrollBatch, BulkUnenrollChunk, BulkUnenrollCourseState
+from lms.djangoapps.support.rest_api.v1.views import EXEC_ED_MODE_SLUGS
 from lms.djangoapps.support.tests.test_views import SupportViewTestCase
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 
 
@@ -586,6 +588,178 @@ class BulkUnenrollAPIViewTest(BulkUnenrollEndpointTestMixin, SupportViewTestCase
         self.assertEqual(by_id[missing]["active_count"], 0)
         self.assertEqual(by_id[str(self.course_a.id)]["error"], "")
 
+    @ddt.data("unpaid-executive-education", "paid-bootcamp", "unpaid-bootcamp")
+    def test_exec_ed_course_flagged(self, mode_slug):
+        from common.djangoapps.course_modes.tests.factories import CourseModeFactory
+
+        self._login(self.admin)
+        CourseModeFactory.create(course_id=self.course_b.id, mode_slug=mode_slug)
+        content = f"{self.course_a.id}\n{self.course_b.id}\n"
+        resp = self.client.post(self.url, {"file": self._csv(content)}, format="multipart")
+
+        self.assertEqual(resp.status_code, 200)
+        by_id = {c["course_id"]: c for c in resp.json()["courses"]}
+        self.assertIs(by_id[str(self.course_b.id)]["exec_ed"], True)
+        self.assertIs(by_id[str(self.course_a.id)]["exec_ed"], False)
+        # Exec Ed is a warning for the operator, not a per-course error.
+        self.assertEqual(by_id[str(self.course_b.id)]["error"], "")
+
+    def test_exec_ed_flag_independent_of_course_not_found(self):
+        from common.djangoapps.course_modes.models import CourseMode
+        from opaque_keys.edx.keys import CourseKey
+
+        self._login(self.admin)
+        # Mode rows can exist for a run with no CourseOverview (deleted course).
+        # Not the factory: it would create the CourseOverview as a side effect.
+        ghost = CourseKey.from_string("course-v1:MITx+Ghost+1T2026")
+        CourseMode.objects.create(
+            course_id=ghost, mode_slug=CourseMode.PAID_EXECUTIVE_EDUCATION, mode_display_name="Exec Ed",
+            min_price=1,
+        )
+        resp = self.client.post(self.url, {"file": self._csv(f"{ghost}\n")}, format="multipart")
+
+        self.assertEqual(resp.status_code, 200)
+        row = resp.json()["courses"][0]
+        self.assertEqual(row["error"], "Course not found")
+        self.assertIs(row["exec_ed"], True)
+
+    def test_exec_ed_flag_survives_a_wrong_case_course_id(self):
+        """
+        Production MySQL compares course ids case-insensitively, so a lower-cased id
+        in the CSV still matches the CourseMode row, but the key comes back in the
+        database's casing. The flag must not depend on an exact-case match.
+        SQLite is case-sensitive, so the query is stubbed to behave like MySQL.
+        """
+        from opaque_keys.edx.keys import CourseKey
+
+        self._login(self.admin)
+        wrong_case = CourseKey.from_string(str(self.course_b.id).lower())
+        self.assertNotEqual(str(wrong_case), str(self.course_b.id))
+
+        with patch("lms.djangoapps.support.rest_api.v1.views.CourseMode.objects") as modes:
+            modes.filter.return_value.values_list.return_value = [self.course_b.id]
+            resp = self.client.post(
+                self.url, {"file": self._csv(f"{wrong_case}\n")}, format="multipart",
+            )
+
+        # The stub answers regardless of its arguments, so pin the question too:
+        # the uploaded ids, restricted to the exec-ed slugs.
+        modes.filter.assert_called_once_with(
+            course_id__in=[wrong_case], mode_slug__in=EXEC_ED_MODE_SLUGS,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIs(resp.json()["courses"][0]["exec_ed"], True)
+
+    def test_wrong_case_course_id_resolves_to_the_stored_key(self):
+        """
+        MySQL matches a wrong-case id but returns the stored key. The preview must
+        carry on with the stored key: otherwise the row reads "Course not found"
+        with 0 learners while the worker's own filter still matches every
+        enrollment. SQLite is case-sensitive, so the overview lookup is stubbed to
+        behave like MySQL; the enrollment count below is real.
+        """
+        from opaque_keys.edx.keys import CourseKey
+
+        self._login(self.admin)
+        wrong_case = CourseKey.from_string(str(self.course_a.id).lower())
+        self.assertNotEqual(str(wrong_case), str(self.course_a.id))
+
+        with patch("lms.djangoapps.support.rest_api.v1.views.CourseOverview.objects") as overviews:
+            overviews.filter.return_value.values_list.return_value = [self.course_a.id]
+            resp = self.client.post(
+                self.url, {"file": self._csv(f"{wrong_case}\n{self.course_a.id}\n")}, format="multipart",
+            )
+
+        overviews.filter.assert_called_once_with(id__in=[wrong_case, self.course_a.id])
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        # Both spellings resolve to the one stored run, so the batch has one course.
+        self.assertEqual(data["total_courses"], 1)
+        row = data["courses"][0]
+        self.assertEqual(row["course_id"], str(self.course_a.id))
+        self.assertEqual(row["error"], "")
+        self.assertEqual(row["active_count"], 3)
+        self.assertEqual(data["totals"]["active"], 3)
+        state = BulkUnenrollCourseState.objects.get(batch__uuid=data["batch_id"])
+        self.assertEqual(state.course_id, self.course_a.id)
+
+    def test_wrong_case_id_for_a_run_without_overview_resolves_through_enrollments(self):
+        """
+        A deleted course keeps its enrollments but has no CourseOverview, so the
+        overview lookup cannot resolve a wrong-case id for it. The enrollment
+        count query returns the stored key too, and must be used the same way;
+        otherwise the row previews as 0 learners while the worker, filtering
+        case-insensitively, unenrolls everyone. The count query is stubbed to
+        answer like MySQL; SQLite would return nothing for the wrong case.
+        """
+        from opaque_keys.edx.keys import CourseKey
+
+        self._login(self.admin)
+        stored = CourseKey.from_string("course-v1:MITx+Ghost+1T2026")
+        wrong_case = CourseKey.from_string(str(stored).lower())
+        self.assertFalse(CourseOverview.objects.filter(id=stored).exists())
+
+        with patch("lms.djangoapps.support.rest_api.v1.views.CourseEnrollment.objects") as enrollments:
+            (enrollments.filter.return_value.order_by.return_value
+             .values_list.return_value.annotate.return_value) = [(stored, 2)]
+            resp = self.client.post(
+                self.url, {"file": self._csv(f"{wrong_case}\n")}, format="multipart",
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        row = data["courses"][0]
+        self.assertEqual(row["course_id"], str(stored))
+        self.assertEqual(row["active_count"], 2)
+        self.assertEqual(row["error"], "Course not found")   # the overview really is absent
+        state = BulkUnenrollCourseState.objects.get(batch__uuid=data["batch_id"])
+        self.assertEqual(state.course_id, stored)
+
+    def test_overview_spelling_wins_when_enrollments_carry_a_different_case(self):
+        """
+        MySQL lets a wrong-case enrollment be created alongside the correctly
+        cased course, and GROUP BY may return either spelling. The found check
+        and the count must not depend on which one came back, and the batch row
+        must carry the overview's spelling. Both queries are stubbed to disagree.
+        """
+        from opaque_keys.edx.keys import CourseKey
+
+        self._login(self.admin)
+        enrollment_spelling = CourseKey.from_string(str(self.course_a.id).lower())
+
+        with patch("lms.djangoapps.support.rest_api.v1.views.CourseOverview.objects") as overviews, \
+                patch("lms.djangoapps.support.rest_api.v1.views.CourseEnrollment.objects") as enrollments:
+            overviews.filter.return_value.values_list.return_value = [self.course_a.id]
+            (enrollments.filter.return_value.order_by.return_value
+             .values_list.return_value.annotate.return_value) = [(enrollment_spelling, 3)]
+            resp = self.client.post(
+                self.url, {"file": self._csv(f"{self.course_a.id}\n")}, format="multipart",
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        row = data["courses"][0]
+        self.assertEqual(row["course_id"], str(self.course_a.id))
+        self.assertEqual(row["error"], "")
+        self.assertEqual(row["active_count"], 3)
+        state = BulkUnenrollCourseState.objects.get(batch__uuid=data["batch_id"])
+        self.assertEqual(state.course_id, self.course_a.id)
+
+    def test_case_variants_of_an_unknown_course_collapse_to_one_row(self):
+        """
+        MySQL treats the two spellings as one course id, so two batch rows would
+        make the worker's per-course lookup raise MultipleObjectsReturned.
+        """
+        self._login(self.admin)
+        content = "course-v1:MITx+Ghost+1T2026\ncourse-v1:mitx+ghost+1t2026\n"
+        resp = self.client.post(self.url, {"file": self._csv(content)}, format="multipart")
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["total_courses"], 1)
+        self.assertEqual(data["courses"][0]["course_id"], "course-v1:MITx+Ghost+1T2026")  # first spelling wins
+        self.assertEqual(BulkUnenrollCourseState.objects.filter(batch__uuid=data["batch_id"]).count(), 1)
+
     def test_query_count_independent_of_enrollment_count(self):
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
@@ -738,9 +912,9 @@ class BulkUnenrollConfirmAPIViewTest(BatchScopedEndpointTestMixin, SupportViewTe
         BulkUnenrollCourseState.objects.create(batch=batch, course_id=self.course.id, active_count=3)
         return batch
 
-    def _confirm(self, batch_id, reason="cleanup"):
+    def _confirm(self, batch_id, reason="cleanup", **extra):
         """One POST to the confirm endpoint, running the queued on_commit hook."""
-        data = {} if reason is None else {"reason": reason}
+        data = {**({} if reason is None else {"reason": reason}), **extra}
         # The engine hand-off is a transaction.on_commit hook, and TestCase never
         # commits — without this it would silently never run.
         with self.captureOnCommitCallbacks(execute=True):
@@ -811,6 +985,46 @@ class BulkUnenrollConfirmAPIViewTest(BatchScopedEndpointTestMixin, SupportViewTe
         batch.refresh_from_db()
         self.assertEqual(batch.state, "validated")   # confirmable again
         self.assertEqual(batch.reason, "")
+
+    def _make_exec_ed(self):
+        from common.djangoapps.course_modes.models import CourseMode
+        from common.djangoapps.course_modes.tests.factories import CourseModeFactory
+        CourseModeFactory.create(course_id=self.course.id, mode_slug=CourseMode.PAID_EXECUTIVE_EDUCATION)
+
+    @ddt.data({}, {"confirm_exec_ed": False}, {"confirm_exec_ed": "no"})
+    def test_exec_ed_batch_needs_explicit_confirm(self, extra):
+        """
+        The preview only warns and an API caller never sees it, so a batch with
+        Exec Ed runs is refused until the caller sends confirm_exec_ed=true.
+        """
+        self._login(self.admin)
+        self._make_exec_ed()
+        batch = self._make_batch()
+        resp = self._confirm(batch.uuid, **extra)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("confirm_exec_ed", resp.json())
+        batch.refresh_from_db()
+        self.assertEqual(batch.state, "validated")   # unchanged
+        self.mock_dispatch.assert_not_called()
+
+    @ddt.data(True, "true", "TRUE", "1")
+    def test_exec_ed_batch_confirms_with_flag(self, flag):
+        self._login(self.admin)
+        self._make_exec_ed()
+        batch = self._make_batch()
+        resp = self._confirm(batch.uuid, confirm_exec_ed=flag)
+        self.assertEqual(resp.status_code, 202)
+        self.mock_dispatch.assert_called_once()
+
+    def test_already_confirmed_exec_ed_batch_is_409_not_400(self):
+        """The state check comes first: asking for the flag cannot help a pending batch."""
+        self._login(self.admin)
+        self._make_exec_ed()
+        batch = self._make_batch(state=BulkUnenrollBatch.State.PENDING)
+        resp = self._confirm(batch.uuid)
+        self.assertEqual(resp.status_code, 409)
+        self.mock_dispatch.assert_not_called()
 
     def test_concurrent_confirm_does_not_double_dispatch(self):
         """

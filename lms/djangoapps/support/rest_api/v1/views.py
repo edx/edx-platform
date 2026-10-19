@@ -25,6 +25,7 @@ from common.djangoapps.student.api import (
     BulkUnenrollCsvUnreadable,
     parse_bulk_unenroll_csv,
 )
+from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.models.user import CourseAccessRole
 from lms.djangoapps.support.models import BulkUnenrollBatch, BulkUnenrollCourseState
@@ -39,6 +40,31 @@ from ..serializers import (
 User = get_user_model()
 
 log = logging.getLogger(__name__)
+
+# A run gets the Exec Ed warning if it carries any of these modes (LP-1362).
+# Bootcamps are included: unenrolling them has the same partner-side effects.
+# shortcut: a run with no CourseMode rows is not flagged; add a Discovery
+# course_type fallback if such runs show up in a real upload.
+EXEC_ED_MODE_SLUGS = (
+    CourseMode.EXECUTIVE_EDUCATION,
+    CourseMode.PAID_EXECUTIVE_EDUCATION,
+    CourseMode.UNPAID_EXECUTIVE_EDUCATION,
+    CourseMode.PAID_BOOTCAMP,
+    CourseMode.UNPAID_BOOTCAMP,
+)
+
+
+def _exec_ed_course_ids(course_keys):
+    """
+    Case-folded ids of the Executive Education runs among ``course_keys`` (LP-1362).
+
+    Folded because MySQL matches a wrong-case id but returns the stored key.
+    """
+    return {
+        str(key).lower() for key in CourseMode.objects
+        .filter(course_id__in=course_keys, mode_slug__in=EXEC_ED_MODE_SLUGS)
+        .values_list("course_id", flat=True)
+    }
 
 
 def _dispatch_bulk_unenroll(batch):
@@ -747,7 +773,7 @@ class BulkUnenrollAPIView(GenericAPIView):
             )
 
         # One query: which of the course ids actually have a CourseOverview.
-        existing = set(
+        overview_ids = list(
             CourseOverview.objects.filter(id__in=course_keys).values_list("id", flat=True)
         )
         # One grouped query: active-enrollment count per course (0 if absent).
@@ -758,6 +784,24 @@ class BulkUnenrollAPIView(GenericAPIView):
             .values_list("course_id")
             .annotate(active=Count("id"))
         )
+        # MySQL matches a wrong-case id but returns the stored key. Resolve each
+        # uploaded id to the stored spelling (overview wins over enrollments) and
+        # fold case on every lookup below, else a wrong-case row previews as "not
+        # found, 0 learners" while the worker's filter still matches everyone.
+        # Case variants collapse to one row: MySQL treats them as one course id.
+        # shortcut: folds case only; utf8mb3_general_ci also ignores accents.
+        stored = {str(key).lower(): key for key in [*counts, *overview_ids]}
+        resolved = {}
+        for key in course_keys:
+            folded = str(key).lower()
+            resolved.setdefault(folded, stored.get(folded, key))
+        course_keys = list(resolved.values())
+        existing = {str(key).lower() for key in overview_ids}
+        counts = {str(key).lower(): active for key, active in counts.items()}
+        # One query: which ids are Executive Education runs. A flag, not an
+        # `error`: the operator is warned, not blocked. Not persisted; confirm
+        # re-runs the same query and demands an explicit confirm_exec_ed.
+        exec_ed = _exec_ed_course_ids(course_keys)
 
         with transaction.atomic():
             batch = BulkUnenrollBatch.objects.create(
@@ -770,10 +814,10 @@ class BulkUnenrollAPIView(GenericAPIView):
                 BulkUnenrollCourseState(
                     batch=batch,
                     course_id=course_key,
-                    active_count=counts.get(course_key, 0),
+                    active_count=counts.get(str(course_key).lower(), 0),
                     # Flag (do not drop) course ids with no CourseOverview — likely
                     # a typo, but enrollments can exist without one, so it's a signal.
-                    error="" if course_key in existing else "Course not found",
+                    error="" if str(course_key).lower() in existing else "Course not found",
                 )
                 for course_key in course_keys
             ]
@@ -781,7 +825,10 @@ class BulkUnenrollAPIView(GenericAPIView):
 
         response = BulkUnenrollBatchSerializer(batch).data
         response["totals"] = {"active": sum(counts.values())}
-        response["courses"] = BulkUnenrollCourseStateSerializer(course_states, many=True).data
+        response["courses"] = [
+            {**row, "exec_ed": row["course_id"].lower() in exec_ed}
+            for row in BulkUnenrollCourseStateSerializer(course_states, many=True).data
+        ]
         response["errors"] = errors
         return Response(response, status=status.HTTP_200_OK)
 
@@ -811,6 +858,18 @@ class BulkUnenrollConfirmAPIView(GenericAPIView):
             batch = BulkUnenrollBatch.objects.select_for_update().get(pk=batch.pk)
             if batch.state != BulkUnenrollBatch.State.VALIDATED:
                 return _conflict(f"Batch is '{batch.state}', not 'validated'; it cannot be confirmed.")
+            # LP-1362: the preview only warns, and API callers never see that
+            # warning, so a batch with Exec Ed / Bootcamp runs needs an explicit
+            # second yes. After the state check, so an already-confirmed batch
+            # still answers 409 rather than asking for a flag that cannot help.
+            exec_ed_runs = _exec_ed_course_ids(batch.courses.values_list("course_id", flat=True))
+            if exec_ed_runs and str(request.data.get("confirm_exec_ed", "")).lower() not in ("true", "1"):
+                raise ValidationError({
+                    "confirm_exec_ed": (
+                        f"This batch includes {len(exec_ed_runs)} Executive Education or Bootcamp run(s). "
+                        "Send confirm_exec_ed=true to unenroll them."
+                    ),
+                })
             batch.reason = reason[:255]
             batch.state = BulkUnenrollBatch.State.PENDING
             batch.save(update_fields=["reason", "state", "modified"])
