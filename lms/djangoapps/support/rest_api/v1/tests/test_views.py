@@ -966,7 +966,8 @@ class BulkUnenrollConfirmAPIViewTest(BatchScopedEndpointTestMixin, SupportViewTe
         self.assertEqual(batch.state, state)         # not re-dispatched
         self.mock_dispatch.assert_not_called()
 
-    def test_failed_dispatch_restores_the_batch(self):
+    @patch('lms.djangoapps.support.rest_api.v1.views.record_exception')
+    def test_failed_dispatch_restores_the_batch(self, mock_record_exception):
         """
         The flip commits before the publish, so a batch left 'pending' after a failed
         publish is stranded: no worker holds it and confirm would refuse to re-run.
@@ -981,6 +982,7 @@ class BulkUnenrollConfirmAPIViewTest(BatchScopedEndpointTestMixin, SupportViewTe
 
         resp = self._confirm(batch.uuid, reason="Partner offboarding")
 
+        mock_record_exception.assert_called_once_with()
         self.assertEqual(resp.status_code, 202)
         batch.refresh_from_db()
         self.assertEqual(batch.state, "validated")   # confirmable again

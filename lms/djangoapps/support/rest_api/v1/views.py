@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
 from django.utils.timezone import now
+from edx_django_utils.monitoring import record_exception
 from edx_rest_framework_extensions.paginators import DefaultPagination
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import status
@@ -113,6 +114,7 @@ def _dispatch_or_rollback(batch, action, rollback):
                 "bulk_unenroll: failed to queue %s for batch %s; rolling the "
                 "transition back so the batch is not stranded", action, batch.uuid,
             )
+            record_exception()
             rollback()
 
     transaction.on_commit(_publish)
