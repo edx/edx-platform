@@ -16,6 +16,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import FieldError, PermissionDenied, ValidationError as DjangoValidationError
 from django.db.models import QuerySet
+from django.db.models.functions import Lower
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, HttpResponseNotFound
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -1862,7 +1863,10 @@ def get_allowed_organizations_for_libraries(user):
     # hold a role in. Gated by a temporary flag (LP-1102) so it can be verified in stage first.
     if user.is_staff and expanded_library_creation_orgs_enabled():
         # Only active organizations, matching the Studio organizations list and ensure_organization().
-        return list(Organization.objects.filter(active=True).values_list('short_name', flat=True))
+        # Sorted case-insensitively so the dropdown is alphabetical.
+        return list(
+            Organization.objects.filter(active=True).order_by(Lower('short_name')).values_list('short_name', flat=True)
+        )
     if settings.FEATURES.get('ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES', False):
         return get_organizations_for_non_course_creators(user)
     elif settings.FEATURES.get('ENABLE_CREATOR_GROUP', False):
@@ -1880,7 +1884,8 @@ def user_can_create_organizations(user):
 
 def get_organizations_for_non_course_creators(user):
     """
-    Returns the list of organizations which the user is a staff member of, as a list of strings.
+    Returns the list of organizations which the user is a staff member of, as a list of strings
+    sorted case-insensitively.
 
     When the LP-1102 flag is enabled, organizations where the user is an admin (instructor) are
     included too. Course admins can already create legacy libraries in those organizations, and v2
@@ -1889,7 +1894,7 @@ def get_organizations_for_non_course_creators(user):
     orgs_map = set(OrgStaffRole().get_orgs_for_user(user))
     if expanded_library_creation_orgs_enabled():
         orgs_map.update(OrgInstructorRole().get_orgs_for_user(user))
-    return list(orgs_map)
+    return sorted(orgs_map, key=str.lower)
 
 
 def get_organizations(user):
