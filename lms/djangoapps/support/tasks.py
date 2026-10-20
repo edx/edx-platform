@@ -5,7 +5,7 @@ import logging
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from completion.models import BlockCompletion
-from edx_django_utils.monitoring import set_code_owner_attribute
+from edx_django_utils.monitoring import record_exception, set_code_owner_attribute
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -109,6 +109,9 @@ def bulk_unenroll_chunk(batch_uuid, course_id, user_ids, chunk_index, attempt, c
                     "bulk_unenroll_chunk: failed to unenroll user %s in course %s (batch %s)",
                     user.id, course_key, batch_uuid,
                 )
+                # This may only report the last exception, but it at least exposes
+                # errors to the observability tool. Logs will give the complete list.
+                record_exception()
 
             processed_ids.append(user.id)
             # Honour a mid-chunk revocation (cancel / retry / course failed)
