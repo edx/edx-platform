@@ -131,12 +131,14 @@ ${HTML(fragment.foot_html())}
         var baseElement = contentElement || document.body;
         var maxHeight = baseElement.offsetHeight;
         // Notes popups live in .annotator-widget; .annotator-outer itself has zero size.
-        // Include visible popup bounds so iframe resize does not clip the notes modal.
-        var visiblePopup = document.querySelector('.annotator-outer:not(.annotator-hide) .annotator-widget, .annotator-adder:not(.annotator-hide)');
-        if (visiblePopup) {
-          var popupBottom = visiblePopup.getBoundingClientRect().bottom;
-          maxHeight = Math.max(baseElement.offsetHeight, Math.ceil(popupBottom));
-        }
+        // Include visible popup/modal bounds so iframe resize does not clip them.
+        var popups = document.querySelectorAll('.annotator-outer:not(.annotator-hide) .annotator-widget, .annotator-adder:not(.annotator-hide), .modal');
+        popups.forEach(function(popup) {
+          var rect = popup.getBoundingClientRect();
+          if (rect.height > 0) {
+            maxHeight = Math.max(maxHeight, Math.ceil(rect.bottom));
+          }
+        });
         return maxHeight;
       }
 
