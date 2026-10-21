@@ -1,0 +1,5 @@
+lms:
+  django_apps:
+    - subscriber
+  urls:
+    - subscriber.urls
