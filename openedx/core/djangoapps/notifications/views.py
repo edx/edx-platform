@@ -1,6 +1,7 @@
 """
 Views for the notifications API.
 """
+import logging
 from datetime import datetime, timedelta
 
 from django.conf import settings
@@ -39,6 +40,8 @@ from .utils import (
     get_show_notifications_tray,
     exclude_inaccessible_preferences
 )
+
+logger = logging.getLogger(__name__)
 
 
 @allow_any_authenticated_user()
@@ -94,7 +97,13 @@ class NotificationListAPIView(generics.ListAPIView):
 
         if app_name:
             params['app_name'] = app_name
-        return Notification.objects.filter(**params).order_by('-created')
+        queryset = Notification.objects.filter(**params).order_by('-created')
+        logger.debug(
+            'Built notifications queryset for user %s with app_name=%s',
+            self.request.user.id,
+            app_name,
+        )
+        return queryset
 
 
 @allow_any_authenticated_user()
@@ -143,6 +152,11 @@ class NotificationCountView(APIView):
             count_total += count
             count_by_app_name_dict[app_name] = count
 
+        logger.debug(
+            'Retrieved notification count for user %s: total=%d',
+            request.user.id,
+            count_total
+        )
         return Response({
             "show_notifications_tray": show_notifications_tray,
             "count": count_total,
@@ -171,6 +185,10 @@ class MarkNotificationsSeenAPIView(UpdateAPIView):
         app_name = self.kwargs.get('app_name')
 
         if not app_name:
+            logger.warning(
+                'Invalid app_name provided by user %s',
+                request.user.id
+            )
             return Response({'error': _('Invalid app name.')}, status=400)
 
         notifications = Notification.objects.filter(
@@ -179,7 +197,13 @@ class MarkNotificationsSeenAPIView(UpdateAPIView):
             last_seen__isnull=True,
         )
 
-        notifications.update(last_seen=datetime.now())
+        update_count = notifications.update(last_seen=datetime.now(UTC))
+        logger.info(
+            'Marked %d notifications as seen for user %s with app_name=%s',
+            update_count,
+            request.user.id,
+            app_name,
+        )
 
         return Response({'message': _('Notifications marked as seen.')}, status=200)
 
@@ -220,6 +244,11 @@ class NotificationReadAPIView(APIView):
             notification.last_read = read_at
             notification.save()
             notification_read_event(request.user, notification, first_time_read)
+            logger.info(
+                'Marked notification %s as read for user %s',
+                notification_id,
+                request.user.id,
+            )
             return Response({'message': _('Notification marked read.')}, status=status.HTTP_200_OK)
 
         app_name = request.data.get('app_name', '')
@@ -230,10 +259,22 @@ class NotificationReadAPIView(APIView):
                 app_name=app_name,
                 last_read__isnull=True,
             )
-            notifications.update(last_read=read_at)
+            update_count = notifications.update(last_read=read_at)
             notifications_app_all_read_event(request.user, app_name)
+            logger.info(
+                'Marked %d notifications as read for user %s with app_name=%s',
+                update_count,
+                request.user.id,
+                app_name,
+            )
             return Response({'message': _('Notifications marked read.')}, status=status.HTTP_200_OK)
 
+        logger.warning(
+            'Invalid app_name (%s) or notification_id (%s) from user %s',
+            app_name,
+            notification_id,
+            request.user.id,
+        )
         return Response({'error': _('Invalid app_name or notification_id.')}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -247,8 +288,14 @@ def preference_update_from_encrypted_username_view(request, username, patch=""):
         request=request, group="unsubscribe", key=username_from_hash,
         rate=settings.ONE_CLICK_UNSUBSCRIBE_RATE_LIMIT, increment=True,
     ):
+        logger.warning(
+            'Rate limit exceeded for one-click unsubscribe request'
+        )
         return Response({"error": "Too many requests"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
     update_user_preferences_from_patch(username)
+    logger.info(
+        'Updated preferences from one-click unsubscribe request'
+    )
     return Response({"result": "success"}, status=status.HTTP_200_OK)
 
 
@@ -289,9 +336,18 @@ class NotificationPreferencesView(APIView):
             user_preferences_map[missing_type] = new_pref
         if missing_types:
             NotificationPreference.objects.bulk_create(missing_types)
+            logger.info(
+                'Created %d missing notification preferences for user %s',
+                len(missing_types),
+                request.user.id
+            )
 
         # If no user preferences are found, return an error response.
         if not user_preferences_map:
+            logger.warning(
+                'No active notification preferences for user %s',
+                request.user.id
+            )
             return Response({
                 'status': 'error',
                 'message': 'No active notification preferences found for this user.'
@@ -327,6 +383,10 @@ class NotificationPreferencesView(APIView):
         structured_preferences = add_non_editable_in_preference(
             add_info_to_notification_config(structured_preferences)
         )
+        logger.debug(
+            'Retrieved notification preferences for user %s',
+            request.user.id,
+        )
         return Response({
             'status': 'success',
             'message': 'Notification preferences retrieved successfully.',
@@ -348,6 +408,17 @@ class NotificationPreferencesView(APIView):
         # Validate incoming data
         serializer = UserNotificationPreferenceUpdateAllSerializer(data=request.data)
         if not serializer.is_valid():
+            invalid_fields = list(serializer.errors.keys())
+            logger.warning(
+                'Invalid serializer data for user %s; invalid fields: %s',
+                request.user.id,
+                invalid_fields,
+            )
+            logger.debug(
+                'Serializer validation errors for user %s: %s',
+                request.user.id,
+                serializer.errors,
+            )
             return Response({
                 'status': 'error',
                 'message': serializer.errors
@@ -373,10 +444,16 @@ class NotificationPreferencesView(APIView):
         updated_data = self._prepare_update_data(validated_data)
 
         # Update preferences
-        query_set.update(**updated_data)
+        update_count = query_set.update(**updated_data)
 
         # Log the event
         self._log_preference_update_event(request.user, validated_data)
+        logger.info(
+            'Updated %d notification preferences for user %s with app=%s',
+            update_count,
+            request.user.id,
+            validated_data["notification_app"],
+        )
 
         # Prepare and return response
         response_data = self._prepare_response_data(validated_data)
