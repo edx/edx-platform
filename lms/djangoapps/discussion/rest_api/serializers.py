@@ -247,23 +247,53 @@ class _ContentSerializer(serializers.Serializer):
             raise ValidationError("This field is not allowed in an update.")
         return value
 
+    def _resolve_user(self, user_id):
+        """
+        Resolve a user_id to a User object using prefetched data, per-request cache, or DB.
+        Returns User or None. All serializer methods should use this instead of
+        User.objects.get() directly.
+        """
+        uid = str(user_id) if user_id else None
+        if not uid:
+            return None
+
+        # 1. Check prefetched users
+        prefetched = self.context.get("_prefetched_users")
+        if prefetched is not None:
+            user = prefetched.get(uid)
+            if user is not None:
+                return user
+
+        # 2. Per-request cache
+        cache = self.context.setdefault("_user_cache", {})
+        if uid in cache:
+            return cache[uid]
+
+        # 3. DB lookup
+        try:
+            user = User.objects.get(id=uid)
+            cache[uid] = user
+            return user
+        except (User.DoesNotExist, ValueError, TypeError):
+            cache[uid] = None
+            return None
+
     def _is_user_privileged(self, user_id):
         """
         Returns a boolean indicating whether the given user_id identifies a privileged user.
         """
-        is_privileged = (
+        if (
             user_id in self.context["moderator_user_ids"]
             or user_id in self.context["ta_user_ids"]
-        )
+        ):
+            return True
 
-        if not is_privileged:
-            try:
-                user = User.objects.get(id=user_id)
-                is_privileged = GlobalStaff().has_user(user)
-            except User.DoesNotExist:
-                pass
+        prefetched_gs = self.context.get("_prefetched_global_staff_ids")
+        if prefetched_gs is not None:
+            return user_id in prefetched_gs
 
-        return is_privileged
+        user = self._resolve_user(user_id)
+        return GlobalStaff().has_user(user) if user else False
 
     def _is_content_anonymous(self, obj):
         """
@@ -306,9 +336,14 @@ class _ContentSerializer(serializers.Serializer):
     def get_author(self, obj):
         """
         Returns the author's username, or None if the content is anonymous to the viewer.
-        For anonymous_to_peers posts, staff/moderators/admins can see the author.
         """
-        return None if self._is_anonymous(obj) else obj["username"]
+        if self._is_anonymous(obj):
+            return None
+        username = obj.get("username")
+        if username:
+            return username
+        user = self._resolve_user(obj.get("user_id"))
+        return user.username if user else None
 
     def get_author_id(self, obj):
         """
@@ -334,57 +369,60 @@ class _ContentSerializer(serializers.Serializer):
     def _get_user_label(self, user_id):
         """
         Returns a single legacy role label for the user.
-        Used by edit_by_label, closed_by_label, endorsed_by_label, deleted_by_label
-        to preserve backward compatibility.
-        Returns one of: "Staff", "Administrator", "Moderator", "Community TA", or None.
         """
         is_moderator = user_id in self.context["moderator_user_ids"]
         is_ta = user_id in self.context["ta_user_ids"]
 
         is_global_staff = False
         if not (is_moderator or is_ta):
-            try:
-                user = User.objects.get(id=user_id)
-                is_global_staff = GlobalStaff().has_user(user)
-            except User.DoesNotExist:
-                pass
+            prefetched_gs = self.context.get("_prefetched_global_staff_ids")
+            if prefetched_gs is not None:
+                is_global_staff = user_id in prefetched_gs
+            else:
+                user = self._resolve_user(user_id)
+                is_global_staff = GlobalStaff().has_user(user) if user else False
 
         is_administrator = False
         if is_moderator:
-            course_id = self.context.get("course_id")
-            if course_id:
-                user_roles = Role.objects.filter(
-                    users__id=user_id,
-                    course_id=course_id,
-                    name__in=[FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR],
-                ).values_list("name", flat=True)
-                is_administrator = FORUM_ROLE_ADMINISTRATOR in user_roles
-
+            prefetched_roles = self.context.get("_prefetched_roles")
+            if prefetched_roles is not None:
+                is_administrator = FORUM_ROLE_ADMINISTRATOR in prefetched_roles.get(user_id, set())
+            else:
+                course_id = self.context.get("course_id")
+                if course_id:
+                    is_administrator = FORUM_ROLE_ADMINISTRATOR in set(
+                        Role.objects.filter(
+                            users__id=user_id,
+                            course_id=course_id,
+                            name__in=[FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR],
+                        ).values_list("name", flat=True)
+                    )
         return (
-            "Staff"
-            if is_global_staff
-            else "Administrator"
-            if is_administrator
-            else "Moderator" if is_moderator else "Community TA" if is_ta else None
+            "Staff" if is_global_staff
+            else "Administrator" if is_administrator
+            else "Moderator" if is_moderator
+            else "Community TA" if is_ta
+            else None
         )
 
     def _get_user_labels_all(self, user_id):
         """
         Returns an array of ALL roles assigned to the user.
-        Used exclusively by get_author_labels to support multi-role display.
-        Examples: ["Global Staff", "Course Staff"], ["Administrator", "Community TA"]
         """
         roles = []
+        prefetched_gs = self.context.get("_prefetched_global_staff_ids")
+        prefetched_roles = self.context.get("_prefetched_roles")
+        user = self._resolve_user(user_id)
 
-        # Check GlobalStaff (platform-wide)
-        try:
-            user = User.objects.get(id=user_id)
-            if GlobalStaff().has_user(user):
+        # GlobalStaff
+        if user:
+            if prefetched_gs is not None:
+                if user_id in prefetched_gs:
+                    roles.append("Global Staff")
+            elif GlobalStaff().has_user(user):
                 roles.append("Global Staff")
-        except User.DoesNotExist:
-            user = None
 
-        # Check CourseStaff and CourseInstructor (platform course roles)
+        # CourseStaff / CourseInstructor
         if user and user_id in self.context.get("course_staff_user_ids", []):
             course_id = self.context.get("course_id")
             if course_id:
@@ -393,35 +431,41 @@ class _ContentSerializer(serializers.Serializer):
                 if CourseStaffRole(course_id).has_user(user):
                     roles.append("Course Staff")
 
-        # Check discussion-specific moderator roles
+        # Discussion moderator roles
         if user_id in self.context.get("moderator_user_ids", []):
-            course_id = self.context.get("course_id")
-            if course_id:
-                user_roles = Role.objects.filter(
-                    users__id=user_id,
-                    course_id=course_id,
-                    name__in=[FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR]
-                ).values_list('name', flat=True)
+            if prefetched_roles is not None:
+                user_role_names = prefetched_roles.get(user_id, set())
+            else:
+                course_id = self.context.get("course_id")
+                user_role_names = set(
+                    Role.objects.filter(
+                        users__id=user_id, course_id=course_id,
+                        name__in=[FORUM_ROLE_ADMINISTRATOR, FORUM_ROLE_MODERATOR],
+                    ).values_list("name", flat=True)
+                ) if course_id else set()
 
-                if FORUM_ROLE_ADMINISTRATOR in user_roles:
-                    roles.append("Administrator")
-                if FORUM_ROLE_MODERATOR in user_roles:
-                    roles.append("Moderator")
+            if FORUM_ROLE_ADMINISTRATOR in user_role_names:
+                roles.append("Administrator")
+            if FORUM_ROLE_MODERATOR in user_role_names:
+                roles.append("Moderator")
 
-        # Check discussion-specific TA roles
+        # Discussion TA roles
         if user_id in self.context.get("ta_user_ids", []):
-            course_id = self.context.get("course_id")
-            if course_id:
-                user_roles = Role.objects.filter(
-                    users__id=user_id,
-                    course_id=course_id,
-                    name__in=[FORUM_ROLE_COMMUNITY_TA, FORUM_ROLE_GROUP_MODERATOR]
-                ).values_list('name', flat=True)
+            if prefetched_roles is not None:
+                user_role_names = prefetched_roles.get(user_id, set())
+            else:
+                course_id = self.context.get("course_id")
+                user_role_names = set(
+                    Role.objects.filter(
+                        users__id=user_id, course_id=course_id,
+                        name__in=[FORUM_ROLE_COMMUNITY_TA, FORUM_ROLE_GROUP_MODERATOR],
+                    ).values_list("name", flat=True)
+                ) if course_id else set()
 
-                if FORUM_ROLE_COMMUNITY_TA in user_roles:
-                    roles.append("Community TA")
-                if FORUM_ROLE_GROUP_MODERATOR in user_roles:
-                    roles.append("Group Moderator")
+            if FORUM_ROLE_COMMUNITY_TA in user_role_names:
+                roles.append("Community TA")
+            if FORUM_ROLE_GROUP_MODERATOR in user_role_names:
+                roles.append("Group Moderator")
 
         return roles if roles else None
 
@@ -442,7 +486,7 @@ class _ContentSerializer(serializers.Serializer):
         Returns None for posts that are anonymous to the viewer.
         For anonymous_to_peers posts, staff/moderators/admins can see the label.
         """
-        if self._is_anonymous(obj) or obj["user_id"] is None:
+        if self._is_anonymous(obj) or obj.get("user_id") is None:
             return None
         return self._get_user_label(int(obj["user_id"]))
 
@@ -454,7 +498,7 @@ class _ContentSerializer(serializers.Serializer):
         deleted_by_label) are unaffected and continue to use _get_user_label.
         Returns None for anonymous posts or users with no recognized roles.
         """
-        if self._is_anonymous(obj) or obj["user_id"] is None:
+        if self._is_anonymous(obj) or obj.get("user_id") is None:
             return None
         return self._get_user_labels_all(int(obj["user_id"]))
 
@@ -463,20 +507,15 @@ class _ContentSerializer(serializers.Serializer):
         Get the learner status for the discussion post author.
         Returns one of: "anonymous", "staff", "new", "regular"
         """
-        # Skip for anonymous content
         if self._is_anonymous(obj) or obj.get("user_id") is None:
             return "anonymous"
 
-        try:
-            user = User.objects.get(id=int(obj["user_id"]))
-        except (User.DoesNotExist, ValueError):
+        user = self._resolve_user(obj["user_id"])
+        if not user:
             return "anonymous"
 
         course = self.context.get("course")
-        if not course:
-            return "anonymous"
-
-        return get_user_learner_status(user, course.id)
+        return get_user_learner_status(user, course.id) if course else "anonymous"
 
     def get_rendered_body(self, obj):
         """
@@ -609,14 +648,8 @@ class _ContentSerializer(serializers.Serializer):
         return (str(course_id), int(user_id))
 
     def _get_author_from_cache(self, user_id):
-        """Fetch author from per-request cache or database."""
-        user_cache = self.context.setdefault("_author_ban_user_cache", {})
-        if user_id not in user_cache:
-            try:
-                user_cache[user_id] = User.objects.get(id=user_id)
-            except User.DoesNotExist:
-                user_cache[user_id] = None
-        return user_cache[user_id]
+        """Fetch author from cache or database."""
+        return self._resolve_user(user_id)
 
     def get_is_author_banned(self, obj):
         """
