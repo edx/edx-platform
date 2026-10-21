@@ -76,6 +76,29 @@ LOGGING['loggers']['tracking']['handlers'] = ['console']
 EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
 EMAIL_FILE_PATH = '/edx/src/ace_messages/'
 
+# ========== SES ENROLLMENT EMAIL CONFIGURATION (FOR TESTING) ==========
+# Uncomment the following line to test SES enrollment email theme resolution
+# When enabled, templates will load from edx-themes first (edx.org-next)
+# Then fall back to platform templates if theme templates not found
+#
+# In production:
+#   - ENABLE_COMPREHENSIVE_THEMING = True
+#   - DEFAULT_SITE_THEME = 'edx.org'
+#   - SES_ENROLLMENT_EMAIL_THEME will be set via edx-internal config
+#
+# In devstack (with this uncommented):
+#   - Templates will try to load from edx.org-next theme
+#   - If theme templates exist in edx-themes, will use them
+#   - Otherwise falls back to platform templates (safe default)
+#
+# To test the complete flow:
+#   1. Uncomment the line below
+#   2. Run: python manage.py lms shell -c "from django.template import engines; ..."
+#   3. Should show theme-based template resolution
+#   4. Comment out when done testing
+#
+# SES_ENROLLMENT_EMAIL_THEME = 'edx.org-next'  # Uncomment only for local testing
+
 ############################ PYFS XBLOCKS SERVICE #############################
 # Set configuration for Django pyfilesystem
 
@@ -494,13 +517,15 @@ DCS_SESSION_COOKIE_SAMESITE_FORCE_ALL = True
 # in it's path. Re-calling derive_settings doesn't work because the settings was already
 # changed from a function to a list, and it can't be derived again.
 
-# from openedx.envs.common import make_mako_template_dirs
+# ========== COMPREHENSIVE THEMING ENABLED FOR SES ENROLLMENT EMAIL TESTING ==========
+# Uncomment this section to test theme-first template resolution in devstack
+# This matches production behavior where ENABLE_COMPREHENSIVE_THEMING = True
 # ENABLE_COMPREHENSIVE_THEMING = True
+# DEFAULT_SITE_THEME = 'edx.org'  # Base theme for resolution
 # COMPREHENSIVE_THEME_DIRS = [
-#     "/edx/app/edxapp/edx-platform/themes/"
+#     "/edx/var/edx-themes/edx-themes/edx-platform/"
 # ]
-# TEMPLATES[1]["DIRS"] = make_mako_template_dirs
-# derive_settings(__name__)
+# ============================================================================
 
 # Uncomment the lines below if you'd like to see SQL statements in your devstack LMS log.
 # LOGGING['handlers']['console']['level'] = 'DEBUG'
