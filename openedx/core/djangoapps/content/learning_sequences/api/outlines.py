@@ -281,15 +281,20 @@ def get_user_course_outline(course_key: CourseKey,
 @function_trace('learning_sequences.api.get_user_course_outline_details')
 def get_user_course_outline_details(course_key: CourseKey,
                                     user: types.User,
-                                    at_time: datetime) -> UserCourseOutlineDetailsData:
+                                    at_time: datetime,
+                                    preview_verified_content: bool = False) -> UserCourseOutlineDetailsData:
     """
     Get an outline with supplementary data like scheduling information.
 
     See the definition of UserCourseOutlineDetailsData for details about the
     data returned.
+
+    preview_verified_content can be set to True to have the function also return info about content
+    that the learner can see but not access due to enrollment track partitions removing verified-only
+    content from an audit learner's outline
     """
     user_course_outline, processors = _get_user_course_outline_and_processors(
-        course_key, user, at_time
+        course_key, user, at_time, preview_verified_content=preview_verified_content
     )
     with function_trace('learning_sequences.api.get_user_course_outline_details.schedule'):
         schedule_processor = processors['schedule']
@@ -348,7 +353,6 @@ def _get_user_course_outline_and_processors(course_key: CourseKey,  # lint-amnes
     usage_keys_to_remove = set()
     inaccessible_sequences = set()
     preview_usage_keys = set()
-
     for name, processor_cls in processor_classes:
         # Future optimization: This should be parallelizable (don't rely on a
         # particular ordering).
