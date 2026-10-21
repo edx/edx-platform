@@ -2255,6 +2255,57 @@ class TestEditItem(TestEditItemSetup):
             [self.problem_usage_key],  # problem child created in setUp
         )
 
+    def test_move_parented_child_with_duplicate_children(self):
+        """
+        Test that moving a child from one parent to another removes ALL
+        references from the old parent, even when duplicates exist (data corruption).
+
+        Regression test for a bug where list.remove() only removed the first
+        occurrence, leaving dangling references in the old parent.
+        """
+        unit_1_key = self.response_usage_key(
+            self.create_xblock(
+                parent_usage_key=self.seq_usage_key,
+                category="vertical",
+                display_name="unit 1",
+            )
+        )
+        unit_2_key = self.response_usage_key(
+            self.create_xblock(
+                parent_usage_key=self.seq2_usage_key,
+                category="vertical",
+                display_name="unit 2",
+            )
+        )
+
+        # Corrupt: add unit_1 to seq1's children 3 more times (4 total)
+        seq1 = self.get_item_from_modulestore(self.seq_usage_key)
+        for _ in range(3):
+            seq1.children.append(unit_1_key)
+        self.store.update_item(seq1, self.user.id)
+
+        # Verify corruption
+        seq1 = self.get_item_from_modulestore(self.seq_usage_key)
+        self.assertEqual(seq1.children.count(unit_1_key), 4)
+
+        # Move unit_1 from seq1 to seq2 by setting seq2's children
+        resp = self.client.ajax_post(
+            self.seq2_update_url, data={"children": [str(unit_1_key), str(unit_2_key)]}
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # Verify: unit_1 completely removed from seq1, present in seq2
+        seq1_after = self.get_item_from_modulestore(self.seq_usage_key)
+        self.assertNotIn(
+            unit_1_key,
+            seq1_after.children,
+            "Dangling references to moved block remain in old parent's children list",
+        )
+        self.assertListEqual(
+            self.get_item_from_modulestore(self.seq2_usage_key).children,
+            [unit_1_key, unit_2_key],
+        )
+
     def test_move_orphaned_child_error(self):
         """
         Test moving an orphan returns an error

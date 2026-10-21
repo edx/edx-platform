@@ -1702,6 +1702,47 @@ class TestMixedModuleStore(CommonMixedModuleStoreSetup):
         assert problem_item2.location in problem_item2.get_parent().children
 
     @ddt.data(ModuleStoreEnum.Type.split)
+    def test_update_item_parent_with_duplicate_children(self, store_type):
+        """
+        Test that update_item_parent removes ALL references to a block from the
+        old parent's children list when duplicates exist (data corruption).
+
+        Regression test for a bug where list.remove() only removed the first
+        occurrence, leaving dangling references in the old parent.
+        """
+        self.initdb(store_type)
+        self._create_block_hierarchy()
+        self.course = self.store.publish(self.course.location, self.user_id)  # lint-amnesty, pylint: disable=attribute-defined-outside-init
+
+        item_location = self.problem_x1a_1  # lint-amnesty, pylint: disable=no-member
+        new_parent_location = self.vertical_y1a  # lint-amnesty, pylint: disable=no-member
+        old_parent_location = self.vertical_x1a  # lint-amnesty, pylint: disable=no-member
+
+        # Corrupt: add the item to old parent's children 3 more times
+        with self.store.branch_setting(ModuleStoreEnum.Branch.draft_preferred):
+            old_parent = self.store.get_item(old_parent_location)
+            for _ in range(3):
+                old_parent.children.append(item_location)
+            self.store.update_item(old_parent, self.user_id)
+
+            # Verify corruption: item appears 4 times
+            old_parent = self.store.get_item(old_parent_location)
+            assert old_parent.children.count(item_location) == 4
+
+        # Move item - should remove ALL 4 references from old parent
+        self.store.update_item_parent(
+            item_location, new_parent_location, old_parent_location, self.user_id
+        )
+
+        # Verify: item is in new parent and completely gone from old parent
+        with self.store.branch_setting(ModuleStoreEnum.Branch.draft_preferred):
+            old_parent = self.store.get_item(old_parent_location)
+            new_parent = self.store.get_item(new_parent_location)
+            assert item_location not in old_parent.children, \
+                "Dangling references to moved block remain in old parent's children list"
+            assert item_location in new_parent.children
+
+    @ddt.data(ModuleStoreEnum.Type.split)
     def test_get_parent_locations_moved_child(self, default_ms):
         self.initdb(default_ms)
         self._create_block_hierarchy()
