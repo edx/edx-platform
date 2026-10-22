@@ -12,7 +12,7 @@ from opaque_keys.edx.locator import CourseLocator
 from rest_framework.exceptions import PermissionDenied
 
 from common.djangoapps.student.models import CourseEnrollment
-from common.djangoapps.student.roles import CourseDataResearcherRole
+from common.djangoapps.student.roles import CourseDataResearcherRole, CourseStaffRole
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
 from openedx.core.djangoapps.util.test_forms import FormTestMixin
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
@@ -114,7 +114,9 @@ class TestBlockListGetForm(FormTestMixin, SharedModuleStoreTestCase):
 
         self.form_data.pop('username')
         self.form_data['all_blocks'] = all_blocks_value
-        self.get_form(expected_valid=True)
+        form = self.get_form(expected_valid=True)
+        # global staff also hold instructor.research, but should still get the tree without per-user transformers
+        assert form.cleaned_data['user'] is None
 
     @ddt.data("False", "false", False)
     def test_no_user_all_blocks_false(self, all_blocks_value):
@@ -130,9 +132,12 @@ class TestBlockListGetForm(FormTestMixin, SharedModuleStoreTestCase):
         self.form_data.pop('username')
         self.assert_error('username', "This field is required unless all_blocks is requested.")
 
-    def test_all_blocks_by_staff_is_unfiltered(self):
-        # global staff also hold instructor.research, but should still get the tree without per-user transformers
-        self.initial = {'requesting_user': self.staff}
+    def test_all_blocks_by_course_staff_data_researcher(self):
+        # course staff who are also data researchers should get the tree without per-user transformers
+        course_staff_researcher = UserFactory.create()
+        CourseStaffRole(self.course.id).add_users(course_staff_researcher)
+        CourseDataResearcherRole(self.course.id).add_users(course_staff_researcher)
+        self.initial = {'requesting_user': course_staff_researcher}
         self.form_data.pop('username')
         self.form_data['all_blocks'] = True
         form = self.get_form(expected_valid=True)

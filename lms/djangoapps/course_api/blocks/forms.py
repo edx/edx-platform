@@ -176,8 +176,9 @@ class BlockListGetForm(Form):
         """
         Verifies form for when all blocks are requested, including permissions.
 
-        Returns None (the unfiltered tree) for users who can access all blocks, and the requesting user for data
-        researchers who can't, so they see the blocks as themselves.
+        Returns None for users who can access all blocks, and the requesting user for data researchers who can't,
+        so they see the blocks as themselves. None means the tree without per-user transformers: only
+        VisibilityTransformer runs, so staff-only blocks are still excluded, the same as for course staff.
         """
         # Check this before instructor.research: global staff hold both, and serving them as themselves applies
         # per-user transformers, e.g. a random item bank selection instead of the full pool.
