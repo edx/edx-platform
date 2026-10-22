@@ -31,11 +31,31 @@ def _get_exams_api_client():
     return client
 
 
+REQUIRED_EXAM_FIELDS = ('exam_id', 'content_id', 'exam_type', 'attempt_id', 'status')
+
+
+def _is_well_formed_exam(exam):
+    """Return whether an exam record has every field and a consistent attempt.
+
+    A learner with no attempt has both ``attempt_id`` and ``status`` set to None.  A record that
+    is missing a field, or that has only one of the two, is malformed rather than "no attempt".
+    """
+    if any(field not in exam for field in REQUIRED_EXAM_FIELDS):
+        return False
+
+    status = exam['status']
+    if not isinstance(exam['exam_type'], str) or not (status is None or isinstance(status, str)):
+        return False
+
+    return (status is None) == (exam['attempt_id'] is None)
+
+
 def get_exam_proctoring_statuses(user, course_key):
     """Return the learner's latest proctoring status for every proctored exam in the course.
 
     Returns a list of dicts with ``exam_id``, ``content_id``, ``exam_name``, ``exam_type``,
-    ``attempt_id`` and ``status``.  ``status`` is None when the learner has no attempt.
+    ``attempt_id`` and ``status``.  ``attempt_id`` and ``status`` are both None when the learner
+    has no attempt.
 
     Raises:
         ExamsServiceError: the service could not be reached, rejected the request, or returned
@@ -57,7 +77,7 @@ def get_exam_proctoring_statuses(user, course_key):
         raise ExamsServiceError(f'Unable to read proctoring status from edx-exams: {exc!r}') from exc
 
     exams = payload.get('exams') if isinstance(payload, dict) else None
-    if not isinstance(exams, list) or not all(isinstance(exam, dict) for exam in exams):
+    if not isinstance(exams, list) or not all(isinstance(exam, dict) and _is_well_formed_exam(exam) for exam in exams):
         raise ExamsServiceError('edx-exams returned a malformed proctoring status response')
 
     return exams

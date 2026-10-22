@@ -154,11 +154,18 @@ def _get_exams_service_result(user, course_key):
         return _lookup_error_result()
 
     for exam in exams:
-        exam_type = exam.get('exam_type')
-        if exam_type is not None and exam_type != EXAMS_PROCTORED_EXAM_TYPE:
+        if 'exam_type' not in exam or 'status' not in exam:
+            # A record without these fields must not be read as "no attempt" and allowed.
+            log.error(
+                'Malformed edx-exams proctoring status while checking certificate access. '
+                'user_id=%s course_key=%s content_id=%s', user.id, course_key, exam.get('content_id')
+            )
+            return _lookup_error_result()
+
+        if exam['exam_type'] != EXAMS_PROCTORED_EXAM_TYPE:
             continue
 
-        status = exam.get('status')
+        status = exam['status']
 
         # No attempt is not a review-required state, matching the legacy behavior.
         if status is None:

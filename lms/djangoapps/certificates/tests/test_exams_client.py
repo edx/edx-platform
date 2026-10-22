@@ -46,7 +46,7 @@ class ExamsClientTests(TestCase):
         return response
 
     def test_request_is_authenticated_and_scoped(self):
-        exams = [{'exam_id': 1, 'content_id': 'c', 'attempt_id': 5, 'status': 'verified'}]
+        exams = [{'exam_id': 1, 'content_id': 'c', 'exam_type': 'proctored', 'attempt_id': 5, 'status': 'verified'}]
 
         result, get = self._get(self._response({'exams': exams}))
 
@@ -101,6 +101,29 @@ class ExamsClientTests(TestCase):
         for payload in (None, [], {}, {'exams': 'nope'}, {'exams': ['nope']}):
             with self.subTest(payload=payload), self.assertRaises(ExamsServiceError):
                 self._get(self._response(payload))
+
+    def test_no_attempt_record_is_accepted(self):
+        exams = [{'exam_id': 1, 'content_id': 'c', 'exam_type': 'proctored', 'attempt_id': None, 'status': None}]
+
+        result, _ = self._get(self._response({'exams': exams}))
+
+        self.assertEqual(result, exams)
+
+    def test_malformed_exam_record_raises_service_error(self):
+        complete = {'exam_id': 1, 'content_id': 'c', 'exam_type': 'proctored', 'attempt_id': 5, 'status': 'verified'}
+        malformed = [
+            {key: value for key, value in complete.items() if key != missing}
+            for missing in complete
+        ] + [
+            {**complete, 'status': None},  # attempt_id without a status
+            {**complete, 'attempt_id': None},  # status without an attempt_id
+            {**complete, 'status': 3},
+            {**complete, 'exam_type': None},
+        ]
+
+        for exam in malformed:
+            with self.subTest(exam=exam), self.assertRaises(ExamsServiceError):
+                self._get(self._response({'exams': [exam]}))
 
     def test_missing_service_user_raises_service_error(self):
         self.worker.delete()

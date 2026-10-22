@@ -370,15 +370,16 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
         exam_types=None,
         overview_missing=False,
         overview_error=None,
+        records=None,
     ):
         """Return the access decision with edx-exams statuses and one optional legacy exam mocked."""
         legacy_exams = [self.legacy_exam] if legacy_status is not None else []
-        statuses = [
+        statuses = records if records is not None else [
             {
                 'exam_id': index,
                 'content_id': f'exam-{index}',
                 'exam_type': (exam_types or {}).get(index, 'proctored'),
-                'attempt_id': index,
+                'attempt_id': None if status is None else index,
                 'status': status,
             }
             for index, status in enumerate(exams_statuses, start=1)
@@ -478,6 +479,17 @@ class CertificateProctoringExamsServiceTests(SimpleTestCase):
 
         self.assertTrue(result['blocked'])
         self.assertEqual(result['blocking_statuses'], ['started'])
+
+    @ddt.data('status', 'exam_type')
+    def test_record_missing_a_required_field_blocks_and_is_logged(self, field):
+        record = {'exam_id': 1, 'content_id': 'exam-1', 'exam_type': 'proctored', 'attempt_id': 5, 'status': 'verified'}
+        del record[field]
+
+        with self.assertLogs(proctoring_block.log, level='ERROR'):
+            result, _ = self._check(records=[record])
+
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['reason'], 'proctoring_status_unavailable')
 
     def test_missing_course_overview_blocks_and_is_logged(self):
         with mock.patch(
