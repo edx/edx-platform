@@ -1036,6 +1036,14 @@ CERTIFICATE_DATE_FORMAT = "%B %-d, %Y"
 # effective. Production deployment configuration supplies the rollout value.
 CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT = None
 
+# EXAMS_SERVICE_URL and EXAMS_SERVICE_USERNAME are inherited from openedx.envs.common.
+
+# .. setting_name: EXAMS_SERVICE_REQUEST_TIMEOUT
+# .. setting_default: (3.05, 5)
+# .. setting_description: (connect, read) timeout in seconds for edx-exams API requests made during
+#     certificate access checks.
+EXAMS_SERVICE_REQUEST_TIMEOUT = (3.05, 5)
+
 ### Dark code. Should be enabled in local settings for devel.
 
 ENABLE_MULTICOURSE = False  # set to False to disable multicourse display (see lib.util.views.edXhome)
