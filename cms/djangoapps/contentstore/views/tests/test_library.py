@@ -543,6 +543,23 @@ class UnitTestLibraries(CourseTestCase):
                 organizations = get_allowed_organizations_for_libraries(user)
         self.assertEqual(organizations, expected_organizations)
 
+    def test_allowed_organizations_for_library_course_roles_sorted(self):
+        """
+        The role-based organization list is sorted case-insensitively, including the course admin
+        organizations added by the LP-1102 flag.
+        """
+        user = UserFactory(is_staff=False)
+        CourseStaffRole(CourseKey.from_string('course-v1:zetaX+Z101+2026')).add_users(user)
+        CourseInstructorRole(CourseKey.from_string('course-v1:AlphaX+A101+2026')).add_users(user)
+        CourseStaffRole(CourseKey.from_string('course-v1:betaX+B101+2026')).add_users(user)
+        with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=True):
+            with mock.patch.dict('django.conf.settings.FEATURES', {
+                "ENABLE_ORGANIZATION_STAFF_ACCESS_FOR_CONTENT_LIBRARIES": True,
+                "ENABLE_CREATOR_GROUP": True,
+            }):
+                organizations = get_allowed_organizations_for_libraries(user)
+        self.assertEqual(organizations, ['AlphaX', 'betaX', 'zetaX'])
+
     @ddt.data(
         # user_type, flag_active, org_active, expected_offered, expected_create_status
         ('course_admin', True, True, True, 200),
