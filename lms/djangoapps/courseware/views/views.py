@@ -104,6 +104,7 @@ from lms.djangoapps.courseware.toggles import (
     courseware_mfe_search_is_enabled,
     COURSEWARE_MICROFRONTEND_ENABLE_NAVIGATION_SIDEBAR,
     COURSEWARE_MICROFRONTEND_ALWAYS_OPEN_AUXILIARY_SIDEBAR,
+    COURSEWARE_MICROFRONTEND_USE_INHOUSE_EXPERIENCE_WIDGETS,
 )
 from completion.waffle import ENABLE_COMPLETION_TRACKING_SWITCH
 from lms.djangoapps.courseware.user_state_client import DjangoXBlockUserStateClient
@@ -2508,3 +2509,12 @@ def unified_site_and_translation_language_enabled(request):
     Simple GET endpoint to expose whether the user/course has access to the unified translations feature
     """
     return JsonResponse({'enabled': unified_site_and_translation_language_is_enabled()})
+
+
+@api_view(['GET'])
+def courseware_mfe_inhouse_experience_widgets_enabled(request):
+    """
+    GET endpoint to return whether the Learning MFE should render its in-house experience widgets
+    instead of the third-party dynamic-experience widgets. The flag is global (not course specific).
+    """
+    return JsonResponse({"enabled": COURSEWARE_MICROFRONTEND_USE_INHOUSE_EXPERIENCE_WIDGETS.is_enabled()})

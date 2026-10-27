@@ -764,6 +764,11 @@ urlpatterns += [
         courseware_views.courseware_mfe_navigation_sidebar_toggles,
         name='courseware_navigation_sidebar_toggles_view',
     ),
+    path(
+        'courseware-experience-widgets/inhouse/enabled/',
+        courseware_views.courseware_mfe_inhouse_experience_widgets_enabled,
+        name='courseware_inhouse_experience_widgets_enabled_view',
+    ),
 ]
 
 urlpatterns += [

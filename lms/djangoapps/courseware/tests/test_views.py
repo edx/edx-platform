@@ -80,6 +80,7 @@ from lms.djangoapps.courseware.toggles import (
     COURSEWARE_MICROFRONTEND_ALWAYS_OPEN_AUXILIARY_SIDEBAR,
     COURSEWARE_MICROFRONTEND_ENABLE_NAVIGATION_SIDEBAR,
     COURSEWARE_MICROFRONTEND_SEARCH_ENABLED,
+    COURSEWARE_MICROFRONTEND_USE_INHOUSE_EXPERIENCE_WIDGETS,
     COURSEWARE_OPTIMIZED_RENDER_XBLOCK,
     ENABLE_UNIFIED_SITE_AND_TRANSLATION_LANGUAGE,
 )
@@ -3447,6 +3448,29 @@ class TestCoursewareMFENavigationSidebarTogglesAPI(SharedModuleStoreTestCase):
                 "enable_completion_tracking": True,
             },
         )
+
+
+class TestCoursewareMFEInhouseExperienceWidgetsAPI(SharedModuleStoreTestCase):
+    """
+    Tests for the endpoint exposing the global in-house experience widgets flag.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.api_url = reverse('courseware_inhouse_experience_widgets_enabled_view')
+
+    @override_waffle_flag(COURSEWARE_MICROFRONTEND_USE_INHOUSE_EXPERIENCE_WIDGETS, active=True)
+    def test_inhouse_experience_widgets_enabled(self):
+        response = self.client.get(self.api_url, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content.decode('utf-8')), {"enabled": True})
+
+    @override_waffle_flag(COURSEWARE_MICROFRONTEND_USE_INHOUSE_EXPERIENCE_WIDGETS, active=False)
+    def test_inhouse_experience_widgets_disabled(self):
+        response = self.client.get(self.api_url, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content.decode('utf-8')), {"enabled": False})
 
 
 @ddt.ddt

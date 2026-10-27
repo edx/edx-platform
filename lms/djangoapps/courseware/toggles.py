@@ -95,6 +95,20 @@ COURSEWARE_MICROFRONTEND_ENABLE_NAVIGATION_SIDEBAR = CourseWaffleFlag(
     f'{WAFFLE_FLAG_NAMESPACE}.enable_navigation_sidebar', __name__
 )
 
+# .. toggle_name: courseware.use_inhouse_experience_widgets
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: When enabled, the Learning MFE renders its in-house components in the notification
+#   tray, course outline notifications and dates upgrade banner instead of the third-party dynamic-experience
+#   widgets. When disabled, the third-party widgets are rendered. The Next Unit upgrade modal is not affected.
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-10-27
+# .. toggle_target_removal_date: None
+# .. toggle_tickets: LP-1419
+COURSEWARE_MICROFRONTEND_USE_INHOUSE_EXPERIENCE_WIDGETS = WaffleFlag(
+    f'{WAFFLE_FLAG_NAMESPACE}.use_inhouse_experience_widgets', __name__
+)
+
 # .. toggle_name: courseware.always_open_auxiliary_sidebar
 # .. toggle_implementation: WaffleFlag
 # .. toggle_default: True
