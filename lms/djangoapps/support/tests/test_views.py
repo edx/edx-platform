@@ -472,6 +472,59 @@ class SupportViewEnrollmentsTests(SharedModuleStoreTestCase, SupportViewTestCase
             'reason': 'Financial Assistance',
         }, json.loads(response.content.decode('utf-8'))[0]['manual_enrollment'])
 
+    def test_get_latest_manual_enrollment(self):
+        enrollment = CourseEnrollment.objects.get(course_id=self.course.id, user=self.student)
+        for reason in ('First change', 'Second change'):
+            ManualEnrollmentAudit.create_manual_enrollment_audit(
+                self.user, self.student.email, ENROLLED_TO_ENROLLED, reason, enrollment
+            )
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert json.loads(response.content.decode('utf-8'))[0]['manual_enrollment']['reason'] == 'Second change'
+
+    def _enroll_with_order(self, order_number):
+        """
+        Enrolls the student in a new course with an order number, source system, and manual enrollment change.
+        """
+        course = CourseFactory()
+        CourseModeFactory.create(mode_slug=CourseMode.VERIFIED, course_id=course.id)
+        enrollment = CourseEnrollmentFactory.create(mode=CourseMode.VERIFIED, user=self.student, course_id=course.id)
+        for name, value in (('order_number', order_number), ('source_system', 'commercetools')):
+            CourseEnrollmentAttributeFactory(enrollment=enrollment, namespace='order', name=name, value=value)
+        ManualEnrollmentAudit.create_manual_enrollment_audit(
+            self.user, self.student.email, ENROLLED_TO_ENROLLED, 'Support', enrollment
+        )
+        return course
+
+    def test_filter_by_order_number(self):
+        course = self._enroll_with_order('ORD-001')
+        self._enroll_with_order('ORD-002')
+
+        response = self.client.get(self.url, {'order_number': 'ORD-001'})
+
+        assert response.status_code == 200
+        data = json.loads(response.content.decode('utf-8'))
+        assert [enrollment['course_id'] for enrollment in data] == [str(course.id)]
+        self.assertDictContainsSubset({
+            'order_number': 'ORD-001',
+            'source_system': 'commercetools',
+        }, data[0])
+        assert data[0]['manual_enrollment']['reason'] == 'Support'
+
+    def test_query_count(self):
+        """
+        Order attributes and manual enrollment changes are loaded once per request, not per enrollment.
+        """
+        for count in range(3):
+            self._enroll_with_order(f'ORD-00{count}')
+
+        # 73 before order attributes and manual enrollment changes were batched.
+        with self.assertNumQueries(44):
+            response = self.client.get(self.url)
+
+        assert response.status_code == 200
+        assert len(json.loads(response.content.decode('utf-8'))) == 4
+
     @disable_signal(signals, 'post_save')
     @ddt.data('username', 'email')
     def test_create_new_enrollment(self, search_string_type):
