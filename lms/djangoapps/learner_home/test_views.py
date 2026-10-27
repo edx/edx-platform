@@ -608,6 +608,7 @@ class TestDashboardView(BaseTestDashboardView):
                 "courses",
                 "socialShareSettings",
                 "suggestedCourses",
+                "rvPlugins",
             ]
         )
 
@@ -797,6 +798,24 @@ class TestDashboardView(BaseTestDashboardView):
         assert len(data) == len(programs)
         assert programs[course_uuid][0] == program
         assert programs[course_uuid2][0] == program2
+
+    @patch("lms.djangoapps.learner_home.views.get_rv_plugin_settings")
+    def test_response_rv_plugin_settings(self, mock_get_rv_plugin_settings):
+        """Test that the API returns RV plugin settings for both flag states."""
+
+        with patch.dict(settings.FEATURES, ENTERPRISE_ENABLED=False):
+            for is_enabled in (True, False):
+                mock_get_rv_plugin_settings.return_value = {
+                    "isEnabled": is_enabled
+                }
+
+                response = self.client.get(self.view_url)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.data["rvPlugins"],
+                    {"isEnabled": is_enabled},
+                )
 
 
 class TestDashboardMasquerade(BaseTestDashboardView):

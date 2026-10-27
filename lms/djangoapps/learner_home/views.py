@@ -58,6 +58,7 @@ from lms.djangoapps.learner_home.serializers import (
 from lms.djangoapps.learner_home.utils import (
     get_masquerade_user,
 )
+from lms.djangoapps.learner_home.waffle import get_rv_plugin_settings
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.programs.utils import ProgramProgressMeter
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
@@ -581,6 +582,7 @@ class InitializeView(APIView):  # pylint: disable=unused-argument
             "unfulfilledEntitlements": unfulfilled_entitlements,
             "socialShareSettings": social_share_settings,
             "suggestedCourses": suggested_courses,
+            "rvPlugins": get_rv_plugin_settings(),
         }
 
         context = {
