@@ -15,6 +15,7 @@ from lms.djangoapps.course_home_api.toggles import new_discussion_sidebar_view_i
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.core.djangoapps.courseware_api.utils import get_celebrations_dict
 
+from common.djangoapps.course_modes.api import get_extra_offer
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.auth import has_course_author_access
 from common.djangoapps.student.models import CourseEnrollment
@@ -62,6 +63,8 @@ class CourseHomeMetadataView(RetrieveAPIView):
         celebrations: (dict) a dict of celebration data
         user_timezone: (str) The timezone of the given user
         can_view_certificate: Flag to determine whether or not the learner can view their course certificate.
+        subscription: (dict) Optional. An extra offer from a plugin, as returned by
+            common.djangoapps.course_modes.api.get_extra_offer. Left out when there is none.
 
     **Returns**
 
@@ -148,6 +151,10 @@ class CourseHomeMetadataView(RetrieveAPIView):
             # https://github.com/openedx/platform-roadmap/issues/246
             'has_course_author_access': has_course_author_access(request.user, course_key, 'cms'),
         }
+        # An optional plugin offer. The key is left out when there is none.
+        subscription = get_extra_offer(request, course_key)
+        if subscription is not None:
+            data['subscription'] = subscription
         context = self.get_serializer_context()
         context['course'] = course
         context['course_overview'] = course

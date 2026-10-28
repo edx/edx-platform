@@ -11,9 +11,11 @@ from typing import Any, Optional
 from babel.numbers import get_currency_symbol
 from django.urls import reverse
 from django.utils.translation import get_language
+from edx_django_utils.plugins import pluggable_override
 from opaque_keys.edx.keys import CourseKey
 from openedx_filters.learning.filters import CourseModePriceRequested
 
+from common.djangoapps.course_modes.api import get_extra_offer
 from common.djangoapps.course_modes.helpers import get_verified_track_links
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment
@@ -44,6 +46,31 @@ class TrackSelectionSubmissionError:
     """Indicates track selection submission failed with a user-facing message."""
 
     error: str
+
+
+@pluggable_override("OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE")
+def handle_unknown_track_choice(
+    request, course_key: CourseKey, mode: str
+) -> TrackSelectionRedirect | TrackSelectionSubmissionError | None:
+    """
+    Handle a track choice that is not one of the course's modes, or return None.
+
+    This is a plugin override point. Core handles no extra choices, so it returns None and the choice
+    is rejected as "Enrollment mode not supported", as before. A plugin can replace it by listing the
+    dotted path of a function in the ``OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE`` setting.
+    That function receives ``prev_fn`` (the next implementation) first, then the arguments below.
+
+    It runs after the enrollment permission check, so the learner is allowed to enroll in the course.
+
+    Params:
+        request (HttpRequest): The current request.
+        course_key (CourseKey): The course run.
+        mode (str): The choice the learner made, for example "subscribe".
+    Returns:
+        A TrackSelectionRedirect to send the learner on, a TrackSelectionSubmissionError to show an
+        error, or None when the choice is not handled.
+    """
+    return None
 
 
 def load_course_for_track_selection(course_key):
@@ -193,7 +220,7 @@ def get_track_selection_page_data(
     elif CourseMode.HONOR in modes:
         audit_payload = _serialize_mode(modes[CourseMode.HONOR])
 
-    return {
+    page_data = {
         "course_id": course_id,
         "course_name": course.display_name_with_default,
         "course_org": course.display_org_with_default,
@@ -204,6 +231,9 @@ def get_track_selection_page_data(
         "verified_mode": verified_payload,
         "audit_mode": audit_payload,
     }
+    if (subscription := get_extra_offer(request, course_key)) is not None:
+        page_data["subscription"] = subscription
+    return page_data
 
 
 def submit_track_selection_choice(
@@ -228,6 +258,10 @@ def submit_track_selection_choice(
     requested_mode = mode
 
     if requested_mode not in allowed_modes:
+        # A plugin may handle choices that are not course modes, such as "subscribe".
+        handled = handle_unknown_track_choice(request, course_key, requested_mode)
+        if handled is not None:
+            return handled
         return TrackSelectionSubmissionError(error="Enrollment mode not supported")
 
     if requested_mode == CourseMode.AUDIT:

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import ddt
 from django.db import transaction
+from django.test import override_settings
 from django.urls import reverse
 from edx_toggles.toggles.testutils import override_waffle_flag
 from openedx_filters.learning.filters import CoursewareAccessChecksRequested
@@ -26,6 +27,14 @@ from lms.djangoapps.courseware.toggles import (
     COURSEWARE_MICROFRONTEND_PROGRESS_MILESTONES_STREAK_CELEBRATION
 )
 from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration
+
+
+def fake_extra_offer(prev_fn, request, course_key):  # pylint: disable=unused-argument
+    """Override for OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER that returns a sample offer."""
+    return {"status": "NOT_SUBSCRIBED", "course_id": str(course_key), "username": request.user.username}
+
+
+FAKE_EXTRA_OFFER_PATH = f"{__name__}.{fake_extra_offer.__name__}"
 
 
 @ddt.ddt
@@ -250,3 +259,36 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         response = self.client.get(self.url)
         assert response.status_code == 200
         assert response.data['has_course_author_access'] == has_course_author_access
+
+    def test_no_subscription_by_default(self):
+        """
+        With no override configured, the response has no ``subscription`` key.
+        """
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert 'subscription' not in response.data
+
+    @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
+    def test_subscription_from_override(self):
+        """
+        A configured OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER adds its result as ``subscription``.
+        """
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert response.data['subscription'] == {
+            'status': 'NOT_SUBSCRIBED',
+            'course_id': str(self.course.id),
+            'username': self.user.username,
+        }
+
+    @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
+    def test_subscription_uses_masqueraded_user(self):
+        """
+        The offer is built for the masqueraded learner, not the staff user.
+        """
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.VERIFIED)
+        self.client.logout()
+        self.client.login(username=self.staff_user.username, password='bar')
+        self.update_masquerade(username=self.user.username)
+        response = self.client.get(self.url)
+        assert response.data['subscription']['username'] == self.user.username
