@@ -5,6 +5,7 @@ Build JSON-serializable track selection page data for the Learning MFE.
 from __future__ import annotations
 
 import decimal
+import logging
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -33,6 +34,8 @@ from openedx.features.course_duration_limits.access import (
 from openedx.features.course_experience import course_home_url
 from xmodule.modulestore.django import modulestore
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class TrackSelectionRedirect:
@@ -48,17 +51,16 @@ class TrackSelectionSubmissionError:
     error: str
 
 
-@pluggable_override("OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE")
 def handle_unknown_track_choice(
     request, course_key: CourseKey, mode: str
 ) -> TrackSelectionRedirect | TrackSelectionSubmissionError | None:
     """
     Handle a track choice that is not one of the course's modes, or return None.
 
-    This is a plugin override point. Core handles no extra choices, so it returns None and the choice
-    is rejected as "Enrollment mode not supported", as before. A plugin can replace it by listing the
-    dotted path of a function in the ``OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE`` setting.
-    That function receives ``prev_fn`` (the next implementation) first, then the arguments below.
+    A plugin provides it through the ``OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE`` override point.
+    Core handles no extra choices, so by default it returns None and the choice is rejected as
+    "Enrollment mode not supported", as before. If the plugin raises or returns anything else than the
+    types below, this logs it and returns a TrackSelectionSubmissionError, so the API answers with a 400.
 
     It runs after the enrollment permission check, so the learner is allowed to enroll in the course.
 
@@ -69,6 +71,28 @@ def handle_unknown_track_choice(
     Returns:
         A TrackSelectionRedirect to send the learner on, a TrackSelectionSubmissionError to show an
         error, or None when the choice is not handled.
+    """
+    try:
+        handled = _handle_unknown_track_choice(request, course_key, mode)
+    except Exception:  # pylint: disable=broad-except
+        log.exception("Could not handle the track choice %s for course %s", mode, course_key)
+    else:
+        if handled is None or isinstance(handled, (TrackSelectionRedirect, TrackSelectionSubmissionError)):
+            return handled
+        log.error(
+            "The track choice handler returned a %s for course %s", type(handled).__name__, course_key
+        )
+    return TrackSelectionSubmissionError(error="Could not process this track choice")
+
+
+@pluggable_override("OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE")
+def _handle_unknown_track_choice(request, course_key, mode):
+    """
+    Override point for handle_unknown_track_choice. Core handles no extra choices.
+
+    A plugin lists the dotted path of its function in the ``OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE``
+    setting. That function receives ``prev_fn`` (the next implementation) first, then ``request``,
+    ``course_key`` and ``mode``.
     """
     return None
 

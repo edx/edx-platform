@@ -6,7 +6,11 @@ from django.test import SimpleTestCase, override_settings
 from opaque_keys.edx.keys import CourseKey
 
 from common.djangoapps.course_modes.api import get_extra_offer
-from common.djangoapps.course_modes.track_selection_data import TrackSelectionRedirect, handle_unknown_track_choice
+from common.djangoapps.course_modes.track_selection_data import (
+    TrackSelectionRedirect,
+    TrackSelectionSubmissionError,
+    handle_unknown_track_choice,
+)
 
 COURSE_KEY = CourseKey.from_string("course-v1:edX+DemoX+Demo_Course")
 
@@ -23,7 +27,12 @@ def second_offer_override(prev_fn, request, course_key):
 
 def failing_offer_override(prev_fn, request, course_key):
     """Fails like a plugin whose status service is down."""
-    raise RuntimeError("Viax is down")
+    raise RuntimeError("Status service is down")
+
+
+def list_offer_override(prev_fn, request, course_key):
+    """Returns something that is not a dict."""
+    return ["not", "a", "dict"]
 
 
 def choice_override(prev_fn, request, course_key, mode):
@@ -31,6 +40,16 @@ def choice_override(prev_fn, request, course_key, mode):
     if mode == "subscribe":
         return TrackSelectionRedirect(url="https://checkout.example.com/subscribe")
     return prev_fn(request, course_key, mode)
+
+
+def failing_choice_override(prev_fn, request, course_key, mode):
+    """Fails like a plugin whose checkout service is down."""
+    raise RuntimeError("Checkout is down")
+
+
+def url_choice_override(prev_fn, request, course_key, mode):
+    """Returns a bare URL instead of a TrackSelectionRedirect."""
+    return "https://checkout.example.com/subscribe"
 
 
 class GetExtraOfferTests(SimpleTestCase):
@@ -58,6 +77,11 @@ class GetExtraOfferTests(SimpleTestCase):
         with self.assertLogs("common.djangoapps.course_modes.api", level="ERROR"):
             assert get_extra_offer(request=object(), course_key=COURSE_KEY) is None
 
+    @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=f"{__name__}.list_offer_override")
+    def test_non_dict_override_returns_none(self):
+        with self.assertLogs("common.djangoapps.course_modes.api", level="ERROR"):
+            assert get_extra_offer(request=object(), course_key=COURSE_KEY) is None
+
 
 class HandleUnknownTrackChoiceTests(SimpleTestCase):
     """
@@ -72,3 +96,15 @@ class HandleUnknownTrackChoiceTests(SimpleTestCase):
         handled = handle_unknown_track_choice(request=object(), course_key=COURSE_KEY, mode="subscribe")
         assert handled == TrackSelectionRedirect(url="https://checkout.example.com/subscribe")
         assert handle_unknown_track_choice(request=object(), course_key=COURSE_KEY, mode="other") is None
+
+    @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=f"{__name__}.failing_choice_override")
+    def test_failing_override_returns_an_error(self):
+        with self.assertLogs("common.djangoapps.course_modes.track_selection_data", level="ERROR"):
+            handled = handle_unknown_track_choice(request=object(), course_key=COURSE_KEY, mode="subscribe")
+        assert handled == TrackSelectionSubmissionError(error="Could not process this track choice")
+
+    @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=f"{__name__}.url_choice_override")
+    def test_unexpected_result_returns_an_error(self):
+        with self.assertLogs("common.djangoapps.course_modes.track_selection_data", level="ERROR"):
+            handled = handle_unknown_track_choice(request=object(), course_key=COURSE_KEY, mode="subscribe")
+        assert handled == TrackSelectionSubmissionError(error="Could not process this track choice")

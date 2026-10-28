@@ -34,7 +34,13 @@ def fake_extra_offer(prev_fn, request, course_key):  # pylint: disable=unused-ar
     return {"status": "NOT_SUBSCRIBED", "course_id": str(course_key), "username": request.user.username}
 
 
+def fake_list_offer(prev_fn, request, course_key):  # pylint: disable=unused-argument
+    """Override for OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER that returns something other than a dict."""
+    return ["not", "a", "dict"]
+
+
 FAKE_EXTRA_OFFER_PATH = f"{__name__}.{fake_extra_offer.__name__}"
+FAKE_LIST_OFFER_PATH = f"{__name__}.{fake_list_offer.__name__}"
 
 
 @ddt.ddt
@@ -280,6 +286,15 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
             'course_id': str(self.course.id),
             'username': self.user.username,
         }
+
+    @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_LIST_OFFER_PATH)
+    def test_subscription_left_out_when_override_returns_non_dict(self):
+        """
+        An override that returns something other than a dict does not break the response.
+        """
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert 'subscription' not in response.data
 
     @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
     def test_subscription_uses_masqueraded_user(self):

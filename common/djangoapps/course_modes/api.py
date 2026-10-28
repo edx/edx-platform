@@ -41,7 +41,8 @@ def get_extra_offer(request, course_key):
 
     A plugin provides it through the ``OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER`` override point. The track
     selection and course home metadata APIs return it under the ``subscription`` key, and leave the key out
-    when it is None. If the plugin raises, this returns None, so those APIs keep working.
+    when it is None. If the plugin raises or returns something other than a dict, this logs it and returns
+    None, so those APIs keep working.
 
     Params:
         request (HttpRequest): The current request. The plugin may need its credentials.
@@ -50,10 +51,14 @@ def get_extra_offer(request, course_key):
         A JSON-serializable dict, or None.
     """
     try:
-        return _get_extra_offer(request, course_key)
+        offer = _get_extra_offer(request, course_key)
     except Exception:  # pylint: disable=broad-except
         log.exception("Could not get the extra offer for course %s", course_key)
         return None
+    if offer is not None and not isinstance(offer, dict):
+        log.error("The extra offer for course %s is a %s, not a dict", course_key, type(offer).__name__)
+        return None
+    return offer
 
 
 @pluggable_override("OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER")

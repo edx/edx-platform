@@ -63,8 +63,14 @@ def fake_unknown_track_choice(prev_fn, request, course_key, mode):
     return prev_fn(request, course_key, mode)
 
 
+def failing_unknown_track_choice(prev_fn, request, course_key, mode):  # pylint: disable=unused-argument
+    """Override for OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE that fails like a plugin bug."""
+    raise RuntimeError("Checkout is down")
+
+
 FAKE_EXTRA_OFFER_PATH = f"{__name__}.{fake_extra_offer.__name__}"
 FAKE_UNKNOWN_TRACK_CHOICE_PATH = f"{__name__}.{fake_unknown_track_choice.__name__}"
+FAILING_UNKNOWN_TRACK_CHOICE_PATH = f"{__name__}.{failing_unknown_track_choice.__name__}"
 
 
 @ddt.ddt
@@ -272,6 +278,15 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         response = self.client.post(self.url, {"mode": "broken"}, format="json")
         assert response.status_code == 400
         assert response.data["error"] == "Subscription checkout is unavailable"
+
+    @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=FAILING_UNKNOWN_TRACK_CHOICE_PATH)
+    def test_post_unknown_choice_with_failing_override_returns_an_error(self):
+        """
+        A failing override gives a 400 with a controlled error, not a 500.
+        """
+        response = self.client.post(self.url, {"mode": "subscribe"}, format="json")
+        assert response.status_code == 400
+        assert response.data["error"] == "Could not process this track choice"
 
     @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=FAKE_UNKNOWN_TRACK_CHOICE_PATH)
     def test_post_known_modes_do_not_call_the_unknown_choice_override(self):
