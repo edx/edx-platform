@@ -75,7 +75,7 @@ def set_attribute(threads, attribute, value):
     return threads
 
 
-def get_usernames_from_search_string(course_id, search_string, page_number, page_size):
+def get_usernames_from_search_string(course_id, search_string, page_number, page_size, exclude_usernames=None):
     """
     Gets usernames for all users in course that match string.
 
@@ -84,6 +84,7 @@ def get_usernames_from_search_string(course_id, search_string, page_number, page
             search_string (str): String to search matching
             page_number (int): Page number to fetch
             page_size (int): Number of items in each page
+            exclude_usernames (set): Usernames to leave out of the matches and counts
 
     Returns:
             page_matched_users (str): comma seperated usernames for the page
@@ -103,6 +104,8 @@ def get_usernames_from_search_string(course_id, search_string, page_number, page
             matched_usernames.update(get_forum_usernames(str(course_id), search_string))
         except Exception:  # pylint: disable=broad-except
             log.exception("Error searching forum usernames for course %s", course_id)
+    if exclude_usernames:
+        matched_usernames -= set(exclude_usernames)
     matched_users_in_course = sorted(matched_usernames, key=lambda username: (len(username), username))
     if not matched_users_in_course:
         return '', 0, 0

@@ -2071,7 +2071,7 @@ class CourseActivityStatsTest(UrlResetMixin, ForumMockUtilsMixin, APITestCase,
     @mock.patch.dict("django.conf.settings.FEATURES", {'ENABLE_DISCUSSION_SERVICE': True})
     def test_with_username_param_excludes_banned_user(self):
         """
-        Test banned users matched by the search are not added back with empty stats.
+        Test banned users matched by the search are not added back with empty stats or counted.
         """
         self.client.login(username=self.moderator.username, password=self.TEST_PASSWORD)
         with mock.patch(
@@ -2081,8 +2081,10 @@ class CourseActivityStatsTest(UrlResetMixin, ForumMockUtilsMixin, APITestCase,
             return_value=['user-1'],
             create=True,
         ):
-            response = self.client.get(self.url, {'username': 'user-1'})
-        assert 'user-1' not in [stat['username'] for stat in response.json()['results']]
+            response = self.client.get(self.url, {'username': 'user-'})
+        data = response.json()
+        assert 'user-1' not in [stat['username'] for stat in data['results']]
+        assert data['pagination']['count'] == 9
 
 
 @httpretty.activate

@@ -2533,6 +2533,68 @@ def get_course_discussion_user_stats(
         if order_by == UserOrdering.BY_FLAGS:
             raise ValidationError({"order_by": "Invalid value"})
 
+    # Collect users hidden from the requester before searching, so the search
+    # pagination only counts users that can be shown.
+    muted_usernames = set()
+    if request.user.is_authenticated:
+        # Reuse filter_muted_content logic to get muted user IDs
+        _, muted_user_ids = filter_muted_content(
+            request.user, course_key, None, return_muted_ids=True
+        )
+
+        if muted_user_ids:
+            # Convert user IDs to usernames to filter
+            muted_usernames = set(
+                User.objects.filter(id__in=muted_user_ids).values_list('username', flat=True)
+            )
+
+    # Get all active bans for this course using forum API
+    get_banned_usernames = getattr(forum_api, 'get_banned_usernames', None)
+    banned_usernames = []
+    # Only filter banned users if feature flag is enabled
+    if ENABLE_DISCUSSION_BAN.is_enabled(course_key) and get_banned_usernames is not None:
+        try:
+            banned_usernames = get_banned_usernames(
+                course_id=course_key,
+                org_key=course_key.org
+            )
+        except Exception:  # pylint: disable=broad-except
+            log.exception(
+                "Error retrieving banned usernames for course %s; returning unfiltered discussion stats.",
+                course_key,
+            )
+            banned_usernames = []
+
+    # Course-wide muted users should only be visible to staff and privileged users
+    course_wide_muted_usernames = set()
+    if not is_privileged:
+        try:
+            # Non-privileged users need to see which users are course-wide muted to filter them out
+            # Pass requester_is_privileged=False since the requester is not privileged
+            course_mutes = forum_api.get_all_muted_users_for_course(
+                course_id=str(course_key),
+                requester_id=None,
+                scope="course",
+                requester_is_privileged=False,
+            )
+
+            # Get course-wide muted user IDs and convert to usernames in one operation
+            course_wide_muted_user_ids = {
+                int(user.get('muted_user_id'))
+                for user in course_mutes.get('muted_users', [])
+                if user.get('muted_user_id') is not None
+            }
+
+            if course_wide_muted_user_ids:
+                # Muted users can still see themselves
+                course_wide_muted_usernames = set(
+                    User.objects.filter(id__in=course_wide_muted_user_ids)
+                    .values_list('username', flat=True)
+                ) - {request.user.username}
+
+        except Exception as e:  # pylint: disable=broad-except
+            log.warning(f"Failed to filter course-wide muted users: {e}")
+
     params = {
         "sort_key": str(order_by),
         "page": page,
@@ -2543,7 +2605,11 @@ def get_course_discussion_user_stats(
     if username_search_string:
         comma_separated_usernames, matched_users_count, matched_users_pages = (
             get_usernames_from_search_string(
-                course_key, username_search_string, page, page_size
+                course_key,
+                username_search_string,
+                page,
+                page_size,
+                exclude_usernames=muted_usernames | set(banned_usernames) | course_wide_muted_usernames,
             )
         )
         search_event_data = {
@@ -2575,43 +2641,13 @@ def get_course_discussion_user_stats(
         )
 
     # Filter out muted users from regular learner list (user-specific filtering)
-    if request.user.is_authenticated:
-        # Reuse filter_muted_content logic to get muted user IDs
-        _, muted_user_ids = filter_muted_content(
-            request.user, course_key, None, return_muted_ids=True
-        )
-
-        if muted_user_ids:
-            # Convert user IDs to usernames to filter
-            muted_usernames = set(
-                User.objects.filter(id__in=muted_user_ids).values_list('username', flat=True)
-            )
-
-            # Filter out muted users from the stats
-            course_stats_response["user_stats"] = [
-                stat for stat in course_stats_response["user_stats"]
-                if stat.get('username') not in muted_usernames
-            ]
-            # Update the count to reflect filtered results
-            course_stats_response["count"] = len(course_stats_response["user_stats"])
-
-    # Exclude banned users from the learners list
-    # Get all active bans for this course using forum API
-    get_banned_usernames = getattr(forum_api, 'get_banned_usernames', None)
-    banned_usernames = []
-    # Only filter banned users if feature flag is enabled
-    if ENABLE_DISCUSSION_BAN.is_enabled(course_key) and get_banned_usernames is not None:
-        try:
-            banned_usernames = get_banned_usernames(
-                course_id=course_key,
-                org_key=course_key.org
-            )
-        except Exception:  # pylint: disable=broad-except
-            log.exception(
-                "Error retrieving banned usernames for course %s; returning unfiltered discussion stats.",
-                course_key,
-            )
-            banned_usernames = []
+    if muted_usernames:
+        course_stats_response["user_stats"] = [
+            stat for stat in course_stats_response["user_stats"]
+            if stat.get('username') not in muted_usernames
+        ]
+        # Update the count to reflect filtered results
+        course_stats_response["count"] = len(course_stats_response["user_stats"])
 
     # Filter out banned users from the stats
     if banned_usernames:
@@ -2622,42 +2658,12 @@ def get_course_discussion_user_stats(
         # Update count to reflect filtered results
         course_stats_response["count"] = len(course_stats_response["user_stats"])
 
-    # Course-wide muted users should only be visible to staff and privileged users
-    if not is_privileged:
-        try:
-            # Non-privileged users need to see which users are course-wide muted to filter them out
-            # Pass requester_is_privileged=False since the requester is not privileged
-            course_mutes = forum_api.get_all_muted_users_for_course(
-                course_id=str(course_key),
-                requester_id=None,
-                scope="course",
-                requester_is_privileged=False,
-            )
-
-            # Get course-wide muted user IDs and convert to usernames in one operation
-            course_wide_muted_user_ids = {
-                int(user.get('muted_user_id'))
-                for user in course_mutes.get('muted_users', [])
-                if user.get('muted_user_id') is not None
-            }
-
-            if course_wide_muted_user_ids:
-                # Get usernames for muted users and filter user stats
-                course_wide_muted_usernames = set(
-                    User.objects.filter(id__in=course_wide_muted_user_ids)
-                    .values_list('username', flat=True)
-                )
-
-                # Filter out course-wide muted users from stats, but allow muted users to see themselves
-                requester_username = request.user.username
-                course_stats_response["user_stats"] = [
-                    user_stat for user_stat in course_stats_response["user_stats"]
-                    if (user_stat.get("username") not in course_wide_muted_usernames or
-                        user_stat.get("username") == requester_username)
-                ]
-
-        except Exception as e:  # pylint: disable=broad-except
-            log.warning(f"Failed to filter course-wide muted users: {e}")
+    # Filter out course-wide muted users from stats
+    if course_wide_muted_usernames:
+        course_stats_response["user_stats"] = [
+            user_stat for user_stat in course_stats_response["user_stats"]
+            if user_stat.get("username") not in course_wide_muted_usernames
+        ]
 
     serializer = UserStatsSerializer(
         course_stats_response["user_stats"],
