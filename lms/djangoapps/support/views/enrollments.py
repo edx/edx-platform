@@ -239,10 +239,17 @@ class EnrollmentSupportListView(GenericAPIView):
     @staticmethod
     def get_order_attributes(user):
         """
-        Returns the user's ``order`` enrollment attributes as ``{course_id: {name: value}}``, in one query.
+        Returns the user's ``order`` enrollment attributes, keyed by course, in one query.
 
         The last ``order_number`` wins, consistent with ``CourseEnrollment.get_order_attribute_value``.
         The first ``source_system`` wins.
+
+        Args:
+          user (User): The learner whose enrollment attributes to load.
+
+        Returns:
+          dict: ``{course_id: {'order_number': str, 'source_system': str}}``. A course without
+          order attributes is absent, and a course missing one of them has no key for it.
         """
         order_attributes = defaultdict(dict)
         attributes = CourseEnrollmentAttribute.objects.filter(
@@ -254,7 +261,7 @@ class EnrollmentSupportListView(GenericAPIView):
                 # logging this warning for info/debug purpose
                 logger.warning(
                     "Found multiple order name attributes for CourseEnrollment for user %s with course %s",
-                    user.username,
+                    user.id,
                     course_key
                 )
             if name == 'order_number' or name not in course_attributes:
@@ -264,8 +271,14 @@ class EnrollmentSupportListView(GenericAPIView):
     @staticmethod
     def get_manual_enrollments(user):
         """
-        Returns the serialized latest manual enrollment change for each of the user's
-        enrollments, keyed by course_id, in one query.
+        Returns the latest manual enrollment change for each of the user's enrollments, in one query.
+
+        Args:
+          user (User): The learner whose manual enrollment changes to load.
+
+        Returns:
+          dict: ``{course_id: dict}``, each value a ``ManualEnrollmentSerializer`` serialization.
+          A course without manual enrollment changes is absent.
         """
         audits = ManualEnrollmentAudit.objects.filter(
             enrollment__user=user,
