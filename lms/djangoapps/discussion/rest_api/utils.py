@@ -12,6 +12,7 @@ from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imp
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models.functions import Length
+from forum import api as forum_api
 from pytz import UTC
 
 from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
@@ -74,7 +75,7 @@ def set_attribute(threads, attribute, value):
     return threads
 
 
-def get_usernames_from_search_string(course_id, search_string, page_number, page_size):
+def get_usernames_from_search_string(course_id, search_string, page_number, page_size, exclude_usernames=None):
     """
     Gets usernames for all users in course that match string.
 
@@ -83,15 +84,29 @@ def get_usernames_from_search_string(course_id, search_string, page_number, page
             search_string (str): String to search matching
             page_number (int): Page number to fetch
             page_size (int): Number of items in each page
+            exclude_usernames (set): Usernames to leave out of the matches and counts
 
     Returns:
             page_matched_users (str): comma seperated usernames for the page
             matched_users_count (int): count of matched users in course
             matched_users_pages (int): pages of matched users in course
     """
-    matched_users_in_course = User.objects.filter(
-        courseenrollment__course_id=course_id,
-        username__icontains=search_string).order_by(Length('username').asc()).values_list('username', flat=True)
+    matched_usernames = set(
+        User.objects.filter(
+            courseenrollment__course_id=course_id,
+            username__icontains=search_string,
+        ).values_list('username', flat=True)
+    )
+    # Users who have posted in the course but are not enrolled in it only exist in the forum stats.
+    get_forum_usernames = getattr(forum_api, 'get_usernames_with_course_stats', None)
+    if get_forum_usernames is not None:
+        try:
+            matched_usernames.update(get_forum_usernames(str(course_id), search_string))
+        except Exception:  # pylint: disable=broad-except
+            log.exception("Error searching forum usernames for course %s", course_id)
+    if exclude_usernames:
+        matched_usernames -= set(exclude_usernames)
+    matched_users_in_course = sorted(matched_usernames, key=lambda username: (len(username), username))
     if not matched_users_in_course:
         return '', 0, 0
     matched_users_count = len(matched_users_in_course)
