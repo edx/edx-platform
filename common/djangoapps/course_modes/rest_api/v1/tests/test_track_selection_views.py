@@ -51,15 +51,15 @@ TEST_STEP_PATH = f"{__name__}.{TestCourseModePriceRequestedPipelineStep.__name__
 
 def fake_extra_offer(prev_fn, request, course_key):  # pylint: disable=unused-argument
     """Override for OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER that returns a sample offer."""
-    return {"status": "NOT_SUBSCRIBED", "course_id": str(course_key), "username": request.user.username}
+    return {"status": "AVAILABLE", "course_id": str(course_key), "username": request.user.username}
 
 
 def fake_unknown_track_choice(prev_fn, request, course_key, mode):
-    """Override for OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE that handles "subscribe" and "broken"."""
-    if mode == "subscribe":
-        return TrackSelectionRedirect(url="https://checkout.example.com/subscribe")
+    """Override for OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE that handles "custom_choice" and "broken"."""
+    if mode == "custom_choice":
+        return TrackSelectionRedirect(url="https://example.com/custom-choice")
     if mode == "broken":
-        return TrackSelectionSubmissionError(error="Subscription checkout is unavailable")
+        return TrackSelectionSubmissionError(error="Custom choice is unavailable")
     return prev_fn(request, course_key, mode)
 
 
@@ -228,23 +228,23 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.status_code == 400
         assert response.data["error"] == "Enrollment mode not supported"
 
-    def test_post_page_data_has_no_subscription_by_default(self):
+    def test_post_page_data_has_no_extra_offer_by_default(self):
         """
-        With no override configured, the page data has no ``subscription`` key.
+        With no override configured, the page data has no ``extra_offer`` key.
         """
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
-        assert "subscription" not in response.data
+        assert "extra_offer" not in response.data
 
     @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
     def test_post_page_data_includes_extra_offer_from_override(self):
         """
-        A configured OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER adds its result as ``subscription``.
+        A configured OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER adds its result as ``extra_offer``.
         """
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
-        assert response.data["subscription"] == {
-            "status": "NOT_SUBSCRIBED",
+        assert response.data["extra_offer"] == {
+            "status": "AVAILABLE",
             "course_id": str(self.course.id),
             "username": self.user.username,
         }
@@ -264,9 +264,9 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         """
         A choice that is not a course mode can be handled by an override, here a redirect.
         """
-        response = self.client.post(self.url, {"mode": "subscribe"}, format="json")
+        response = self.client.post(self.url, {"mode": "custom_choice"}, format="json")
         assert response.status_code == 200
-        assert response.data["redirect_url"] == "https://checkout.example.com/subscribe"
+        assert response.data["redirect_url"] == "https://example.com/custom-choice"
         # The override only redirects. Core does not enroll the learner.
         assert CourseEnrollment.enrollment_mode_for_user(self.user, self.course.id) == (None, None)
 
@@ -277,14 +277,14 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         """
         response = self.client.post(self.url, {"mode": "broken"}, format="json")
         assert response.status_code == 400
-        assert response.data["error"] == "Subscription checkout is unavailable"
+        assert response.data["error"] == "Custom choice is unavailable"
 
     @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=FAILING_UNKNOWN_TRACK_CHOICE_PATH)
     def test_post_unknown_choice_with_failing_override_returns_an_error(self):
         """
         A failing override gives a 400 with a controlled error, not a 500.
         """
-        response = self.client.post(self.url, {"mode": "subscribe"}, format="json")
+        response = self.client.post(self.url, {"mode": "custom_choice"}, format="json")
         assert response.status_code == 400
         assert response.data["error"] == "Could not process this track choice"
 

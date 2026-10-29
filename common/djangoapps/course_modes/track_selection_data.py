@@ -67,7 +67,7 @@ def handle_unknown_track_choice(
     Params:
         request (HttpRequest): The current request.
         course_key (CourseKey): The course run.
-        mode (str): The choice the learner made, for example "subscribe".
+        mode (str): The choice the learner made. It is not one of the course's modes.
     Returns:
         A TrackSelectionRedirect to send the learner on, a TrackSelectionSubmissionError to show an
         error, or None when the choice is not handled.
@@ -255,8 +255,8 @@ def get_track_selection_page_data(
         "verified_mode": verified_payload,
         "audit_mode": audit_payload,
     }
-    if (subscription := get_extra_offer(request, course_key)) is not None:
-        page_data["subscription"] = subscription
+    if (extra_offer := get_extra_offer(request, course_key)) is not None:
+        page_data["extra_offer"] = extra_offer
     return page_data
 
 
@@ -282,7 +282,7 @@ def submit_track_selection_choice(
     requested_mode = mode
 
     if requested_mode not in allowed_modes:
-        # A plugin may handle choices that are not course modes, such as "subscribe".
+        # A plugin may handle choices that are not course modes.
         handled = handle_unknown_track_choice(request, course_key, requested_mode)
         if handled is not None:
             return handled

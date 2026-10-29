@@ -31,7 +31,7 @@ from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration
 
 def fake_extra_offer(prev_fn, request, course_key):  # pylint: disable=unused-argument
     """Override for OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER that returns a sample offer."""
-    return {"status": "NOT_SUBSCRIBED", "course_id": str(course_key), "username": request.user.username}
+    return {"status": "AVAILABLE", "course_id": str(course_key), "username": request.user.username}
 
 
 def fake_list_offer(prev_fn, request, course_key):  # pylint: disable=unused-argument
@@ -266,38 +266,38 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         assert response.status_code == 200
         assert response.data['has_course_author_access'] == has_course_author_access
 
-    def test_no_subscription_by_default(self):
+    def test_no_extra_offer_by_default(self):
         """
-        With no override configured, the response has no ``subscription`` key.
+        With no override configured, the response has no ``extra_offer`` key.
         """
         response = self.client.get(self.url)
         assert response.status_code == 200
-        assert 'subscription' not in response.data
+        assert 'extra_offer' not in response.data
 
     @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
-    def test_subscription_from_override(self):
+    def test_extra_offer_from_override(self):
         """
-        A configured OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER adds its result as ``subscription``.
+        A configured OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER adds its result as ``extra_offer``.
         """
         response = self.client.get(self.url)
         assert response.status_code == 200
-        assert response.data['subscription'] == {
-            'status': 'NOT_SUBSCRIBED',
+        assert response.data['extra_offer'] == {
+            'status': 'AVAILABLE',
             'course_id': str(self.course.id),
             'username': self.user.username,
         }
 
     @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_LIST_OFFER_PATH)
-    def test_subscription_left_out_when_override_returns_non_dict(self):
+    def test_extra_offer_left_out_when_override_returns_non_dict(self):
         """
         An override that returns something other than a dict does not break the response.
         """
         response = self.client.get(self.url)
         assert response.status_code == 200
-        assert 'subscription' not in response.data
+        assert 'extra_offer' not in response.data
 
     @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
-    def test_subscription_uses_masqueraded_user(self):
+    def test_extra_offer_uses_masqueraded_user(self):
         """
         The offer is built for the masqueraded learner, not the staff user.
         """
@@ -306,4 +306,4 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         self.client.login(username=self.staff_user.username, password='bar')
         self.update_masquerade(username=self.user.username)
         response = self.client.get(self.url)
-        assert response.data['subscription']['username'] == self.user.username
+        assert response.data['extra_offer']['username'] == self.user.username

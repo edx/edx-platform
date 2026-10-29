@@ -63,7 +63,7 @@ class CourseHomeMetadataView(RetrieveAPIView):
         celebrations: (dict) a dict of celebration data
         user_timezone: (str) The timezone of the given user
         can_view_certificate: Flag to determine whether or not the learner can view their course certificate.
-        subscription: (dict) Optional. An extra offer from a plugin, as returned by
+        extra_offer: (dict) Optional. An extra offer from a plugin, as returned by
             common.djangoapps.course_modes.api.get_extra_offer. Left out when there is none.
 
     **Returns**
@@ -152,9 +152,9 @@ class CourseHomeMetadataView(RetrieveAPIView):
             'has_course_author_access': has_course_author_access(request.user, course_key, 'cms'),
         }
         # An optional plugin offer. The key is left out when there is none.
-        subscription = get_extra_offer(request, course_key)
-        if subscription is not None:
-            data['subscription'] = subscription
+        extra_offer = get_extra_offer(request, course_key)
+        if extra_offer is not None:
+            data['extra_offer'] = extra_offer
         context = self.get_serializer_context()
         context['course'] = course
         context['course_overview'] = course

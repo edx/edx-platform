@@ -40,7 +40,7 @@ def get_extra_offer(request, course_key):
     Return an extra offer to show the learner in a course, or None.
 
     A plugin provides it through the ``OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER`` override point. The track
-    selection and course home metadata APIs return it under the ``subscription`` key, and leave the key out
+    selection and course home metadata APIs return it under the ``extra_offer`` key, and leave the key out
     when it is None. If the plugin raises or returns something other than a dict, this logs it and returns
     None, so those APIs keep working.
 

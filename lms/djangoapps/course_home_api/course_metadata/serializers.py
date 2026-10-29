@@ -60,4 +60,4 @@ class CourseHomeMetadataSerializer(VerifiedModeSerializer):
     course_modes = CourseModeSerrializer(many=True)
     is_new_discussion_sidebar_view_enabled = serializers.BooleanField()
     has_course_author_access = serializers.BooleanField()
-    subscription = serializers.DictField(required=False)  # optional plugin offer, left out when there is none
+    extra_offer = serializers.DictField(required=False)  # optional plugin offer, left out when there is none
