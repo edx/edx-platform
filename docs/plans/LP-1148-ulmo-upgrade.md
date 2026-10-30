@@ -407,7 +407,11 @@ There is no freeze on `release-ulmo`. When the last `release-ulmo` changes are p
 
 ## Deploy and rollback (LP-1308)
 
-Ticket: LP-1308. Stage first (test on 2026-11-02), then prod. **A prod deploy goes to prod and edge at the same time.** For the May 27 attempt, see [History](#history-what-was-deployed).
+Ticket: LP-1308. Stage first (test on 2026-11-02), then prod.
+
+**QA on stage:** the same testing as on the sandbox, plus the call-outs in [Changes from the 2026-10-30 sync](#changes-from-the-2026-10-30-sync), due to the latest changes on `release-ulmo`.
+
+**A prod deploy goes to prod and edge at the same time.** For the May 27 attempt, see [History](#history-what-was-deployed).
 
 **Dashboard:** [LP-1308 ulmo.1 deploy](https://app.datadoghq.com/dashboard/dfe-74q-pte) in Datadog. Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. Two LP-1308 monitors (311464046, 312818221) alert on the XBlock save errors; they are deleted after the deploy (see LP-1308).
 
