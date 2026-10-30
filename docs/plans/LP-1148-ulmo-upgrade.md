@@ -433,11 +433,16 @@ After the QA ticket and the blockers are done:
 
 1. **Write the rollout and rollback plan** (above), then deploy to stage, then prod. Include a maintenance banner (BOMS-503).
 2. **Mark the PR ready and merge it** with GitHub's **"Create a merge commit"** (as #212 and #304 were), not squash or rebase. Squash would also bring ulmo.1 back, since its upstream commits are already ancestors of `release-ulmo`, but it would collapse the revert, ports, Django bump and PII fix into one commit (so the bump could no longer be reverted on its own) and orphan the commit SHAs cited in this plan and the audit. Rebase would rewrite those SHAs and replay the `release-ulmo` merge. Do the final sync (see QA section) first, and again just before merging.
-3. **Once stable in production**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`. First make sure every item in [Feed to playbook](#feed-to-playbook) is resolved with an edx-internal edit or consciously dropped. Delete the saved May 27 spans and logs from Google Drive (listed in LP-1308).
+3. **Once stable in production**, do the [final steps for every batch](#every-batch-final-steps). For batch 1, also delete the saved May 27 spans and logs from Google Drive (listed in LP-1308).
+4. **After the last batch**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`. First make sure every item in [Feed to playbook](#feed-to-playbook) is resolved with an edx-internal edit or consciously dropped.
+
+## Every batch: final steps
+
+At the end of every batch, batch 1 included, once it is stable in production:
+
+1. **Capture what the batch taught in the edx-internal upgrade playbook** ([PR #14962](https://github.com/edx/edx-internal/pull/14962), `docs/openedx-upgrade-process/`). Add new lessons to [Feed to playbook](#feed-to-playbook). Then resolve each open row there with an edx-internal edit, or drop it with a reason. This step closes each batch, rather than opening the next one, so the last batch is covered too.
 
 ## Batch 2 (scope open)
-
-**Before starting batch 2:** capture what batch 1 taught in the edx-internal upgrade playbook (see [Feed to playbook](#feed-to-playbook)). Resolve or consciously drop each open row there, so batch 2 starts from the updated playbook rather than from this plan.
 
 Batch 2 is some set of changes after ulmo.1 on `openedx/release/ulmo`, merged straight into `release-ulmo` once batch 1 has landed (a plain merge, since the revert trap is gone by then). How much goes in it is not decided: it could be ulmo.2 only, through ulmo.3 or ulmo.4, or up to the upstream tip. The lists below help decide, and each behaviour-changing item needs coordination with its owner. No Jira ticket exists yet; create one when the scope is decided.
 
