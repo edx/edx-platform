@@ -2058,6 +2058,11 @@ ENTERPRISE_MARKETING_FOOTER_QUERY_PARAMS = {}
 
 EXAMS_SERVICE_URL = 'http://localhost:18740/api/v1'
 
+# .. setting_name: EXAMS_SERVICE_USERNAME
+# .. setting_default: edx_exams_worker
+# .. setting_description: Username of the service user whose JWT is used to call the edx-exams API.
+EXAMS_SERVICE_USERNAME = 'edx_exams_worker'
+
 ############################## Credit Courses ##############################
 
 # Initial delay used for retrying tasks.

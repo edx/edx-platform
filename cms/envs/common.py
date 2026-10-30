@@ -1513,7 +1513,6 @@ COMMENTS_SERVICE_URL = 'http://localhost:18080'
 COMMENTS_SERVICE_KEY = 'password'
 
 EXAMS_SERVICE_URL = 'http://localhost:18740/api/v1'
-EXAMS_SERVICE_USERNAME = 'edx_exams_worker'
 
 ############# CORS headers for cross-domain requests #################
 

@@ -73,7 +73,9 @@ class CertificatesDetailView(APIView):
 
             * certificate_blocked_due_to_proctoring: Whether certificate access is currently blocked by proctoring.
 
-            * certificate_block_reason: Machine-readable reason when access is blocked.
+            * certificate_block_reason: Machine-readable reason when access is blocked. One of
+                proctoring_review_pending, proctoring_rejected, proctored_exam_not_attempted,
+                proctored_exam_incomplete, proctoring_error or proctoring_status_unavailable.
 
             * certificate_blocking_statuses: Proctoring statuses currently blocking access.
 
@@ -227,7 +229,9 @@ class CertificatesListView(APIView):
 
             * certificate_blocked_due_to_proctoring: Whether certificate access is currently blocked by proctoring.
 
-            * certificate_block_reason: Machine-readable reason when access is blocked.
+            * certificate_block_reason: Machine-readable reason when access is blocked. One of
+                proctoring_review_pending, proctoring_rejected, proctored_exam_not_attempted,
+                proctored_exam_incomplete, proctoring_error or proctoring_status_unavailable.
 
             * certificate_blocking_statuses: Proctoring statuses currently blocking access.
 

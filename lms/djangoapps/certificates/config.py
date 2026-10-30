@@ -31,6 +31,23 @@ CERTIFICATE_PROCTORING_REVIEW_BLOCK = WaffleSwitch(
     f"{WAFFLE_NAMESPACE}.certificate_proctoring_review_block", __name__
 )
 
+# .. toggle_name: certificates.certificate_proctoring_review_block_exams
+# .. toggle_implementation: WaffleSwitch
+# .. toggle_default: False
+# .. toggle_description: When enabled together with certificates.certificate_proctoring_review_block, the
+#      certificate access check also reads proctoring status from edx-exams for courses that use an LTI
+#      proctoring provider (for example Proctorio), and ignores legacy edx-proctoring records for exams
+#      that were never started on those courses.
+#      Rollout order: deploy the edx-exams certificate_proctoring status endpoint first
+#      (https://github.com/edx/edx-exams/pull/447), then enable this
+#      switch.  Until the endpoint exists every status lookup fails, and a failed lookup blocks the
+#      certificate, so enabling the switch early blocks all learners on LTI proctoring courses.
+# .. toggle_use_cases: open_edx
+# .. toggle_creation_date: 2026-10-13
+CERTIFICATE_PROCTORING_REVIEW_BLOCK_EXAMS = WaffleSwitch(
+    f"{WAFFLE_NAMESPACE}.certificate_proctoring_review_block_exams", __name__
+)
+
 CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT_SETTING = (
     'CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT'
 )

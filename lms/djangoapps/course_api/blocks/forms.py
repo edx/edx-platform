@@ -139,8 +139,6 @@ class BlockListGetForm(Form):
             return self._verify_anonymous_user(requested_username, course_key, all_blocks)
 
         if all_blocks:
-            if requesting_user.has_perm('instructor.research', course_key):
-                return requesting_user
             return self._verify_all_blocks(requesting_user, course_key)
         elif requesting_user.username.lower() == requested_username.lower():
             return self._verify_requesting_user(requesting_user, course_key)
@@ -174,20 +172,28 @@ class BlockListGetForm(Form):
         return AnonymousUser()
 
     @staticmethod
-    def _verify_all_blocks(requesting_user, course_key):  # pylint: disable=useless-return
+    def _verify_all_blocks(requesting_user, course_key):
         """
-        Verifies form for when no username is specified, including permissions.
-        """
-        # Verify all blocks can be accessed for the course.
-        if not permissions.can_access_all_blocks(requesting_user, course_key):
-            raise PermissionDenied(
-                "'{requesting_username}' does not have permission to access all blocks in '{course_key}'.".format(
-                    requesting_username=requesting_user.username,
-                    course_key=str(course_key),
-                )
-            )
+        Verifies form for when all blocks are requested, including permissions.
 
-        return None
+        Returns None for users who can access all blocks, and the requesting user for data researchers who can't,
+        so they see the blocks as themselves. None means the tree without per-user transformers: only
+        VisibilityTransformer runs, so staff-only blocks are still excluded, the same as for course staff.
+        """
+        # Check this before instructor.research: global staff hold both, and serving them as themselves applies
+        # per-user transformers, e.g. a random item bank selection instead of the full pool.
+        if permissions.can_access_all_blocks(requesting_user, course_key):
+            return None
+
+        if requesting_user.has_perm('instructor.research', course_key):
+            return requesting_user
+
+        raise PermissionDenied(
+            "'{requesting_username}' does not have permission to access all blocks in '{course_key}'.".format(
+                requesting_username=requesting_user.username,
+                course_key=str(course_key),
+            )
+        )
 
     @staticmethod
     def _verify_requesting_user(requesting_user, course_key):

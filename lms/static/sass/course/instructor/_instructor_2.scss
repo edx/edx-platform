@@ -3097,7 +3097,14 @@ div.staff_info {
 .staff-modal,
 .history-modal {
   width: 80%;
-  height: 80%;
+
+  max-height: 80vh;
+
+  // Inside the learning MFE iframe the viewport is the whole page, so vh does not cap
+  // anything there. leanModal sets the real cap from the visible slice; this is the fallback.
+  .view-in-mfe & {
+    max-height: 600px;
+  }
   left: left(20%);
   overflow: auto;
   display: none;

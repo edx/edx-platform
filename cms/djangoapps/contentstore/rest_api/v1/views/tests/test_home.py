@@ -94,7 +94,7 @@ class HomePageViewTest(CourseTestCase):
         self.assertDictEqual(expected_response, response.data)
 
     @ddt.data(
-        (True, ["org1", "org2"]),
+        (True, ["Org1", "org2"]),
         (False, []),
     )
     @ddt.unpack
@@ -102,17 +102,18 @@ class HomePageViewTest(CourseTestCase):
     def test_home_page_staff_sees_all_orgs_for_libraries(self, flag_active, expected_organizations):
         """
         With the LP-1102 flag on, global staff can pick any active org for a new library, even when org
-        autocreate is disabled. With the flag off, they only get their role-based orgs.
+        autocreate is disabled, sorted case-insensitively. With the flag off, they only get their
+        role-based orgs.
         """
-        OrganizationFactory.create(short_name="org1")
         OrganizationFactory.create(short_name="org2")
         OrganizationFactory.create(short_name="inactive_org", active=False)
+        OrganizationFactory.create(short_name="Org1")
 
         with override_waffle_flag(EXPANDED_LIBRARY_CREATION_ORGS, active=flag_active):
             response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertCountEqual(response.data["allowed_organizations_for_libraries"], expected_organizations)
+        self.assertEqual(response.data["allowed_organizations_for_libraries"], expected_organizations)
 
     def test_taxonomy_list_link(self):
         response = self.client.get(self.url)

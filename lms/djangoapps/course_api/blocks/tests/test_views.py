@@ -22,6 +22,7 @@ from xmodule.modulestore.tests.django_utils import (  # lint-amnesty, pylint: di
 )
 from xmodule.modulestore.tests.factories import (  # lint-amnesty, pylint: disable=wrong-import-order
     BlockFactory,
+    CourseFactory,
     ToyCourseFactory
 )
 
@@ -404,6 +405,59 @@ class TestBlocksView(SharedModuleStoreTestCase):
             url=urlunparse(("", "", self.url, "", query, ""))
         )
         self.verify_response_with_requested_fields(response)
+
+
+class TestBlocksViewAllBlocks(SharedModuleStoreTestCase):
+    """
+    Test which blocks BlocksView returns when all_blocks is requested.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+
+        cls.course = CourseFactory.create(start=datetime(2020, 1, 1))
+        chapter = BlockFactory.create(parent=cls.course, category='chapter')
+        sequential = BlockFactory.create(parent=chapter, category='sequential')
+        vertical = BlockFactory.create(parent=sequential, category='vertical')
+        item_bank = BlockFactory.create(parent=vertical, category='library_content', max_count=1)
+        cls.item_bank_children = {
+            str(BlockFactory.create(parent=item_bank, category='html').location)
+            for _ in range(2)
+        }
+        cls.staff_only_vertical = str(
+            BlockFactory.create(parent=sequential, category='vertical', visible_to_staff_only=True).location
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse(
+            'blocks_in_block_tree',
+            kwargs={'usage_key_string': str(self.store.make_course_usage_key(self.course.id))}
+        )
+        self.query_params = {'depth': 'all', 'all_blocks': True}
+
+    def get_block_ids(self, user):
+        """
+        Request all blocks as the given user and return the ids of the blocks in the response.
+        """
+        self.client.login(username=user.username, password=self.TEST_PASSWORD)
+        response = self.client.get(self.url, self.query_params)
+        assert response.status_code == 200, str(response.content)
+        return set(response.data['blocks'])
+
+    def test_global_staff_get_every_item_bank_child(self):
+        # global staff also hold instructor.research, but should not get a per-user item bank selection
+        block_ids = self.get_block_ids(AdminFactory.create())
+        assert self.item_bank_children <= block_ids
+        assert self.staff_only_vertical not in block_ids
+
+    def test_data_researcher_gets_own_item_bank_selection(self):
+        data_researcher = UserFactory.create()
+        CourseDataResearcherRole(self.course.id).add_users(data_researcher)
+        block_ids = self.get_block_ids(data_researcher)
+        assert len(self.item_bank_children & block_ids) == 1
+        assert self.staff_only_vertical not in block_ids
 
 
 @ddt.ddt

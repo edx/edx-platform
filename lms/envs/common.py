@@ -785,6 +785,25 @@ ENABLE_REQUIRE_THIRD_PARTY_AUTH = False
 # e.g. COURSE_BLOCKS_API_EXTRA_FIELDS = [  ('course', 'other_course_settings'), ("problem", "weight")  ]
 COURSE_BLOCKS_API_EXTRA_FIELDS = []
 
+# .. setting_name: XBLOCK_NOAUTH_HANDLER_ALLOWLIST
+# .. setting_default: LTI 1.1 outcome handlers and the video transcript handler (see below)
+# .. setting_description: Dotted paths to the XBlock handler methods that may be called through the
+#     unauthenticated ``handler_noauth`` URL. Requests for any other handler on that URL get a 404. Handlers
+#     on this URL always run as an anonymous user, so each one must do its own authentication (for example, an
+#     OAuth signature from an LTI tool) or serve only public data. Paths name the class that defines the method,
+#     e.g. ``'my_package.blocks.MyXBlock.my_callback_handler'``. Paths that cannot be imported are skipped.
+XBLOCK_NOAUTH_HANDLER_ALLOWLIST = [
+    # LTI 1.1 tools posting grades back; these verify the OAuth1 body signature.
+    'xmodule.lti_block._BuiltInLTIBlock.grade_handler',
+    'xmodule.lti_2_util.LTI20BlockMixin.lti_2_0_result_rest_handler',
+    'xblocks_contrib.lti.lti.LTIBlock.grade_handler',
+    'xblocks_contrib.lti.lti_2_util.LTI20BlockMixin.lti_2_0_result_rest_handler',
+    'lti_consumer.lti_xblock.LtiConsumerXBlock.outcome_service_handler',
+    'lti_consumer.lti_xblock.LtiConsumerXBlock.result_service_handler',
+    # Video transcripts, fetched without a session by the mobile apps.
+    'xmodule.video_block.video_handlers.VideoStudentViewHandlers.transcript',
+]
+
 # Used for A/B testing
 DEFAULT_GROUPS = []
 
@@ -1033,6 +1052,14 @@ CERTIFICATE_DATE_FORMAT = "%B %-d, %Y"
 # UTC timestamp when access-time proctoring certificate blocking became
 # effective. Production deployment configuration supplies the rollout value.
 CERTIFICATE_PROCTORING_REVIEW_BLOCK_EFFECTIVE_AT = None
+
+# EXAMS_SERVICE_URL and EXAMS_SERVICE_USERNAME are inherited from openedx.envs.common.
+
+# .. setting_name: EXAMS_SERVICE_REQUEST_TIMEOUT
+# .. setting_default: (3.05, 5)
+# .. setting_description: (connect, read) timeout in seconds for edx-exams API requests made during
+#     certificate access checks.
+EXAMS_SERVICE_REQUEST_TIMEOUT = (3.05, 5)
 
 ### Dark code. Should be enabled in local settings for devel.
 
@@ -2434,7 +2461,6 @@ INSTALLED_APPS = [
     'openedx.features.calendar_sync',
     'openedx.features.course_bookmarks',
     'openedx.features.course_experience',
-    'openedx.features.enterprise_support.apps.EnterpriseSupportConfig',
     'openedx.features.course_duration_limits',
     'openedx.features.content_type_gating',
     'openedx.features.discounts',

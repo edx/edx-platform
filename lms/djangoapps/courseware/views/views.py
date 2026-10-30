@@ -307,6 +307,11 @@ def _proctoring_blocked_cert_data(cert_downloadable_status):
             'Your certificate is temporarily unavailable while your required proctored exam is being reviewed. '
             'Please check back after the review is complete.'
         )
+    elif block_reason == 'proctoring_rejected':
+        message = _(
+            'Your certificate is unavailable because your proctored exam did not pass review. '
+            'Please contact support if you have questions.'
+        )
     elif block_reason == 'proctored_exam_not_attempted':
         message = _('Complete your required proctored exam before accessing your certificate.')
     elif block_reason == 'proctored_exam_incomplete':

@@ -7,8 +7,7 @@ import json
 import logging
 import textwrap
 from collections import OrderedDict
-
-from functools import partial
+from functools import lru_cache, partial
 
 from completion.services import CompletionService
 from django.conf import settings
@@ -19,6 +18,7 @@ from django.http import Http404, HttpResponse, HttpResponseForbidden
 from django.middleware.csrf import CsrfViewMiddleware
 from django.template.context_processors import csrf
 from django.urls import reverse
+from django.utils.module_loading import import_string
 from django.utils.text import slugify
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
@@ -736,13 +736,18 @@ def xqueue_callback(request, course_id, userid, mod_id, dispatch):
 def handle_xblock_callback_noauth(request, course_id, usage_id, handler, suffix=None):
     """
     Entry point for unauthenticated XBlock handlers.
+
+    Only the handlers listed in ``settings.XBLOCK_NOAUTH_HANDLER_ALLOWLIST`` can be called here. This view is
+    exempt from CSRF checks, so the handler always runs as an anonymous user, even if the request carries a
+    session, and the block's access checks are skipped.
     """
+    request.user = AnonymousUser()
     request.user.known = False
 
     course_key = CourseKey.from_string(course_id)
     with modulestore().bulk_operations(course_key):
         course = modulestore().get_course(course_key, depth=0)
-        return _invoke_xblock_handler(request, course_id, usage_id, handler, suffix, course=course)
+        return _invoke_xblock_handler(request, course_id, usage_id, handler, suffix, course=course, noauth=True)
 
 
 @csrf_exempt
@@ -793,14 +798,13 @@ def handle_xblock_callback(request, course_id, usage_id, handler, suffix=None):
                     break
 
     # NOTE (CCB): Allow anonymous GET calls (e.g. for transcripts). Modifying this view is simpler than updating
-    # the XBlocks to use `handle_xblock_callback_noauth`, which is practically identical to this view.
+    # the XBlocks to use `handle_xblock_callback_noauth`. Anonymous GET calls still go through the block's
+    # access checks, so they only reach blocks that an anonymous user is allowed to load.
     # Block all request types coming from restricted applications.
     if (
         request.method != 'GET' and not (request.user and request.user.is_authenticated)
     ) or JwtRestrictedApplication().has_permission(request, None):  # type: ignore
         return HttpResponseForbidden('Unauthenticated')
-
-    request.user.known = request.user.is_authenticated
 
     try:
         course_key = CourseKey.from_string(course_id)
@@ -814,6 +818,35 @@ def handle_xblock_callback(request, course_id, usage_id, handler, suffix=None):
             raise Http404(f'{course_id} does not exist in the modulestore')  # lint-amnesty, pylint: disable=raise-missing-from
 
         return _invoke_xblock_handler(request, course_id, usage_id, handler, suffix, course=course)
+
+
+@lru_cache
+def _get_noauth_handlers(handler_paths: tuple[str, ...]) -> frozenset[Callable]:
+    """
+    Import the handler methods named by dotted paths in ``settings.XBLOCK_NOAUTH_HANDLER_ALLOWLIST``.
+
+    Paths that cannot be imported (for example, from an XBlock package that isn't installed) are skipped.
+    """
+    handlers = set()
+    for handler_path in handler_paths:
+        class_path, _, method_name = handler_path.rpartition('.')
+        try:
+            handlers.add(getattr(import_string(class_path), method_name))
+        except (ImportError, AttributeError):
+            log.warning("Skipping XBLOCK_NOAUTH_HANDLER_ALLOWLIST entry %r: it could not be imported", handler_path)
+    return frozenset(handlers)
+
+
+def _is_noauth_handler_allowed(handler_instance, handler: str) -> bool:
+    """
+    Return True if ``handler`` on ``handler_instance`` may be called through the noauth handler URL.
+
+    The method is looked up on the instance's class, so a subclass that overrides an allowed handler
+    has to be allowed separately.
+    """
+    handler_method = getattr(type(handler_instance), handler, None)
+    allowed = _get_noauth_handlers(tuple(settings.XBLOCK_NOAUTH_HANDLER_ALLOWLIST))
+    return handler_method is not None and handler_method in allowed
 
 
 def _get_usage_key_for_course(course_key, usage_id) -> UsageKey:
@@ -860,7 +893,7 @@ def _get_block_by_usage_key(usage_key):
 
 
 def get_block_by_usage_id(request, course_id, usage_id, disable_staff_debug_info=False, course=None,
-                          will_recheck_access=False, field_data_cache_depth=None):
+                          will_recheck_access=False, field_data_cache_depth=None, field_data_cache=None):
     """
     Gets a block instance based on its `usage_id` in a course, for a given request/user
 
@@ -870,6 +903,10 @@ def get_block_by_usage_id(request, course_id, usage_id, disable_staff_debug_info
             descendant, matching historical behavior. Used by the incremental assessment load
             (see render_xblock_children) so a batch of children only prefetches state for
             themselves, not their own descendants.
+        field_data_cache: optional FieldDataCache to populate and bind the block with,
+            instead of building a new one. The runtime binding the block is shared with
+            every block loaded through it later in the request, so a caller that adds more
+            state to this cache afterwards makes that state visible to those blocks too.
 
     Returns (instance, tracking_context)
     """
@@ -878,13 +915,16 @@ def get_block_by_usage_id(request, course_id, usage_id, disable_staff_debug_info
     block, tracking_context = _get_block_by_usage_key(usage_key)
 
     _, user = setup_masquerade(request, course_key, has_access(request.user, 'staff', block, course_key))
-    field_data_cache = FieldDataCache.cache_for_block_descendents(
-        course_key,
-        user,
-        block,
-        depth=field_data_cache_depth,
-        read_only=CrawlersConfig.is_crawler(request),
-    )
+    if field_data_cache is None:
+        field_data_cache = FieldDataCache.cache_for_block_descendents(
+            course_key,
+            user,
+            block,
+            depth=field_data_cache_depth,
+            read_only=CrawlersConfig.is_crawler(request),
+        )
+    else:
+        field_data_cache.add_block_descendents(block, depth=field_data_cache_depth)
     instance = get_block_for_descriptor(
         user,
         request,
@@ -904,7 +944,7 @@ def get_block_by_usage_id(request, course_id, usage_id, disable_staff_debug_info
     return instance, tracking_context
 
 
-def _invoke_xblock_handler(request, course_id, usage_id, handler, suffix, course=None):
+def _invoke_xblock_handler(request, course_id, usage_id, handler, suffix, course=None, noauth=False):
     """
     Invoke an XBlock handler, either authenticated or not.
 
@@ -914,6 +954,8 @@ def _invoke_xblock_handler(request, course_id, usage_id, handler, suffix, course
         usage_id (str): A string of the form i4x://org/course/category/name@revision
         handler (str): The name of the handler to invoke
         suffix (str): The suffix to pass to the handler when invoked
+        noauth (bool): True for the unauthenticated handler URL, which only allows the handlers in
+            ``settings.XBLOCK_NOAUTH_HANDLER_ALLOWLIST``
     """
 
     # Check submitted files
@@ -959,17 +1001,22 @@ def _invoke_xblock_handler(request, course_id, usage_id, handler, suffix, course
         nr_tx_name += f"/{suffix}" if (suffix and handler == "xmodule_handler") else ""
         set_monitoring_transaction_name(nr_tx_name, group="Python/XBlock/Handler")
 
+        if is_xblock_aside(usage_key):
+            # In this case, 'instance' is the XBlock being wrapped by the aside, so
+            # the actual aside instance needs to be retrieved in order to invoke its
+            # handler method.
+            handler_instance = get_aside_from_xblock(instance, usage_key.aside_type)
+        else:
+            handler_instance = instance
+
+        if noauth and not _is_noauth_handler_allowed(handler_instance, handler):
+            log.info("XBlock handler %r on %s is not allowed on the noauth handler URL", handler, usage_key)
+            raise Http404
+
         tracking_context_name = 'module_callback_handler'
         req = django_to_webob_request(request)
         try:
             with tracker.get_tracker().context(tracking_context_name, tracking_context):
-                if is_xblock_aside(usage_key):
-                    # In this case, 'instance' is the XBlock being wrapped by the aside, so
-                    # the actual aside instance needs to be retrieved in order to invoke its
-                    # handler method.
-                    handler_instance = get_aside_from_xblock(instance, usage_key.aside_type)
-                else:
-                    handler_instance = instance
                 resp = handler_instance.handle(handler, req, suffix)
                 if suffix == 'problem_check' \
                         and course \
@@ -1275,6 +1322,12 @@ def render_xblock_children(request, parent_usage_key, child_usage_keys, course=N
     staff_access = bool(has_access(request.user, 'staff', course_key))
     _, user = setup_masquerade(request, course_key, staff_access)
 
+    # One cache for the parent and the whole batch. Binding the parent prepares the shared
+    # runtime around this cache, and blocks a child loads itself through that runtime --
+    # e.g. the problem an item_bank / library_content child selected -- are bound with it
+    # too, so they only see the learner's state if it is added to this same cache.
+    field_data_cache = FieldDataCache([], course_key, user, read_only=CrawlersConfig.is_crawler(request))
+
     with modulestore().bulk_operations(course_key):
         parent, _ = get_block_by_usage_id(
             request,
@@ -1283,6 +1336,7 @@ def render_xblock_children(request, parent_usage_key, child_usage_keys, course=N
             course=course,
             field_data_cache_depth=0,
             will_recheck_access=True,
+            field_data_cache=field_data_cache,
         )
 
         requested = []
@@ -1318,12 +1372,10 @@ def render_xblock_children(request, parent_usage_key, child_usage_keys, course=N
             children_by_key[child_key] for child_key in requested if child_key in children_by_key
         ]
 
-        # One cache for the whole batch, not one per child. Depth=1 pulls in each child's
-        # own selected problem (for library_content/item_bank children) without recursing
-        # further -- matching the shape FieldDataCache._children_to_prefetch already
-        # narrows to for such blocks. The batch helper performs one state lookup for the
-        # complete set instead of one get_many() call per child.
-        field_data_cache = FieldDataCache([], course_key, user, read_only=CrawlersConfig.is_crawler(request))
+        # One state lookup for the whole batch, not one per child. Depth=1 pulls in each
+        # child's own selected problem (for library_content/item_bank children) without
+        # recursing further -- matching the shape FieldDataCache._children_to_prefetch
+        # already narrows to for such blocks.
         field_data_cache.add_block_descendents_batch(renderable_children, depth=1)
 
         # Bind each fresh descriptor exactly once, after the cache containing the learner's

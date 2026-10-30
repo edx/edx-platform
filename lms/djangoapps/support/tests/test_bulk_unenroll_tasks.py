@@ -118,7 +118,8 @@ class BulkUnenrollChunkTaskTest(BulkUnenrollTaskTestCase):
         self.assertEqual(seen, [True, True])
         self.assertEqual(self._active(), 0)
 
-    def test_one_failing_learner_does_not_abort_the_chunk(self):
+    @patch('lms.djangoapps.support.tasks.record_exception')
+    def test_one_failing_learner_does_not_abort_the_chunk(self, mock_record_exception):
         users = self._enroll(3)
         bad = users[1]
         real_unenroll = CourseEnrollment.unenroll
@@ -131,6 +132,7 @@ class BulkUnenrollChunkTaskTest(BulkUnenrollTaskTestCase):
         with patch.object(CourseEnrollment, "unenroll", side_effect=flaky):
             self._run_chunk(users)
 
+        mock_record_exception.assert_called_once_with()
         state = self._refresh()
         self.assertEqual(state.unenrolled, 2)
         self.assertEqual(state.failed_count, 1)
