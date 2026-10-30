@@ -10,7 +10,12 @@ on:
 jobs:
   run_tests:
     name: JS
-    runs-on: ${{ matrix.os }}
+    # Pinned to ubuntu-24.04 until LP-1451: on ubuntu-26.04, video player specs in
+    # the xmodule webpack suite time out waiting for playback. Check whether
+    # openedx/openedx-platform has fixed it, then go back to ${{ matrix.os }}.
+    # matrix.os stays ubuntu-latest because release-ulmo requires the check named
+    # "JS (ubuntu-latest, 24, 3.11)".
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         os: [ubuntu-latest]
