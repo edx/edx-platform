@@ -413,25 +413,12 @@ Ticket: LP-1308. Stage first (test on 2026-11-02), then prod.
 
 **A prod deploy goes to prod and edge at the same time.** For the May 27 attempt, see [History](#history-what-was-deployed).
 
-**Dashboard:** [LP-1308 ulmo.1 deploy](https://app.datadoghq.com/dashboard/dfe-74q-pte) in Datadog. Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. Two LP-1308 monitors (311464046, 312818221) alert on the XBlock save errors; they are deleted after the deploy (see LP-1308).
+**Dashboard:** [LP-1308 ulmo.1 deploy](https://app.datadoghq.com/dashboard/dfe-74q-pte) in Datadog. Watch it in one browser tab per environment (`env:prod`, `env:edge`). It documents the known, expected issues, so that they do not cause an unnecessary rollback; anything unexpected is a reason to roll back. It also shows whether a rollback worked. Two LP-1308 monitors (311464046, 312818221) alert on the XBlock save errors; they are deleted after the deploy (see LP-1308).
 
 **Rollback:**
 - **Rolling back is a quick decision, made without hesitation, for any unknown issue.** Redeploy the previous image (the manual `rollback_code` stage; it reads `previously-deployed-tag.txt`), then pause the pipeline to block more deployments.
 - **Revert or fix forward is a separate, slower decision**, made in the IST/ET overlap hours. To revert, use GitHub's revert button on the merged #514 and retitle it `revert: ...` for commitlint. Re-landing later needs a revert of the revert (see [The revert trap](#the-revert-trap-important-for-anything-that-merges-into-release-ulmo)).
 - **Migration rollback is a separate manual stage (`rollback_migrations`); the default is to skip it.** It reverses only the apps in the forward run's `migration_plan.yml`, in order, and stops at the first failure. Old code against the new schema logs `Unknown column` (MySQL 1054). Stage shows this today: `contentstore 0014` is applied there, and Studio's library-sync summary (`/api/contentstore/v2/downstreams/<course>/summary`) returns 500. After a prod rollback, either live with these benign errors (no library data exists; see [Facts the rollback plan relies on](#facts-the-rollback-plan-relies-on)) or run `rollback_migrations`.
-
-**What the dashboard should show.** Each signal below was checked on 2026-10-30 against the last 7 days of prod, edge and stage logs. A May 27 signature is kept only if it is absent there.
-
-| Signal | Expect | Roll back? |
-|---|---|---|
-| XBlock save errors: "Forced update did not affect any rows" (May's bug, fixed by #495/#500), and "Duplicate entry" in XBlock AJAX or `problem_check` errors | 0 | Yes |
-| 5xx on XBlock handlers and `goto_position` | Within the 7-day normal range of 1-minute buckets (prod: 99% at or below 2 errors; highest 8; shown as lines on the charts). Edge had 6 errors in a week. | Yes, if clearly above it |
-| Other errors, without the expected ones below | No new error types on the new `version` | An unknown issue: yes |
-| Expected: LinkedIn `_share_settings` (config pickled by old code, in a 600 s cache) and `COURSE_LIVE_HELP_URL` (celery; 1 in May) | LinkedIn gone about 15 min after the last pod switches; at most 1-2 of the other | No. Fix forward if LinkedIn persists past about 30 min. |
-| `Cannot resolve bundle VideoBlockMain` (fixed on the branch, `e123921eb7`) | 0 | Not by itself |
-| Stage only: `Unknown column` | Stage: drops to 0 once batch 1 is on stage. Prod and edge: 0 | After a rollback, see above |
-
-Not on the dashboard: the proctoring "Decoding attempt" error. Current prod logs have it too, so it says nothing about the deploy. It is tested on stage (LP-846).
 
 After the QA ticket and the blockers are done:
 
