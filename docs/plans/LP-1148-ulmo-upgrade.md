@@ -409,7 +409,7 @@ There is no freeze on `release-ulmo`. When the last `release-ulmo` changes are p
 
 Ticket: LP-1308. Stage first (test on 2026-11-02), then prod. **A prod deploy goes to prod and edge at the same time.** For the May 27 attempt, see [History](#history-what-was-deployed).
 
-**Dashboard:** [LP-1308 ulmo.1 deploy](https://app.datadoghq.com/dashboard/dfe-74q-pte) in Datadog. Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. It is separate from the BOMS-621 dashboard `y8x-6v4-4hs`. That dashboard's monitors keep alerting through the deploy. Delete the old dashboard and its monitors after the deploy, but not this one.
+**Dashboard:** [LP-1308 ulmo.1 deploy](https://app.datadoghq.com/dashboard/dfe-74q-pte) in Datadog. Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. It replaces the BOMS-621 dashboard `y8x-6v4-4hs` (deleted 2026-10-30). The two BOMS-621 monitors (311464046, 312818221) keep alerting through the deploy.
 
 **Rollback:**
 - **Rolling back is a quick decision, made without hesitation, for any unknown issue.** Redeploy the previous image (the manual `rollback_code` stage; it reads `previously-deployed-tag.txt`), then pause the pipeline to block more deployments.
