@@ -409,7 +409,7 @@ There is no freeze on `release-ulmo`. When the last `release-ulmo` changes are p
 
 Ticket: LP-1308. Stage first (test on 2026-11-02), then prod. **A prod deploy goes to prod and edge at the same time.** For the May 27 attempt, see [History](#history-what-was-deployed).
 
-**Dashboard:** "LP-1308 ulmo.1 deploy" in Datadog (link to be added after import). Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. It is separate from the BOMS-621 dashboard `y8x-6v4-4hs`. That dashboard's monitors keep alerting through the deploy. Delete the old dashboard and its monitors after the deploy, but not this one.
+**Dashboard:** [LP-1308 ulmo.1 deploy](https://app.datadoghq.com/dashboard/dfe-74q-pte) in Datadog. Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. It is separate from the BOMS-621 dashboard `y8x-6v4-4hs`. That dashboard's monitors keep alerting through the deploy. Delete the old dashboard and its monitors after the deploy, but not this one.
 
 **Rollback:**
 - **Rolling back is a quick decision, made without hesitation, for any unknown issue.** Redeploy the previous image (the manual `rollback_code` stage; it reads `previously-deployed-tag.txt`), then pause the pipeline to block more deployments.
@@ -421,7 +421,7 @@ Ticket: LP-1308. Stage first (test on 2026-11-02), then prod. **A prod deploy go
 | Signal | Expect | Roll back? |
 |---|---|---|
 | XBlock save errors: "Forced update did not affect any rows" (May's bug, fixed by #495/#500), and "Duplicate entry" in XBlock AJAX or `problem_check` errors (BOMS-621) | 0 | Yes |
-| 5xx on XBlock handlers and `goto_position` | Near the 7-day baseline (prod 0.016%, edge 0.001%; shown as lines on the chart) | Yes, if clearly above it |
+| 5xx on XBlock handlers and `goto_position` | Within the 7-day normal range of 1-minute buckets (prod: 99% at or below 2 errors; highest 8; shown as lines on the charts). Edge had 6 errors in a week. | Yes, if clearly above it |
 | Other errors, without the expected ones below | No new error types on the new `version` | An unknown issue: yes |
 | Expected: LinkedIn `_share_settings` (config pickled by old code, in a 600 s cache) and `COURSE_LIVE_HELP_URL` (celery; 1 in May) | LinkedIn gone about 15 min after the last pod switches; at most 1-2 of the other | No. Fix forward if LinkedIn persists past about 30 min. |
 | `Cannot resolve bundle VideoBlockMain` (fixed on the branch, `e123921eb7`) | 0 | Not by itself |
