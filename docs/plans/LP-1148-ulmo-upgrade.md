@@ -145,7 +145,7 @@ Once ulmo.1 is genuinely in `release-ulmo`, the trap is gone and later batches a
 | Batching | Small batches over one big catch-up (edx-internal ADR 0001). Point releases are **not** assumed safe: each batch gets its own risk review. |
 | Batch 1 | **ulmo.1 only**, the only point that has run in prod. Built as: fresh branch from the `release-ulmo` tip, `git revert 3a8fdad2fd` (the revert of the revert), the ports below, the Django bump. Does **not** use `edx/ulmo.3` as a base. |
 | Batch 2+ | Some set of changes after ulmo.1 on `openedx/release/ulmo`, merged into `release-ulmo` once batch 1 has landed. **How much goes in a batch is undecided**: it could be ulmo.2 only, up to the upstream tip. Do this before starting verawood. |
-| Django | Batch 1 is on upstream's 5.2.7; bump to **5.2.18** (security release) as its own commit so it is easy to drop. Use the `upgrade-one-python-dependency.yml` workflow (it produced #506 for #505); do not run `make upgrade`. |
+| Django | Batch 1 is on upstream's 5.2.7; bump to **5.2.18** (security release) as its own commit so it is easy to drop. Use the `upgrade-one-python-dependency.yml` workflow (it produced #506 for #505); do not run `make upgrade`. Also take **5.2.19** (security release due 2026-11-03, about 15:30 UTC; 6 low and moderate fixes) the same way, even if upstream `release/ulmo` does not take it. It comes out after the 2026-11-02 stage test, so decide then whether it goes in before the prod deploy and how much to retest. |
 | Cross-checks | Treat `e45e7825ea` / `edx/ulmo.1`, `edx/ulmo.3` and #505 as second opinions, never as truth. See [Cross-checks and the disagreement rule](#cross-checks-and-the-disagreement-rule). |
 | Rollback | Redeploy the previous image quickly for any unknown issue, and pause the pipeline. Revert or fix forward is a separate, slower decision; re-landing after a revert needs a revert of the revert. Migration rollback is manual and skipped by default. See [Deploy and rollback](#deploy-and-rollback-lp-1308). |
 | Branching (long term) | Keep `release-ulmo` as the deploy branch through the ulmo catch-up. Then cut `release-verawood` **from `release-ulmo`** (not from upstream) and merge `openedx/release/verawood` into it in batches; revisit `master` only after reaching verawood parity. While catching up, watch `openedx/release/verawood` for security/bug fixes and cherry-pick urgent ones (as #319, #333 and #481 were). This is open question 4 in the edx-internal playbook; recommend it there. |
@@ -409,7 +409,7 @@ There is no freeze on `release-ulmo`. When the last `release-ulmo` changes are p
 
 Ticket: LP-1308. Stage first (test on 2026-11-02), then prod. **A prod deploy goes to prod and edge at the same time.** For the May 27 attempt, see [History](#history-what-was-deployed).
 
-**Dashboard:** [LP-1308 ulmo.1 deploy](https://app.datadoghq.com/dashboard/dfe-74q-pte) in Datadog. Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. It replaces the BOMS-621 dashboard `y8x-6v4-4hs` (deleted 2026-10-30). The two BOMS-621 monitors (311464046, 312818221) keep alerting through the deploy.
+**Dashboard:** [LP-1308 ulmo.1 deploy](https://app.datadoghq.com/dashboard/dfe-74q-pte) in Datadog. Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. Two LP-1308 monitors (311464046, 312818221) alert on the XBlock save errors; they are deleted after the deploy (see LP-1308).
 
 **Rollback:**
 - **Rolling back is a quick decision, made without hesitation, for any unknown issue.** Redeploy the previous image (the manual `rollback_code` stage; it reads `previously-deployed-tag.txt`), then pause the pipeline to block more deployments.
@@ -420,7 +420,7 @@ Ticket: LP-1308. Stage first (test on 2026-11-02), then prod. **A prod deploy go
 
 | Signal | Expect | Roll back? |
 |---|---|---|
-| XBlock save errors: "Forced update did not affect any rows" (May's bug, fixed by #495/#500), and "Duplicate entry" in XBlock AJAX or `problem_check` errors (BOMS-621) | 0 | Yes |
+| XBlock save errors: "Forced update did not affect any rows" (May's bug, fixed by #495/#500), and "Duplicate entry" in XBlock AJAX or `problem_check` errors | 0 | Yes |
 | 5xx on XBlock handlers and `goto_position` | Within the 7-day normal range of 1-minute buckets (prod: 99% at or below 2 errors; highest 8; shown as lines on the charts). Edge had 6 errors in a week. | Yes, if clearly above it |
 | Other errors, without the expected ones below | No new error types on the new `version` | An unknown issue: yes |
 | Expected: LinkedIn `_share_settings` (config pickled by old code, in a 600 s cache) and `COURSE_LIVE_HELP_URL` (celery; 1 in May) | LinkedIn gone about 15 min after the last pod switches; at most 1-2 of the other | No. Fix forward if LinkedIn persists past about 30 min. |
