@@ -32,6 +32,7 @@ from lms.djangoapps.discussion.config.settings import is_forum_daily_digest_enab
 from lms.djangoapps.discussion.notification_prefs import views as notification_prefs_views
 from lms.djangoapps.instructor.views import instructor_dashboard as instructor_dashboard_views
 from lms.djangoapps.instructor_task import views as instructor_task_views
+from lms.djangoapps.learner_home.rv_plugins import RVPluginStatusView
 from lms.djangoapps.static_template_view import views as static_template_view_views
 from lms.djangoapps.staticbook import views as staticbook_views
 from openedx.core.apidocs import api_info
@@ -199,6 +200,13 @@ urlpatterns = [
     # URLs for API access management
     path('api-admin/', include(('openedx.core.djangoapps.api_admin.urls', 'openedx.core.djangoapps.api_admin'),
                                namespace='api_admin')),
+
+    # RV Plugins API
+    path(
+        'api/rv_plugins/v1/status/',
+        RVPluginStatusView.as_view(),
+        name='rv_plugins_status',
+    ),
 
     # Learner Home and Program Dashboard
     path('api/learner_home/', include('lms.djangoapps.learner_home.urls', namespace='learner_home')),
