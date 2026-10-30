@@ -15,7 +15,6 @@ from cms.djangoapps.contentstore.outlines import update_outline_from_modulestore
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.course_modes.toggles import COURSE_MODES_MFE_TRACK_SELECTION
-from common.djangoapps.course_modes.track_selection_data import TrackSelectionRedirect, TrackSelectionSubmissionError
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.verify_student.models import VerificationDeadline
 from openedx.core.djangoapps.content.course_overviews.tests.factories import (
@@ -49,28 +48,18 @@ class TestCourseModePriceRequestedPipelineStep(PipelineStep):
 TEST_STEP_PATH = f"{__name__}.{TestCourseModePriceRequestedPipelineStep.__name__}"
 
 
-def fake_extra_offer(prev_fn, request, course_key):  # pylint: disable=unused-argument
-    """Override for OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER that returns a sample offer."""
-    return {"status": "AVAILABLE", "course_id": str(course_key), "username": request.user.username}
+class TestTrackSelectionAPIRenderStartedPipelineStep(PipelineStep):
+    """
+    Utility pipeline step that adds a field to the track selection data.
+    """
+
+    def run_filter(self, user, course_key, track_selection_data):  # pylint: disable=arguments-differ
+        """Pipeline step that adds a field built from the learner and the course."""
+        track_selection_data["plugin_field"] = {"course_id": str(course_key), "username": user.username}
+        return {"track_selection_data": track_selection_data}
 
 
-def fake_unknown_track_choice(prev_fn, request, course_key, mode):
-    """Override for OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE that handles "custom_choice" and "broken"."""
-    if mode == "custom_choice":
-        return TrackSelectionRedirect(url="https://example.com/custom-choice")
-    if mode == "broken":
-        return TrackSelectionSubmissionError(error="Custom choice is unavailable")
-    return prev_fn(request, course_key, mode)
-
-
-def failing_unknown_track_choice(prev_fn, request, course_key, mode):  # pylint: disable=unused-argument
-    """Override for OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE that fails like a plugin bug."""
-    raise RuntimeError("Checkout is down")
-
-
-FAKE_EXTRA_OFFER_PATH = f"{__name__}.{fake_extra_offer.__name__}"
-FAKE_UNKNOWN_TRACK_CHOICE_PATH = f"{__name__}.{fake_unknown_track_choice.__name__}"
-FAILING_UNKNOWN_TRACK_CHOICE_PATH = f"{__name__}.{failing_unknown_track_choice.__name__}"
+TEST_RENDER_STEP_PATH = f"{__name__}.{TestTrackSelectionAPIRenderStartedPipelineStep.__name__}"
 
 
 @ddt.ddt
@@ -228,72 +217,24 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.status_code == 400
         assert response.data["error"] == "Enrollment mode not supported"
 
-    def test_post_page_data_has_no_extra_offer_by_default(self):
+    @override_settings(
+        OPEN_EDX_FILTERS_CONFIG={
+            "org.openedx.learning.course_mode.track_selection.api.rendered.started.v1": {
+                "pipeline": [
+                    TEST_RENDER_STEP_PATH,
+                ],
+                "fail_silently": False,
+            },
+        },
+    )
+    def test_post_page_data_uses_track_selection_render_filter(self):
         """
-        With no override configured, the page data has no ``extra_offer`` key.
+        A configured TrackSelectionAPIRenderStarted step can add fields to the page data.
         """
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
-        assert "extra_offer" not in response.data
-
-    @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
-    def test_post_page_data_includes_extra_offer_from_override(self):
-        """
-        A configured OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER adds its result as ``extra_offer``.
-        """
-        response = self.client.post(self.url, {}, format="json")
-        assert response.status_code == 200
-        assert response.data["extra_offer"] == {
-            "status": "AVAILABLE",
+        assert response.data["plugin_field"] == {
             "course_id": str(self.course.id),
             "username": self.user.username,
         }
         assert response.data["verified_mode"] is not None
-
-    @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=FAKE_UNKNOWN_TRACK_CHOICE_PATH)
-    def test_post_unknown_choice_without_handler_is_still_an_error(self):
-        """
-        A handler that passes on a choice it does not know leaves the existing error in place.
-        """
-        response = self.client.post(self.url, {"mode": "unsupported"}, format="json")
-        assert response.status_code == 400
-        assert response.data["error"] == "Enrollment mode not supported"
-
-    @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=FAKE_UNKNOWN_TRACK_CHOICE_PATH)
-    def test_post_unknown_choice_handled_by_override_redirects(self):
-        """
-        A choice that is not a course mode can be handled by an override, here a redirect.
-        """
-        response = self.client.post(self.url, {"mode": "custom_choice"}, format="json")
-        assert response.status_code == 200
-        assert response.data["redirect_url"] == "https://example.com/custom-choice"
-        # The override only redirects. Core does not enroll the learner.
-        assert CourseEnrollment.enrollment_mode_for_user(self.user, self.course.id) == (None, None)
-
-    @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=FAKE_UNKNOWN_TRACK_CHOICE_PATH)
-    def test_post_unknown_choice_handled_by_override_returns_its_error(self):
-        """
-        An override can return its own submission error.
-        """
-        response = self.client.post(self.url, {"mode": "broken"}, format="json")
-        assert response.status_code == 400
-        assert response.data["error"] == "Custom choice is unavailable"
-
-    @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=FAILING_UNKNOWN_TRACK_CHOICE_PATH)
-    def test_post_unknown_choice_with_failing_override_returns_an_error(self):
-        """
-        A failing override gives a 400 with a controlled error, not a 500.
-        """
-        response = self.client.post(self.url, {"mode": "custom_choice"}, format="json")
-        assert response.status_code == 400
-        assert response.data["error"] == "Could not process this track choice"
-
-    @override_settings(OVERRIDE_COURSE_MODES_HANDLE_UNKNOWN_TRACK_CHOICE=FAKE_UNKNOWN_TRACK_CHOICE_PATH)
-    def test_post_known_modes_do_not_call_the_unknown_choice_override(self):
-        """
-        Real course modes keep their normal behavior when an override is configured.
-        """
-        response = self.client.post(self.url, {"mode": CourseMode.AUDIT}, format="json")
-        assert response.status_code == 200
-        mode, is_active = CourseEnrollment.enrollment_mode_for_user(self.user, self.course.id)
-        assert (mode, is_active) == (CourseMode.AUDIT, True)

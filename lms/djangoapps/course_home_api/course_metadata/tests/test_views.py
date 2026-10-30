@@ -9,6 +9,7 @@ from django.db import transaction
 from django.test import override_settings
 from django.urls import reverse
 from edx_toggles.toggles.testutils import override_waffle_flag
+from openedx_filters import PipelineStep
 from openedx_filters.learning.filters import CoursewareAccessChecksRequested
 
 from common.djangoapps.course_modes.models import CourseMode
@@ -29,18 +30,23 @@ from lms.djangoapps.courseware.toggles import (
 from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration
 
 
-def fake_extra_offer(prev_fn, request, course_key):  # pylint: disable=unused-argument
-    """Override for OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER that returns a sample offer."""
-    return {"status": "AVAILABLE", "course_id": str(course_key), "username": request.user.username}
+class TestCourseHomeMetadataAPIRenderStartedPipelineStep(PipelineStep):
+    """
+    Utility pipeline step that adds a field to the course home metadata.
+    """
+
+    def run_filter(self, user, course_key, course_home_metadata):  # pylint: disable=arguments-differ
+        """Pipeline step that adds a field built from the learner and the course."""
+        course_home_metadata['plugin_field'] = {'course_id': str(course_key), 'username': user.username}
+        return {'course_home_metadata': course_home_metadata}
 
 
-def fake_list_offer(prev_fn, request, course_key):  # pylint: disable=unused-argument
-    """Override for OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER that returns something other than a dict."""
-    return ["not", "a", "dict"]
-
-
-FAKE_EXTRA_OFFER_PATH = f"{__name__}.{fake_extra_offer.__name__}"
-FAKE_LIST_OFFER_PATH = f"{__name__}.{fake_list_offer.__name__}"
+TEST_RENDER_FILTERS_CONFIG = {
+    'org.openedx.learning.course_home.metadata.api.rendered.started.v1': {
+        'pipeline': [f'{__name__}.{TestCourseHomeMetadataAPIRenderStartedPipelineStep.__name__}'],
+        'fail_silently': False,
+    },
+}
 
 
 @ddt.ddt
@@ -266,44 +272,27 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         assert response.status_code == 200
         assert response.data['has_course_author_access'] == has_course_author_access
 
-    def test_no_extra_offer_by_default(self):
+    @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)
+    def test_course_home_metadata_render_filter(self):
         """
-        With no override configured, the response has no ``extra_offer`` key.
-        """
-        response = self.client.get(self.url)
-        assert response.status_code == 200
-        assert 'extra_offer' not in response.data
-
-    @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
-    def test_extra_offer_from_override(self):
-        """
-        A configured OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER adds its result as ``extra_offer``.
+        A configured CourseHomeMetadataAPIRenderStarted step can add fields to the response.
         """
         response = self.client.get(self.url)
         assert response.status_code == 200
-        assert response.data['extra_offer'] == {
-            'status': 'AVAILABLE',
+        assert response.data['plugin_field'] == {
             'course_id': str(self.course.id),
             'username': self.user.username,
         }
+        assert response.data['course_id'] == str(self.course.id)
 
-    @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_LIST_OFFER_PATH)
-    def test_extra_offer_left_out_when_override_returns_non_dict(self):
+    @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)
+    def test_course_home_metadata_render_filter_gets_masqueraded_user(self):
         """
-        An override that returns something other than a dict does not break the response.
-        """
-        response = self.client.get(self.url)
-        assert response.status_code == 200
-        assert 'extra_offer' not in response.data
-
-    @override_settings(OVERRIDE_COURSE_MODES_GET_EXTRA_OFFER=FAKE_EXTRA_OFFER_PATH)
-    def test_extra_offer_uses_masqueraded_user(self):
-        """
-        The offer is built for the masqueraded learner, not the staff user.
+        The filter gets the masqueraded learner, not the staff user.
         """
         CourseEnrollment.enroll(self.user, self.course.id, CourseMode.VERIFIED)
         self.client.logout()
         self.client.login(username=self.staff_user.username, password='bar')
         self.update_masquerade(username=self.user.username)
         response = self.client.get(self.url)
-        assert response.data['extra_offer']['username'] == self.user.username
+        assert response.data['plugin_field']['username'] == self.user.username

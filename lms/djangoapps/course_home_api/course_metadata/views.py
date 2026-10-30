@@ -15,12 +15,12 @@ from lms.djangoapps.course_home_api.toggles import new_discussion_sidebar_view_i
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.core.djangoapps.courseware_api.utils import get_celebrations_dict
 
-from common.djangoapps.course_modes.api import get_extra_offer
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.auth import has_course_author_access
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.course_api.api import course_detail
 from lms.djangoapps.course_goals.models import UserActivity
+from lms.djangoapps.course_home_api.course_metadata.filters import CourseHomeMetadataAPIRenderStarted
 from lms.djangoapps.course_home_api.course_metadata.serializers import CourseHomeMetadataSerializer
 from lms.djangoapps.courseware.access import has_access, has_cms_access
 from lms.djangoapps.courseware.context_processor import user_timezone_locale_prefs
@@ -63,8 +63,8 @@ class CourseHomeMetadataView(RetrieveAPIView):
         celebrations: (dict) a dict of celebration data
         user_timezone: (str) The timezone of the given user
         can_view_certificate: Flag to determine whether or not the learner can view their course certificate.
-        extra_offer: (dict) Optional. An extra offer from a plugin, as returned by
-            common.djangoapps.course_modes.api.get_extra_offer. Left out when there is none.
+
+        Plugins can add fields through the CourseHomeMetadataAPIRenderStarted filter.
 
     **Returns**
 
@@ -151,13 +151,17 @@ class CourseHomeMetadataView(RetrieveAPIView):
             # https://github.com/openedx/platform-roadmap/issues/246
             'has_course_author_access': has_course_author_access(request.user, course_key, 'cms'),
         }
-        # An optional plugin offer. The key is left out when there is none.
-        extra_offer = get_extra_offer(request, course_key)
-        if extra_offer is not None:
-            data['extra_offer'] = extra_offer
         context = self.get_serializer_context()
         context['course'] = course
         context['course_overview'] = course
         context['enrollment'] = enrollment
         serializer = self.get_serializer_class()(data, context=context)
-        return Response(serializer.data)
+        # this filter lets plugins add fields to the serialized data
+        # .. filter_implemented_name: CourseHomeMetadataAPIRenderStarted
+        # .. filter_type: org.openedx.learning.course_home.metadata.api.rendered.started.v1
+        course_home_metadata = CourseHomeMetadataAPIRenderStarted.run_filter(
+            user=request.user,
+            course_key=course_key,
+            course_home_metadata=serializer.data,
+        )
+        return Response(course_home_metadata)
