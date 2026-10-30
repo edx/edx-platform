@@ -157,9 +157,9 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
 
     A plugin can add an ``extra_offer`` dict with TrackSelectionAPIRenderStarted. A subscriber in a course
     of its catalog (``in_catalog`` and ``is_subscriber``) upgrades to the verified mode through the
-    subscription, a ``subscribe_url`` puts Subscribe in place of Purchase, and a ``purchase_url`` replaces
-    the Purchase link. Without the dict, the options are Purchase, the program and Audit. Audit and
-    upgrade have no link: the page posts the choice.
+    subscription, a ``subscribe_url`` puts Subscribe in place of Purchase when the course has Audit, and a
+    ``purchase_url`` replaces the Purchase link. Without the dict, the options are Purchase, the program
+    and Audit. Audit and upgrade have no link: the page posts the choice.
 
     ``upgrading`` is for an audit learner who came to upgrade: Audit is left out, and Purchase stays next
     to Subscribe.
@@ -170,15 +170,16 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
         return [{"slug": "upgrade", "url": None}]
 
     options = []
+    audit_mode = track_selection_data.get("audit_mode")
     subscribe_url = offer.get("subscribe_url")
     if subscribe_url:
         options.append({"slug": "subscribe", "url": subscribe_url})
-    if verified_mode and (upgrading or not subscribe_url):
+    if verified_mode and (upgrading or not subscribe_url or not audit_mode):
         purchase_url = offer.get("purchase_url") or _get_purchase_url(verified_mode, track_selection_data["course_id"])
         options.append({"slug": "purchase", "url": purchase_url})
     if program := track_selection_data.get("program"):
         options.append({"slug": "program", "url": program["url"]})
-    if track_selection_data.get("audit_mode") and not upgrading:
+    if audit_mode and not upgrading:
         options.append({"slug": "audit", "url": None})
     return options
 

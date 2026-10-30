@@ -294,11 +294,14 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
             },
         },
     )
-    def test_post_single_option_redirects_to_its_link(self):
+    @mock.patch(
+        "common.djangoapps.course_modes.track_selection_data.get_track_options",
+        return_value=[{"slug": "subscribe", "url": TEST_SUBSCRIBE_URL}],
+    )
+    def test_post_single_option_redirects_to_its_link(self, _mock_get_track_options):
         """
-        With Subscribe as the only option, the learner skips the page and goes to its link.
+        With a single option that has a link, the learner skips the page and goes to its link.
         """
-        CourseMode.objects.filter(course_id=self.course.id, mode_slug=CourseMode.AUDIT).delete()
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
         assert response.data == {"redirect_url": TEST_SUBSCRIBE_URL}
@@ -394,6 +397,8 @@ class GetTrackOptionsTests(SimpleTestCase):
         (TEST_CATALOG_OFFER, True, True, False, ["subscribe", "program", "audit"]),
         ({"in_catalog": True, "is_subscriber": True}, True, True, False, ["upgrade"]),
         ({"in_catalog": False, "is_subscriber": True}, True, False, False, ["purchase", "audit"]),
+        ({"in_catalog": True, "is_subscriber": None}, True, False, False, ["purchase", "audit"]),
+        (TEST_CATALOG_OFFER, False, False, False, ["subscribe", "purchase"]),
         (None, True, True, True, ["purchase", "program"]),
         (TEST_CATALOG_OFFER, True, False, True, ["subscribe", "purchase"]),
     )
