@@ -1243,6 +1243,7 @@ class TestSocialShareSettingsSerializer(TestCase):
         self.assertEqual(output_data.keys(), set(expected_keys))
 
 
+@ddt.ddt
 class TestLearnerDashboardSerializer(LearnerDashboardBaseTest):
     """High-level tests for Learner Dashboard serialization"""
 
@@ -1510,4 +1511,27 @@ class TestLearnerDashboardSerializer(LearnerDashboardBaseTest):
                 "socialShareSettings": mock_social_settings_serializer,
                 "suggestedCourses": [mock_suggestions_serializer],
             },
+        )
+
+    @ddt.data(True, False)
+    def test_rv_plugin_settings(self, is_enabled):
+        """Test serialization of RV plugin settings."""
+        input_data = {
+            "emailConfirmation": None,
+            "enterpriseDashboard": None,
+            "platformSettings": None,
+            "enrollments": [],
+            "unfulfilledEntitlements": [],
+            "socialShareSettings": None,
+            "suggestedCourses": [],
+            "rvPlugins": {
+                "isEnabled": is_enabled,
+            },
+        }
+
+        output_data = LearnerDashboardSerializer(input_data).data
+
+        self.assertEqual(
+            output_data["rvPlugins"],
+            {"isEnabled": is_enabled},
         )

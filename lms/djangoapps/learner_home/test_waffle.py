@@ -6,7 +6,10 @@ from unittest.mock import patch
 import ddt
 
 from common.djangoapps.student.tests.factories import UserFactory
-from lms.djangoapps.learner_home.waffle import learner_home_mfe_enabled
+from lms.djangoapps.learner_home.waffle import (
+    get_rv_plugin_settings,
+    learner_home_mfe_enabled,
+)
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
 
 
@@ -35,3 +38,18 @@ class TestLearnerHomeWaffle(SharedModuleStoreTestCase):
 
         # Then I respects waffle setting.
         self.assertEqual(is_learner_home_enabled, is_waffle_enabled)
+
+    @ddt.data(True, False)
+    @patch(
+        "lms.djangoapps.learner_home.waffle.RV_LEARNER_DASHBOARD_NO_COURSES_VIEW"
+    )
+    def test_get_rv_plugin_settings(self, is_enabled, mock_rv_plugin_flag):
+        """Test that RV plugin settings reflect the Waffle flag state."""
+        mock_rv_plugin_flag.is_enabled.return_value = is_enabled
+
+        rv_plugin_settings = get_rv_plugin_settings()
+
+        self.assertEqual(
+            rv_plugin_settings,
+            {"isEnabled": is_enabled},
+        )

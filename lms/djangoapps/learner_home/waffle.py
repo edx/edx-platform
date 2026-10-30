@@ -30,3 +30,27 @@ def learner_home_mfe_enabled():
         "ENABLE_LEARNER_HOME_MFE",
         ENABLE_LEARNER_HOME_MFE.is_enabled(),
     )
+
+
+# Namespace for RV plugin feature flags.
+RV_PLUGINS_NAMESPACE = "rv_plugins"
+
+# .. toggle_name: rv_plugins.learner_dashboard_no_courses_view
+# .. toggle_implementation: WaffleFlag
+# .. toggle_default: False
+# .. toggle_description: Enable the RV widget for the Learner Dashboard no-courses view.
+# .. toggle_use_cases: opt_in
+# .. toggle_creation_date: 2026-10-27
+RV_LEARNER_DASHBOARD_NO_COURSES_VIEW = WaffleFlag(
+    f"{RV_PLUGINS_NAMESPACE}.learner_dashboard_no_courses_view",
+    __name__,
+)
+
+
+def get_rv_plugin_settings():
+    """
+    Return the enabled state of RV plugins.
+    """
+    return {
+        "isEnabled": RV_LEARNER_DASHBOARD_NO_COURSES_VIEW.is_enabled()
+    }

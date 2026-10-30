@@ -601,6 +601,12 @@ class EnterpriseDashboardSerializer(serializers.Serializer):
         )
 
 
+class RvPluginSettingSerializer(serializers.Serializer):
+    """Serializer for an RV plugin placement setting."""
+
+    isEnabled = serializers.BooleanField()
+
+
 class LearnerDashboardSerializer(serializers.Serializer):
     """Serializer for all info required to render the Learner Dashboard"""
 
@@ -614,6 +620,7 @@ class LearnerDashboardSerializer(serializers.Serializer):
     suggestedCourses = serializers.ListField(
         child=SuggestedCourseSerializer(), allow_empty=True
     )
+    rvPlugins = RvPluginSettingSerializer(required=False)
 
     def get_courses(self, instance):
         """
