@@ -476,7 +476,7 @@ edx-drf-extensions==10.6.0
     #   edxval
     #   enterprise-integrated-channels
     #   openedx-learning
-edx-enterprise==8.18.0
+edx-enterprise==9.0.0
     # via
     #   -c requirements/constraints.txt
     #   -r requirements/edx/kernel.in
@@ -754,6 +754,7 @@ markdown==3.9
 markupsafe==3.0.3
     # via
     #   chem
+    #   edx-enterprise
     #   jinja2
     #   mako
     #   openedx-calc
