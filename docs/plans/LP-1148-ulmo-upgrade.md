@@ -431,7 +431,7 @@ Not on the dashboard: the proctoring "Decoding attempt" error. Current prod logs
 
 After the QA ticket and the blockers are done:
 
-1. **Write the rollout and rollback plan** (above), then deploy to stage, then prod. Include a maintenance banner (BOMS-503).
+1. **Write the rollout and rollback plan** (above), then deploy to stage, then prod. No maintenance banner (decided in LP-1308).
 2. **Mark the PR ready and merge it** with GitHub's **"Create a merge commit"** (as #212 and #304 were), not squash or rebase. Squash would also bring ulmo.1 back, since its upstream commits are already ancestors of `release-ulmo`, but it would collapse the revert, ports, Django bump and PII fix into one commit (so the bump could no longer be reverted on its own) and orphan the commit SHAs cited in this plan and the audit. Rebase would rewrite those SHAs and replay the `release-ulmo` merge. Do the final sync (see QA section) first, and again just before merging.
 3. **Once stable in production**, do the [final steps for every batch](#every-batch-final-steps). For batch 1, also delete the saved May 27 spans and logs from Google Drive (listed in LP-1308).
 4. **After the last batch**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`. First make sure every item in [Feed to playbook](#feed-to-playbook) is resolved with an edx-internal edit or consciously dropped.
