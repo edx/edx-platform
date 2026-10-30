@@ -5,6 +5,7 @@ Build JSON-serializable track selection page data for the Learning MFE.
 from __future__ import annotations
 
 import decimal
+import logging
 from dataclasses import dataclass
 from typing import Any, Optional
 from urllib.parse import urlencode
@@ -34,6 +35,8 @@ from openedx.features.course_duration_limits.access import (
 )
 from openedx.features.course_experience import course_home_url
 from xmodule.modulestore.django import modulestore
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -114,22 +117,29 @@ def _serialize_mode(mode) -> dict[str, Any]:
 
 
 def _get_program(user, course_key) -> dict[str, Any] | None:
-    """Return the first active program of the course run that the learner can buy in one click, or None."""
-    for program in get_programs(course=str(course_key)):
-        if program.get("status") != "active":
-            continue
-        program = ProgramDataExtender(program, user).extend()
-        if program["is_learner_eligible_for_one_click_purchase"]:
-            discount_data = program.get("discount_data", {})
-            return {
-                "uuid": program["uuid"],
-                "title": program["title"],
-                "number_of_courses": len(program["courses"]),
-                "price": discount_data.get("total_incl_tax_excl_discounts"),
-                "discounted_price": discount_data.get("total_incl_tax"),
-                "currency": discount_data.get("currency"),
-                "url": EcommerceService().get_checkout_page_url(*program["skus"], program_uuid=program["uuid"]),
-            }
+    """
+    Return the first active program of the course run that the learner can buy in one click, or None.
+
+    The program is an extra option, so an error while reading it is logged and leaves it out.
+    """
+    try:
+        for program in get_programs(course=str(course_key)):
+            if program.get("status") != "active":
+                continue
+            program = ProgramDataExtender(program, user).extend()
+            if program["is_learner_eligible_for_one_click_purchase"]:
+                discount_data = program.get("discount_data", {})
+                return {
+                    "uuid": program["uuid"],
+                    "title": program["title"],
+                    "number_of_courses": len(program["courses"]),
+                    "price": discount_data.get("total_incl_tax_excl_discounts"),
+                    "discounted_price": discount_data.get("total_incl_tax"),
+                    "currency": discount_data.get("currency"),
+                    "url": EcommerceService().get_checkout_page_url(*program["skus"], program_uuid=program["uuid"]),
+                }
+    except Exception:  # pylint: disable=broad-except
+        log.exception("Could not read the program to offer with course run %s", course_key)
     return None
 
 
@@ -146,20 +156,20 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
     Return the options the track selection page shows, in display order, each with its link.
 
     A plugin can add an ``extra_offer`` dict with TrackSelectionAPIRenderStarted. A subscriber in a course
-    of its catalog (``in_catalog`` and ``is_subscriber``) upgrades through the subscription, a
-    ``subscribe_url`` puts Subscribe in place of Purchase, and a ``purchase_url`` replaces the Purchase
-    link. Without the dict, the options are Purchase, the program and Audit. Audit and upgrade have no
-    link: the page posts the choice.
+    of its catalog (``in_catalog`` and ``is_subscriber``) upgrades to the verified mode through the
+    subscription, a ``subscribe_url`` puts Subscribe in place of Purchase, and a ``purchase_url`` replaces
+    the Purchase link. Without the dict, the options are Purchase, the program and Audit. Audit and
+    upgrade have no link: the page posts the choice.
 
     ``upgrading`` is for an audit learner who came to upgrade: Audit is left out, and Purchase stays next
     to Subscribe.
     """
     offer = track_selection_data.get("extra_offer") or {}
-    if offer.get("in_catalog") and offer.get("is_subscriber"):
+    verified_mode = track_selection_data.get("verified_mode")
+    if verified_mode and offer.get("in_catalog") and offer.get("is_subscriber"):
         return [{"slug": "upgrade", "url": None}]
 
     options = []
-    verified_mode = track_selection_data.get("verified_mode")
     subscribe_url = offer.get("subscribe_url")
     if subscribe_url:
         options.append({"slug": "subscribe", "url": subscribe_url})
@@ -283,7 +293,9 @@ def get_track_selection_page_data(
     # the options are set after the filter: a plugin adds facts, and core picks the options
     upgrading = intent == "upgrade" and is_active and enrollment_mode in CourseMode.UPSELL_TO_VERIFIED_MODES
     options = get_track_options(track_selection_data, upgrading=upgrading)
-    # never show the page for a single option that has a link
+    # never show the page with nothing to choose, or for a single option that has a link
+    if not options:
+        return _redirect_course_or_dashboard(course, course_key, request.user)
     if len(options) == 1 and options[0]["url"]:
         return TrackSelectionRedirect(url=options[0]["url"])
     return {

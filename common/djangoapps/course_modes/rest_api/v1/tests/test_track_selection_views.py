@@ -360,6 +360,25 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.status_code == 200
         assert "/basket/add/?sku=ABCD1234&course_run_key=" in response.data["redirect_url"]
 
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs", side_effect=Exception("down"))
+    def test_post_page_data_leaves_out_a_program_that_cannot_be_read(self, _mock_get_programs):
+        """
+        An error while reading the program leaves the program out instead of failing the page.
+        """
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        assert response.data["program"] is None
+        assert [option["slug"] for option in response.data["options"]] == ["purchase", "audit"]
+
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.get_track_options", return_value=[])
+    def test_post_without_options_redirects_to_the_course(self, _mock_get_track_options):
+        """
+        With nothing to choose, the learner skips the page and goes to the course.
+        """
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        assert response.data["redirect_url"].endswith(f"/course/{self.course.id}/home")
+
 
 @ddt.ddt
 @skip_unless_lms
@@ -403,3 +422,12 @@ class GetTrackOptionsTests(SimpleTestCase):
         assert get_track_options(data) == [{"slug": "purchase", "url": purchase_url}]
         data["extra_offer"] = {"purchase_url": "https://checkout.example.com/buy"}
         assert get_track_options(data) == [{"slug": "purchase", "url": "https://checkout.example.com/buy"}]
+
+    def test_subscriber_upgrade_needs_the_verified_mode(self):
+        data = {
+            "course_id": "course-v1:a+b+c",
+            "verified_mode": None,
+            "audit_mode": {"slug": CourseMode.AUDIT},
+            "extra_offer": {"in_catalog": True, "is_subscriber": True},
+        }
+        assert get_track_options(data) == [{"slug": "audit", "url": None}]
