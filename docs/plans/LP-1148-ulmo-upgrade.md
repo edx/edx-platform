@@ -10,9 +10,9 @@ Related: the upgrade-process playbook in edx-internal ([PR #14962](https://githu
 
 Written 2026-10-08 and updated 2026-10-09 so that a fresh session can continue from this file alone. State at that time:
 
-- `edx/release-ulmo` tip was `f55e9c7d61` (2026-10-14), merged into the branch (see [Sync log](#sync-log)). Production runs `release-ulmo` on Django `4.2.28`.
+- `edx/release-ulmo` tip was `432ae28549` (2026-10-30), merged into the branch (see [Sync log](#sync-log)). Production runs `release-ulmo` on Django `4.2.28`.
 - **Batch 1 = ulmo.1 only.** The code is on the branch (2026-10-09): the revert of the revert `9e4844198b`, the four ports, the Django 5.2.18 bump `4e4bb665ca`, the PII safelist fix `1af9d598aa`, and the video `public_view` fix `e123921eb7`. All steps of [Merge work and audit (batch 1)](#merge-work-and-audit-batch-1) are done (the QA handoff is being done by the LP-1148 owner directly); results are in `LP-1148-ulmo1-merge-audit.md`. LP-1148's work is complete.
-- **Next action:** QA (LP-1351), with the [final syncs with `release-ulmo`](#final-sync-with-release-ulmo) until testing starts. CI status is read live from the PR (in the GitHub UI, or with `gh pr checks 514`); it is not recorded here. The cross-check against `edx/edx/ulmo.3` is done and found a ulmo.1 regression, now fixed on the branch (`e123921eb7`, video `public_view` bundle). The migration review is done (see [Migration state in prod, edge and stage](#migration-state-in-prod-edge-and-stage)): **no manual migration steps are needed in any environment**. The dependency-migration comparison on the batch-1 `base.txt` is done and matches (`openedx-authz` is `0.20.1`).
+- **Next action:** QA (LP-1351), with the [final syncs with `release-ulmo`](#final-sync-with-release-ulmo) until testing starts. CI status is read live from the PR (in the GitHub UI, or with `gh pr checks 514`); it is not recorded here. The cross-check against `edx/edx/ulmo.3` is done and found a ulmo.1 regression, now fixed on the branch (`e123921eb7`, video `public_view` bundle). The migration review is done (see [Migration state in prod, edge and stage](#migration-state-in-prod-edge-and-stage)): **no manual migration steps are needed in any environment** for the forward deploy (for a rollback, see [Deploy and rollback](#deploy-and-rollback-lp-1308)). The dependency-migration comparison on the batch-1 `base.txt` is done and matches (`openedx-authz` is `0.20.1`).
 - **Batch 2** is some set of changes after ulmo.1 on `openedx/release/ulmo`. How much goes in it is not decided; see [Batch 2](#batch-2-scope-open).
 - #505 (`robrap/lp1148-ulmo4-continue`) is a superseded reference branch, closed; its docs are to be removed (see [What happens to #505](#what-happens-to-505)).
 - **Pending housekeeping:**
@@ -58,7 +58,7 @@ Written 2026-10-08, updated 2026-10-09. This plan has no tests behind it; the cl
 
 | What | Ref |
 |---|---|
-| Batch-1 branch (this PR, [#514](https://github.com/edx/edx-platform/pull/514)) | `robrap/lp1148-ulmo1-batch1` on `edx/edx-platform`, last synced with `edx/release-ulmo` `f55e9c7d61` |
+| Batch-1 branch (this PR, [#514](https://github.com/edx/edx-platform/pull/514)) | `robrap/lp1148-ulmo1-batch1` on `edx/edx-platform`, last synced with `edx/release-ulmo` `432ae28549` |
 | Deploy branch | `edx/release-ulmo` |
 | Upstream | `openedx/release/ulmo` (tags `release/ulmo.1` 2026-01-15, `.2` 2026-02-18, `.3` 2026-04-24, `.4` 2026-07-13; tip `2efdce0760`) |
 | Reference branch #505 | `robrap/lp1148-ulmo4-continue` @ `be17bd60ca`, draft PR [#505](https://github.com/edx/edx-platform/pull/505). ulmo.3 base plus ulmo.4+ merge. Source of ports, the 4-loss audit, and a second opinion on conflicts. |
@@ -147,7 +147,7 @@ Once ulmo.1 is genuinely in `release-ulmo`, the trap is gone and later batches a
 | Batch 2+ | Some set of changes after ulmo.1 on `openedx/release/ulmo`, merged into `release-ulmo` once batch 1 has landed. **How much goes in a batch is undecided**: it could be ulmo.2 only, up to the upstream tip. Do this before starting verawood. |
 | Django | Batch 1 is on upstream's 5.2.7; bump to **5.2.18** (security release) as its own commit so it is easy to drop. Use the `upgrade-one-python-dependency.yml` workflow (it produced #506 for #505); do not run `make upgrade`. |
 | Cross-checks | Treat `e45e7825ea` / `edx/ulmo.1`, `edx/ulmo.3` and #505 as second opinions, never as truth. See [Cross-checks and the disagreement rule](#cross-checks-and-the-disagreement-rule). |
-| Rollback | Redeploy the previous image first. Revert the merge only if `release-ulmo` has to keep shipping other changes meanwhile, and record that re-landing then needs a revert of the revert. See [Deploy and rollback](#deploy-and-rollback-lp-1308). |
+| Rollback | Redeploy the previous image quickly for any unknown issue, and pause the pipeline. Revert or fix forward is a separate, slower decision; re-landing after a revert needs a revert of the revert. Migration rollback is manual and skipped by default. See [Deploy and rollback](#deploy-and-rollback-lp-1308). |
 | Branching (long term) | Keep `release-ulmo` as the deploy branch through the ulmo catch-up. Then cut `release-verawood` **from `release-ulmo`** (not from upstream) and merge `openedx/release/verawood` into it in batches; revisit `master` only after reaching verawood parity. While catching up, watch `openedx/release/verawood` for security/bug fixes and cherry-pick urgent ones (as #319, #333 and #481 were). This is open question 4 in the edx-internal playbook; recommend it there. |
 | Testing | See [QA and testing](#qa-and-testing-lp-1351). The notes there support testing; they are not a prescribed procedure. Where something is tested depends on where it can be tested. |
 | Docs | In the batch-1 PR only. Later batches carry them forward. |
@@ -223,7 +223,13 @@ Not every post-ulmo.1 upstream commit is safe to skip or take. Before finalizing
 
 Ticket: LP-1148. Status: **done (2026-10-09).** The dependency-migration comparison was redone on the batch-1 `base.txt` and matches. The planned manual `show_unapplied_migrations` against a stage snapshot was dropped as redundant (see step 9 above).
 
-**Conclusion: no manual migration steps are needed in any environment.** The normal deploy applies what is missing (the `run_migrations` step of the GoCD edxapp pipeline). Nothing needs rolling back or re-running.
+**Conclusion: no manual migration steps are needed in any environment** for the forward deploy. The normal deploy applies what is missing (the `run_migrations` step of the GoCD edxapp pipeline). Nothing needs rolling back or re-running. For a rollback, see [Deploy and rollback](#deploy-and-rollback-lp-1308).
+
+#### Facts the rollback plan relies on
+
+- `openedx_authz 0006` (a `RunPython` with no reverse) is already applied in prod, edge and stage, so it is not in the forward plan and a rollback does not touch it.
+- `contentstore 0014` drops `downstream_is_modified`. Old code still reads it, but only on library-link paths.
+- Verified 2026-10-30 by read-only replica counts: prod has 1 library (the test `edxtest` library, created during the first deployment as a diagnostic) with 0 learning packages, drafts, component-content rows, component links and container links. Edge has 0 of everything. No v2 libraries will be created. So old code against the new schema is harmless for library paths, and `oel_components 0004` and `oel_publishing 0010` have no data to act on.
 
 #### State of each environment (queried 2026-10-09, read-only)
 
@@ -333,6 +339,12 @@ Ticket: LP-1351. This is the single place for review and testing information; th
   - **Breaking changes:** see below.
 - **May 27 timeline** (task under LP-1351): reconcile the sources in [May 27 timeline: open discrepancy](#may-27-timeline-open-discrepancy).
 
+### Changes from the 2026-10-30 sync
+
+Only items with extra risk from combining them with batch 1. Everything else from that sync is listed as "reviewed, not retested" in the [sync log](#sync-log).
+
+- **CHANGE to the library creation org list item above (LP-1102):** #528 sorts the org dropdown alphabetically (case-insensitive), and it changed the same function, `get_allowed_organizations_for_libraries`, as the combination that item says has never run anywhere. The merge keeps #528's sort for global staff and also sorts batch 1's org union case-insensitively. When checking the orgs offered, also check that they are in alphabetical order, ignoring case.
+
 ### Breaking changes in the range
 
 The merge audit checks that nothing was lost in merging. It does not check what upstream deliberately broke. These are the commits marked `!` in `242a69d06b..openedx/release/ulmo` (the pre-ulmo.1 base, not the merge-base with `release-ulmo`, which spans only 25 commits because of the revert trap). The `BREAKING CHANGE:` footers were also searched and found nothing beyond these. **All rows except `fca21c955f` are in ulmo.1 and so are in batch 1.**
@@ -378,18 +390,44 @@ There is no freeze on `release-ulmo`. When the last `release-ulmo` changes are p
 
 #### Sync log
 
+- **2026-10-30, `release-ulmo` `bac76e763e` → `432ae28549`** (merge `cf8965ba1b`). 25 commits. All of them were already in prod (Datadog `version` tag `lms-prod-432ae28549-261` on 2026-10-30). Conflicts:
+  - `cms/djangoapps/contentstore/views/course.py`: #528 (LP-1102, alphabetical org dropdown) against batch 1's org union (`670c81f0f2`). Kept #528's sort for global staff and the union, and made the union's `sorted()` case-insensitive so #528 holds on that path too. See [Changes from the 2026-10-30 sync](#changes-from-the-2026-10-30-sync).
+  - #494 (edx-enterprise 8.18.0 → 9.0.0, deletes `openedx/features/enterprise_support/`): took the deletion of `enterprise_support/tests/test_logout.py`. The relocated `EnterpriseLogoutTests` in `user_authn/views/tests/test_logout.py` uses `assert_dict_contains_subset`, like the rest of batch 1. Also converted the one `assertDictContainsSubset` that #535 added in `support/tests/test_views.py`.
+  - Requirements merged without conflicts: certifi 2026.10.19, pip 26.2.2 and edx-enterprise 9.0.0 are on the branch.
+
+  Survival check (`BASE=bac76e763e`): LOST only for the resolutions above, plus context-only misses in the #530 and #494 lockfiles and in an import block of `505916dc41` (`TEST_PASSWORD` is imported). Lockfile downgrade check: only the already-triaged `pact-python`, `globals` and `regenerator-runtime`.
+
+  **Retest decision:** only the library org dropdown (above). **Reviewed, not retested.** Common reason: already in prod, no conflict with batch 1, and no ulmo.1/Django 5.2 interaction.
+  - #494 enterprise_support removal: edx-enterprise 9.0.0 declares Django 5.2.
+  - #539 XBlock handler fixes (`febfa0e63f`, `1a62af0fe3`, `505916dc41`, `13c6cb54fa`) and #529 lazy-load hydration: batch 1's delta in `block_render.py` is one docstring line.
+  - #539 certificate escaping (`b56f32330a`): batch 1's delta in `webview.py` is the one-line LinkedIn `add_to_profile_url` call.
+  - #539 discussions and ID verification fixes; #515 `all_blocks`; #535 support tools; #546 RV plugin API; #530 certifi/pip; #526, #527, #490, #538 and `6401ea2918` (certificate access by edx-exams proctoring status).
 - **2026-10-19, `release-ulmo` `f55e9c7d61` → `bac76e763e`** (merge `e79ed6ad3e`). Pulled in #519 (`get_learner_display_name_override` added to the branding API; `get_learner_display_username` returns the same result for existing callers), #525 (edx-enterprise 8.17.0 → 8.18.0, pin lines only) and #523 (LP-1362: the bulk unenroll preview flags Exec Ed and Bootcamp runs, and confirm now returns 400 unless the request carries `confirm_exec_ed=true`; also resolves wrong-case course ids to the stored spelling). No conflicts. Survival check (`BASE=f55e9c7d61`): #519 and #523 PRESENT; #525 LOST only in the four lockfiles, and `edx-enterprise==8.18.0` is on the branch in `constraints.txt` and the four lockfiles. Lockfile downgrade check: only the already-triaged `pact-python`, `globals` and `regenerator-runtime`. **Retest decision:** nothing touches video JS, courseware state, the PDF viewer or the other areas listed above, and the three changes are identical on `release-ulmo`, so no extra retesting beyond CI. FYI for the bulk unenroll owners (not upgrade QA): #523 changes the API contract, so confirm returns 400 without `confirm_exec_ed` and the support-tools frontend must send it (separate repo). **Not pulled in, deliberately:** upstream `release/ulmo` gained `9b58d0459e` (openedx-forum 0.3.8 → 0.4.1.post1, GHSA-c6fp-f54c-6cv4: the forum HTTP API is unrouted unless `FORUM_ENABLE_HTTP_API` is set, and needs staff when it is). Prod runs the `edx/forum` fork (pinned in edx-internal's `private_requirements.txt`), not the `openedx-forum` pin in this repo's lockfiles, so LP-1391 fixes it there and this branch does not need it. If LP-1391 reaches prod during testing, retest discussions on this branch (post, reply, vote, flag, pin, ban). `9b58d0459e` and `723be60058` remain batch 2 candidates for the `openedx-forum` pin. The branch contains `release-ulmo`, so it is conflict-free with it.
 - **2026-10-14, `release-ulmo` `0666f56778` → `f55e9c7d61`** (merge `04857cae2b`). Pulled in #518 (enterprise-integrated-channels 0.1.70 → 0.1.77, adds `signxml==5.1.0`; declares Django 5.2), #520 (marketing email opt-in in `learner_home/views.py`), #479 (docs only) and #521 (web certificates on course rerun, `contentstore/views/course.py`). Conflicts only in `requirements/edx/{base,development,doc,testing}.txt`, where `signxml` and the branch's `simpleeval` were added on adjacent lines; kept both. Survival check (`BASE=0666f56778`): #520, #479, #521 PRESENT; #518 LOST only because its context lines changed, and a package-level check confirms every pin and `via` line it added is on the branch. Lockfile downgrade check: only the already-triaged `pact-python`, `globals` and `regenerator-runtime` (see `LP-1148-ulmo1-merge-audit.md`). **Retest decision:** nothing touches video JS, courseware state or the PDF viewer, so no extra retesting beyond a smoke test of course rerun (certificates enabled on the rerun) and the learner dashboard. Branch is conflict-free with `release-ulmo` after the merge. CI on #514 green at `af97af76a2` (45 pass, 1 skipped). (CI results are no longer recorded in this log; see [Final sync with `release-ulmo`](#final-sync-with-release-ulmo).)
 
 ## Deploy and rollback (LP-1308)
 
-Ticket: LP-1308. To be completed before deploying. Points already known:
+Ticket: LP-1308. Stage first (test on 2026-11-02), then prod. **A prod deploy goes to prod and edge at the same time.** For the May 27 attempt, see [History](#history-what-was-deployed).
 
-- **Watch:** XBlockSaveError, 500s on courseware state saves (`goto_position`, `xblock/handler`), Django 5.2 deprecation and runtime errors, video and PDF errors. Use the Datadog dashboard and monitors linked from LP-1308.
-- **Redeploy the previous image first** for a fast rollback: it touches no git history. While the upgrade merge is in `release-ulmo`, though, any other deploy from that branch ships the upgrade too. If `release-ulmo` must keep shipping unrelated changes, revert the merge (as #300 and #311 did) and write down that re-landing needs a **revert of the revert** (as `0972c91dc4` and `010ea66478` did).
-- **Database migrations: no manual steps.** The deploy's `run_migrations` step applies what is missing in each environment (see [Migration state in prod, edge and stage](#migration-state-in-prod-edge-and-stage)). After each deploy's migration step, compare the `migration_plan.yml` it uploads (`<env>-gocd-artifacts` bucket) with the state table. Stage should apply only the six MariaDB no-ops (`student 0048`, `entitlements 0017`, `course_goals 0010`, `program_enrollments 0012`, `external_user_ids 0009`, `survey_report 0006`). Prod and edge should apply exactly the table's "not applied" rows for them. Investigate anything else. This replaces the manual stage-snapshot check. `openedx_authz 0006` (a `RunPython` with no reverse) is already applied in prod, edge and stage, so it will not be in batch 1's forward plan and a rollback of batch 1 will not try to reverse it. `oel_publishing 0010` has no rows to process in prod and edge.
-- **`contentstore 0014` makes a code-only rollback unsafe.** It drops `downstream_is_modified` from `ComponentLink` and `ContainerLink` and adds `downstream_customized`. The previous image (`release-ulmo`) still expects `downstream_is_modified`, so after this migration is applied, redeploying it breaks anything that queries those tables (stage is in exactly this state today). The tables are empty in prod, edge and stage, so nothing is lost and splitting the migration (expand now, contract later) is not needed; the options if a rollback is ever needed are to reverse-migrate with `migrate contentstore 0013` (re-adds the column with its default; drops `downstream_customized`) or to accept that library upstream-sync is broken until forward again.
-- Ulmo.1 was deployed once (2026-05-27); prod and edge kept the casbin, authz and `submissions 0006` migrations from then (see the state table).
+**Dashboard:** "LP-1308 ulmo.1 deploy" in Datadog (link to be added after import). Watch it in one browser tab per environment (`env:prod`, `env:edge`). It is also what the rollback decision is based on, and how to confirm that a rollback worked. It is separate from the BOMS-621 dashboard `y8x-6v4-4hs`. That dashboard's monitors keep alerting through the deploy. Delete the old dashboard and its monitors after the deploy, but not this one.
+
+**Rollback:**
+- **Rolling back is a quick decision, made without hesitation, for any unknown issue.** Redeploy the previous image (the manual `rollback_code` stage; it reads `previously-deployed-tag.txt`), then pause the pipeline to block more deployments.
+- **Revert or fix forward is a separate, slower decision**, made in the IST/ET overlap hours. To revert, use GitHub's revert button on the merged #514 and retitle it `revert: ...` for commitlint. Re-landing later needs a revert of the revert (see [The revert trap](#the-revert-trap-important-for-anything-that-merges-into-release-ulmo)).
+- **Migration rollback is a separate manual stage (`rollback_migrations`); the default is to skip it.** It reverses only the apps in the forward run's `migration_plan.yml`, in order, and stops at the first failure. Old code against the new schema logs `Unknown column` (MySQL 1054). Stage shows this today: `contentstore 0014` is applied there, and Studio's library-sync summary (`/api/contentstore/v2/downstreams/<course>/summary`) returns 500. After a prod rollback, either live with these benign errors (no library data exists; see [Facts the rollback plan relies on](#facts-the-rollback-plan-relies-on)) or run `rollback_migrations`.
+
+**What the dashboard should show.** Each signal below was checked on 2026-10-30 against the last 7 days of prod, edge and stage logs. A May 27 signature is kept only if it is absent there.
+
+| Signal | Expect | Roll back? |
+|---|---|---|
+| XBlock save errors: "Forced update did not affect any rows" (May's bug, fixed by #495/#500), and "Duplicate entry" in XBlock AJAX or `problem_check` errors (BOMS-621) | 0 | Yes |
+| 5xx on XBlock handlers and `goto_position` | Near the 7-day baseline (prod 0.016%, edge 0.001%; shown as lines on the chart) | Yes, if clearly above it |
+| Other errors, without the expected ones below | No new error types on the new `version` | An unknown issue: yes |
+| Expected: LinkedIn `_share_settings` (config pickled by old code, in a 600 s cache) and `COURSE_LIVE_HELP_URL` (celery; 1 in May) | LinkedIn gone about 15 min after the last pod switches; at most 1-2 of the other | No. Fix forward if LinkedIn persists past about 30 min. |
+| `Cannot resolve bundle VideoBlockMain` (fixed on the branch, `e123921eb7`) | 0 | Not by itself |
+| Stage only: `Unknown column` | Stage: drops to 0 once batch 1 is on stage. Prod and edge: 0 | After a rollback, see above |
+
+Not on the dashboard: the proctoring "Decoding attempt" error. Current prod logs have it too, so it says nothing about the deploy. It is tested on stage (LP-846).
 
 After the QA ticket and the blockers are done:
 
@@ -398,6 +436,8 @@ After the QA ticket and the blockers are done:
 3. **Once stable in production**, delete `docs/plans/LP-1148-*` in a follow-up PR, and update `docs/plans/README.rst`. First make sure every item in [Feed to playbook](#feed-to-playbook) is resolved with an edx-internal edit or consciously dropped. Delete the saved May 27 spans and logs from Google Drive (listed in LP-1308).
 
 ## Batch 2 (scope open)
+
+**Before starting batch 2:** capture what batch 1 taught in the edx-internal upgrade playbook (see [Feed to playbook](#feed-to-playbook)). Resolve or consciously drop each open row there, so batch 2 starts from the updated playbook rather than from this plan.
 
 Batch 2 is some set of changes after ulmo.1 on `openedx/release/ulmo`, merged straight into `release-ulmo` once batch 1 has landed (a plain merge, since the revert trap is gone by then). How much goes in it is not decided: it could be ulmo.2 only, through ulmo.3 or ulmo.4, or up to the upstream tip. The lists below help decide, and each behaviour-changing item needs coordination with its owner. No Jira ticket exists yet; create one when the scope is decided.
 
@@ -446,7 +486,8 @@ The edx-internal playbook ([PR #14962](https://github.com/edx/edx-internal/pull/
 | Breaking-commit detection needs the true prior content base. With reverts, the merge-base spans 25 commits here instead of 157 | `01-playbook.md`, breaking-commit detection | Open |
 | Prior-deploy state: when an earlier attempt was deployed and rolled back, query `django_migrations` in every environment before re-landing | `01-playbook.md`, migration review | Open |
 | Proving what ran in prod and when, versus what was in git or on stage: the edx-internal "Deploy ... to prod" commit history (image tag = `<sha>-<build>`) plus a Datadog `version` tag check; use it in RCAs for rollbacks and before trusting ticket titles or prior claims (copy the "How to check what was in prod" subsection) | `01-playbook.md`, new section, and the RCA/rollback checklist | Open |
-| Rollback section: a code-only rollback is unsafe after contract-phase migrations (`contentstore 0014`); image rollback is only a stopgap while the branch keeps shipping | `01-playbook.md`, new section | Open |
+| Rollback section: roll back the image quickly and pause the pipeline; decide on revert or fix forward separately. After contract-phase migrations (`contentstore 0014`), old code errors against the new schema. Decide per migration whether those errors are benign (here they are: no data) or need the manual `rollback_migrations` stage. | `01-playbook.md`, new section | Open |
+| Deploy dashboard: check each prior-incident error signature against current logs and keep only those absent there; measure baselines per environment (a prod deploy also goes to edge); filter expected errors out of the overall error view; group by the `version` tag | `01-playbook.md`, deploy section | Open |
 | MariaDB UUID migrations are no-ops on MySQL (we run AWS Aurora MySQL) but are in this batch; the preflight should state the engine up front instead of leaving it as a check | `04-...preflight`, `02-...digest` | Open |
 | `openedx/features/announcements` is retired upstream, so it is not a pluginize candidate; batch-state wording in registry rows 3 and 16 belongs here, not there | `03-...registry` | Open |
 | `05-...ulmo3-batch` open review items are superseded by the batch-1/batch-2 split | `05-...ulmo3-batch` | Open |
