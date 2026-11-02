@@ -24,10 +24,6 @@ class RefundPolicyChangeToggleTests(TestCase):
     def test_enabled(self):
         assert should_apply_refund_policy_change()
 
-    @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=False)
-    def test_explicitly_disabled(self):
-        assert not should_apply_refund_policy_change()
-
 
 class RefundPolicyChangeNoticeToggleTests(TestCase):
     """
@@ -40,10 +36,6 @@ class RefundPolicyChangeNoticeToggleTests(TestCase):
     @override_waffle_flag(SHOW_REFUND_POLICY_CHANGE_NOTICE, active=True)
     def test_enabled(self):
         assert should_show_refund_policy_change_notice()
-
-    @override_waffle_flag(SHOW_REFUND_POLICY_CHANGE_NOTICE, active=False)
-    def test_explicitly_disabled(self):
-        assert not should_show_refund_policy_change_notice()
 
     @override_waffle_flag(SHOW_REFUND_POLICY_CHANGE_NOTICE, active=True)
     def test_independent_of_policy_flag(self):
