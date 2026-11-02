@@ -41,10 +41,8 @@ Conventions
 # pylint: disable=invalid-name
 
 import importlib.util
-import sys
 import os
 
-import django
 from corsheaders.defaults import default_headers as corsheaders_default_headers
 from path import Path as path
 from django.utils.translation import gettext_lazy as _
@@ -2463,7 +2461,6 @@ INSTALLED_APPS = [
     'openedx.features.calendar_sync',
     'openedx.features.course_bookmarks',
     'openedx.features.course_experience',
-    'openedx.features.enterprise_support.apps.EnterpriseSupportConfig',
     'openedx.features.course_duration_limits',
     'openedx.features.content_type_gating',
     'openedx.features.discounts',
