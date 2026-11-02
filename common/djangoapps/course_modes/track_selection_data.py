@@ -199,8 +199,9 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
     if verified_mode and (upgrading or not subscribe_url or not audit_mode):
         purchase_url = _get_purchase_url(verified_mode, track_selection_data["course_id"])
         options.append({"slug": "purchase", "url": purchase_url})
-    if program := track_selection_data.get("program"):
-        options.append({"slug": "program", "url": program["url"]})
+    if programs := track_selection_data.get("programs"):
+        # with several programs the learner chooses on the page, so only a single program has a link
+        options.append({"slug": "program", "url": programs[0]["url"] if len(programs) == 1 else None})
     if audit_mode and not upgrading:
         options.append({"slug": "audit", "url": None})
     return options
@@ -312,9 +313,7 @@ def get_track_selection_page_data(
     if not COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(course_key):
         return track_selection_data
 
-    programs = _get_programs(request.user, course_key)
-    track_selection_data["program"] = programs[0] if programs else None
-    track_selection_data["programs"] = programs
+    track_selection_data["programs"] = _get_programs(request.user, course_key)
 
     # this filter lets plugins add fields to the page data
     # .. filter_implemented_name: TrackSelectionAPIRenderStarted

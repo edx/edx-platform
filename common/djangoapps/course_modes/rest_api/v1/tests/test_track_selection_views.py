@@ -162,7 +162,6 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.data["verified_mode"] is not None
         assert response.data["audit_mode"] is not None
         assert response.data["course_name"] == self.course.display_name_with_default
-        assert response.data["program"] is None
         assert response.data["programs"] == []
         assert response.data["options"] == [{"slug": "purchase", "url": None}, {"slug": "audit", "url": None}]
 
@@ -354,8 +353,9 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
             "discounted_price": 270.0,
             "currency": "USD",
         }
-        assert response.data["program"] == programs[0]
         assert [option["slug"] for option in response.data["options"]] == ["purchase", "program", "audit"]
+        # the learner chooses among the programs on the page, so the option has no link
+        assert response.data["options"][1]["url"] is None
         assert [call.args for call in mock_extender.call_args_list] == [
             ({"status": "active", "name": "first"}, self.user),
             ({"status": "active", "name": "not eligible"}, self.user),
@@ -460,7 +460,6 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         """
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
-        assert response.data["program"] is None
         assert response.data["programs"] == []
         assert [option["slug"] for option in response.data["options"]] == ["purchase", "audit"]
 
@@ -493,7 +492,7 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.status_code == 200
         assert response.data["verified_mode"] is not None
         assert response.data["audit_mode"] is not None
-        for key in ("plugin_field", "program", "programs", "options"):
+        for key in ("plugin_field", "programs", "options"):
             assert key not in response.data
         mock_get_programs.assert_not_called()
 
@@ -535,10 +534,21 @@ class GetTrackOptionsTests(SimpleTestCase):
             "course_id": "course-v1:a+b+c",
             "verified_mode": {"use_ecommerce_payment_flow": False},
             "audit_mode": {"slug": CourseMode.AUDIT} if has_audit_mode else None,
-            "program": {"url": "https://ecommerce.test/program"} if has_program else None,
+            "programs": [{"url": "https://ecommerce.test/program"}] if has_program else [],
             "extra_offer": extra_offer,
         }
         assert [option["slug"] for option in get_track_options(data, upgrading)] == expected
+
+    def test_program_link_only_for_a_single_program(self):
+        data = {
+            "course_id": "course-v1:a+b+c",
+            "verified_mode": None,
+            "audit_mode": None,
+            "programs": [{"url": "https://ecommerce.test/program-a"}],
+        }
+        assert get_track_options(data) == [{"slug": "program", "url": "https://ecommerce.test/program-a"}]
+        data["programs"].append({"url": "https://ecommerce.test/program-b"})
+        assert get_track_options(data) == [{"slug": "program", "url": None}]
 
     def test_purchase_link(self):
         data = {
