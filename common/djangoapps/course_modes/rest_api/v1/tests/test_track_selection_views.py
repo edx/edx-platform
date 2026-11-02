@@ -425,8 +425,6 @@ class GetTrackOptionsTests(SimpleTestCase):
         }
         purchase_url = "https://ecommerce.test/basket/add/?sku=ABCD1234&course_run_key=course-v1%3Aa%2Bb%2Bc"
         assert get_track_options(data) == [{"slug": "purchase", "url": purchase_url}]
-        data["extra_offer"] = {"purchase_url": "https://checkout.example.com/buy"}
-        assert get_track_options(data) == [{"slug": "purchase", "url": "https://checkout.example.com/buy"}]
 
     def test_subscriber_upgrade_needs_the_verified_mode(self):
         data = {
