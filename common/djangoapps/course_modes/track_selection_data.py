@@ -117,31 +117,52 @@ def _serialize_mode(mode) -> dict[str, Any]:
     }
 
 
-def _get_program(user, course_key) -> dict[str, Any] | None:
-    """
-    Return the first active program of the course run that the learner can buy in one click, or None.
+def _get_course_url(course) -> str | None:
+    """Return the marketing page of the first run of a course of a program, or None."""
+    return (course.get("course_runs") or [{}])[0].get("marketing_url")
 
-    The program is an extra option, so an error while reading it is logged and leaves it out.
+
+def _serialize_program(program) -> dict[str, Any]:
+    """Return the fields of an extended program that the page shows."""
+    discount_data = program.get("discount_data", {})
+    organizations = program.get("authoring_organizations") or [{}]
+    return {
+        "uuid": program["uuid"],
+        "title": program["title"],
+        "number_of_courses": len(program["courses"]),
+        "price": discount_data.get("total_incl_tax_excl_discounts"),
+        "discounted_price": discount_data.get("total_incl_tax"),
+        "currency": discount_data.get("currency"),
+        "url": EcommerceService().get_checkout_page_url(*program["skus"], program_uuid=program["uuid"]),
+        "logo_url": program.get("organization_logo_override_url") or organizations[0].get("logo_image_url"),
+        "weeks_to_complete": program.get("weeks_to_complete"),
+        "description": program.get("marketing_hook") or program.get("subtitle"),
+        "courses": [
+            {"title": course["title"], "url": _get_course_url(course)}
+            for course in program["courses"]
+            if course.get("title")
+        ],
+    }
+
+
+def _get_programs(user, course_key) -> list[dict[str, Any]]:
     """
+    Return the active programs of the course run that the learner can buy in one click.
+
+    The programs are an extra option, so an error while reading them is logged and leaves out the ones
+    that were not read yet.
+    """
+    programs = []
     try:
         for program in get_programs(course=str(course_key)):
             if program.get("status") != "active":
                 continue
             program = ProgramDataExtender(program, user).extend()
             if program["is_learner_eligible_for_one_click_purchase"]:
-                discount_data = program.get("discount_data", {})
-                return {
-                    "uuid": program["uuid"],
-                    "title": program["title"],
-                    "number_of_courses": len(program["courses"]),
-                    "price": discount_data.get("total_incl_tax_excl_discounts"),
-                    "discounted_price": discount_data.get("total_incl_tax"),
-                    "currency": discount_data.get("currency"),
-                    "url": EcommerceService().get_checkout_page_url(*program["skus"], program_uuid=program["uuid"]),
-                }
+                programs.append(_serialize_program(program))
     except Exception:  # pylint: disable=broad-except
-        log.exception("Could not read the program to offer with course run %s", course_key)
-    return None
+        log.exception("Could not read the programs to offer with course run %s", course_key)
+    return programs
 
 
 def _get_purchase_url(verified_mode, course_id) -> str | None:
@@ -194,7 +215,7 @@ def get_track_selection_page_data(
     An ``intent`` of "upgrade" comes from upgrade links. The enrollment mode alone cannot tell, because
     ``change_enrollment`` enrolls new learners in audit before they reach this page.
 
-    The filter, the program, the options and the redirects that come with them need the
+    The filter, the programs, the options and the redirects that come with them need the
     ``course_modes.track_selection_options`` flag.
     """
     course_key = CourseKey.from_string(course_id)
@@ -291,7 +312,9 @@ def get_track_selection_page_data(
     if not COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(course_key):
         return track_selection_data
 
-    track_selection_data["program"] = _get_program(request.user, course_key)
+    programs = _get_programs(request.user, course_key)
+    track_selection_data["program"] = programs[0] if programs else None
+    track_selection_data["programs"] = programs
 
     # this filter lets plugins add fields to the page data
     # .. filter_implemented_name: TrackSelectionAPIRenderStarted

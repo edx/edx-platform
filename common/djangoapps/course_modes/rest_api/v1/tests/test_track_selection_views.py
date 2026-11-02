@@ -36,6 +36,7 @@ TEST_DISCOUNTED_PRICE = 99
 TEST_SUBSCRIBE_URL = "https://checkout.example.com/subscribe"
 TEST_CATALOG_OFFER = {"in_catalog": True, "subscribe_url": TEST_SUBSCRIBE_URL}
 TEST_PROGRAM_UUID = "6d1b9c2e-3f4a-4b5c-8d6e-7f8a9b0c1d2e"
+TEST_OTHER_PROGRAM_UUID = "0a7f3e5d-9c1b-4e2a-b6d8-5c4f3e2d1b0a"
 
 
 class TestCourseModePriceRequestedPipelineStep(PipelineStep):
@@ -162,6 +163,7 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.data["audit_mode"] is not None
         assert response.data["course_name"] == self.course.display_name_with_default
         assert response.data["program"] is None
+        assert response.data["programs"] == []
         assert response.data["options"] == [{"slug": "purchase", "url": None}, {"slug": "audit", "url": None}]
 
     def test_get_is_not_supported(self):
@@ -310,33 +312,117 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.status_code == 200
         assert response.data == {"redirect_url": TEST_SUBSCRIBE_URL}
 
-    @mock.patch("common.djangoapps.course_modes.track_selection_data.ProgramDataExtender")
-    @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs")
-    def test_post_page_data_offers_the_program(self, mock_get_programs, mock_extender):
-        """
-        An active program of the course run that the learner can buy in one click is an option.
-        """
-        mock_get_programs.return_value = [{"status": "retired"}, {"status": "active"}]
-        mock_extender.return_value.extend.return_value = {
-            "uuid": TEST_PROGRAM_UUID,
-            "title": "Test Program",
+    @staticmethod
+    def _extended_program(uuid, title, eligible=True, **fields):
+        """Return a program as ProgramDataExtender returns it."""
+        return {
+            "uuid": uuid,
+            "title": title,
             "courses": [{}, {}, {}],
-            "is_learner_eligible_for_one_click_purchase": True,
+            "is_learner_eligible_for_one_click_purchase": eligible,
             "skus": ["SKU1", "SKU2"],
             "discount_data": {"total_incl_tax_excl_discounts": 300.0, "total_incl_tax": 270.0, "currency": "USD"},
+            **fields,
         }
+
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.ProgramDataExtender")
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs")
+    def test_post_page_data_offers_the_programs(self, mock_get_programs, mock_extender):
+        """
+        The active programs of the course run that the learner can buy in one click are listed, in order.
+        The first one is also an option.
+        """
+        mock_get_programs.return_value = [
+            {"status": "retired"},
+            {"status": "active", "name": "first"},
+            {"status": "active", "name": "not eligible"},
+            {"status": "active", "name": "second"},
+        ]
+        mock_extender.return_value.extend.side_effect = [
+            self._extended_program(TEST_PROGRAM_UUID, "First Program"),
+            self._extended_program(TEST_OTHER_PROGRAM_UUID, "Not Eligible Program", eligible=False),
+            self._extended_program(TEST_OTHER_PROGRAM_UUID, "Second Program"),
+        ]
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
-        program = response.data["program"]
-        assert program["url"].endswith(f"?sku=SKU1&sku=SKU2&bundle={TEST_PROGRAM_UUID}")
-        assert {key: program[key] for key in ("title", "number_of_courses", "price", "discounted_price")} == {
-            "title": "Test Program",
+        programs = response.data["programs"]
+        assert [program["title"] for program in programs] == ["First Program", "Second Program"]
+        assert programs[0]["url"].endswith(f"?sku=SKU1&sku=SKU2&bundle={TEST_PROGRAM_UUID}")
+        assert {key: programs[0][key] for key in ("number_of_courses", "price", "discounted_price", "currency")} == {
             "number_of_courses": 3,
             "price": 300.0,
             "discounted_price": 270.0,
+            "currency": "USD",
         }
+        assert response.data["program"] == programs[0]
         assert [option["slug"] for option in response.data["options"]] == ["purchase", "program", "audit"]
-        mock_extender.assert_called_once_with({"status": "active"}, self.user)
+        assert [call.args for call in mock_extender.call_args_list] == [
+            ({"status": "active", "name": "first"}, self.user),
+            ({"status": "active", "name": "not eligible"}, self.user),
+            ({"status": "active", "name": "second"}, self.user),
+        ]
+
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.ProgramDataExtender")
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs")
+    def test_post_page_data_lists_all_the_programs(self, mock_get_programs, mock_extender):
+        """
+        The page data has every program that the learner can buy, however many the course run is in.
+        """
+        mock_get_programs.return_value = [{"status": "active"}] * 5
+        mock_extender.return_value.extend.side_effect = [
+            self._extended_program(TEST_PROGRAM_UUID, f"Program {number}") for number in range(5)
+        ]
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        assert [program["title"] for program in response.data["programs"]] == [f"Program {n}" for n in range(5)]
+        assert mock_extender.call_count == 5
+
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.ProgramDataExtender")
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs")
+    def test_post_page_data_describes_each_program(self, mock_get_programs, mock_extender):
+        """
+        Each program has what the Program card shows: logo, duration, description and the courses.
+        """
+        mock_get_programs.return_value = [{"status": "active"}, {"status": "active"}]
+        mock_extender.return_value.extend.side_effect = [
+            self._extended_program(
+                TEST_PROGRAM_UUID,
+                "Full Program",
+                organization_logo_override_url="https://logos.test/override.png",
+                authoring_organizations=[{"logo_image_url": "https://logos.test/org.png"}],
+                weeks_to_complete=22,
+                marketing_hook="A hook",
+                subtitle="A subtitle",
+                courses=[
+                    {"title": "Course A", "course_runs": [{"marketing_url": "https://www.edx.org/learn/a"}]},
+                    {"title": "Course B", "course_runs": []},
+                    {"course_runs": [{"marketing_url": "https://www.edx.org/learn/untitled"}]},
+                ],
+            ),
+            self._extended_program(
+                TEST_OTHER_PROGRAM_UUID,
+                "Bare Program",
+                authoring_organizations=[{"logo_image_url": "https://logos.test/org.png"}],
+                subtitle="A subtitle",
+                discount_data={"is_discounted": False},
+            ),
+        ]
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        full, bare = response.data["programs"]
+        assert full["logo_url"] == "https://logos.test/override.png"
+        assert full["weeks_to_complete"] == 22
+        assert full["description"] == "A hook"
+        assert full["number_of_courses"] == 3
+        assert full["courses"] == [
+            {"title": "Course A", "url": "https://www.edx.org/learn/a"},
+            {"title": "Course B", "url": None},
+        ]
+        assert bare["logo_url"] == "https://logos.test/org.png"
+        assert bare["weeks_to_complete"] is None
+        assert bare["description"] == "A subtitle"
+        # without a price from Ecommerce, the program has none
+        assert (bare["price"], bare["discounted_price"], bare["currency"]) == (None, None, None)
 
     @override_settings(
         OPEN_EDX_FILTERS_CONFIG={
@@ -368,13 +454,14 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert "/basket/add/?sku=ABCD1234&course_run_key=" in response.data["redirect_url"]
 
     @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs", side_effect=Exception("down"))
-    def test_post_page_data_leaves_out_a_program_that_cannot_be_read(self, _mock_get_programs):
+    def test_post_page_data_leaves_out_the_programs_that_cannot_be_read(self, _mock_get_programs):
         """
-        An error while reading the program leaves the program out instead of failing the page.
+        An error while reading the programs leaves them out instead of failing the page.
         """
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
         assert response.data["program"] is None
+        assert response.data["programs"] == []
         assert [option["slug"] for option in response.data["options"]] == ["purchase", "audit"]
 
     @mock.patch("common.djangoapps.course_modes.track_selection_data.get_track_options", return_value=[])
@@ -400,13 +487,13 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
     @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs")
     def test_post_page_data_without_the_options_flag(self, mock_get_programs):
         """
-        Without the options flag, the page data has no program and no options, and the filter does not run.
+        Without the options flag, the page data has no programs and no options, and the filter does not run.
         """
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
         assert response.data["verified_mode"] is not None
         assert response.data["audit_mode"] is not None
-        for key in ("plugin_field", "program", "options"):
+        for key in ("plugin_field", "program", "programs", "options"):
             assert key not in response.data
         mock_get_programs.assert_not_called()
 
