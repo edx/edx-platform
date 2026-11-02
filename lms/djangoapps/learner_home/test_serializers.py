@@ -135,6 +135,7 @@ class TestPlatformSettingsSerializer(TestCase):
             "supportEmail": f"{uuid4()}@example.com",
             "billingEmail": f"{uuid4()}@example.com",
             "courseSearchUrl": f"{uuid4()}.example.com/search",
+            "refundPolicyChangeEnabled": True,
         }
 
     def test_happy_path(self):
@@ -145,7 +146,15 @@ class TestPlatformSettingsSerializer(TestCase):
             "supportEmail": input_data["supportEmail"],
             "billingEmail": input_data["billingEmail"],
             "courseSearchUrl": input_data["courseSearchUrl"],
+            "refundPolicyChangeEnabled": True,
         }
+
+    def test_refund_policy_change_defaults_to_false(self):
+        input_data = self.generate_test_platform_settings()
+        del input_data["refundPolicyChangeEnabled"]
+        output_data = PlatformSettingsSerializer(input_data).data
+
+        assert output_data["refundPolicyChangeEnabled"] is False
 
 
 class TestCourseProviderSerializer(LearnerDashboardBaseTest):

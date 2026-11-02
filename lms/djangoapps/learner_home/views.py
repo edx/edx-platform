@@ -49,6 +49,7 @@ from common.djangoapps.util.milestones_helpers import (
 from lms.djangoapps.branding import toggles
 from lms.djangoapps.bulk_email.models import Optout
 from lms.djangoapps.bulk_email.models_api import is_bulk_email_feature_enabled
+from lms.djangoapps.commerce.toggles import should_apply_refund_policy_change
 from lms.djangoapps.commerce.utils import EcommerceService
 from lms.djangoapps.courseware.access import administrative_accesses_to_course_for_user
 from lms.djangoapps.courseware.access_utils import check_course_open_for_learner
@@ -84,6 +85,7 @@ def get_platform_settings():
         "supportEmail": settings.DEFAULT_FEEDBACK_EMAIL,
         "billingEmail": settings.PAYMENT_SUPPORT_EMAIL,
         "courseSearchUrl": course_search_url,
+        "refundPolicyChangeEnabled": should_apply_refund_policy_change(),
     }
 
 

@@ -40,6 +40,7 @@ class PlatformSettingsSerializer(serializers.Serializer):
     supportEmail = serializers.EmailField()
     billingEmail = serializers.EmailField()
     courseSearchUrl = serializers.URLField()
+    refundPolicyChangeEnabled = serializers.BooleanField(default=False)
 
 
 class SocialMediaSiteSettingsSerializer(serializers.Serializer):
