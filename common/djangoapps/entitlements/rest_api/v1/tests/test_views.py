@@ -11,12 +11,14 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.urls import reverse
 from django.utils.timezone import now
+from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.locator import CourseKey
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import TEST_PASSWORD, CourseEnrollmentFactory, UserFactory
+from lms.djangoapps.commerce.toggles import ENABLE_REFUND_POLICY_CHANGE
 from lms.djangoapps.courseware.models import DynamicUpgradeDeadlineConfiguration
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
@@ -1158,6 +1160,34 @@ class EntitlementEnrollmentViewSetTest(ModuleStoreTestCase):
         assert not CourseEnrollment.is_enrolled(self.user, self.course.id)
         assert course_entitlement.enrollment_course_run is None
         assert course_entitlement.expired_at is not None
+
+    @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=True)
+    @patch('common.djangoapps.entitlements.models.refund_entitlement', return_value=True)
+    @patch('common.djangoapps.entitlements.rest_api.v1.views.get_course_runs_for_course')
+    @patch("common.djangoapps.entitlements.models.get_course_uuid_for_course")
+    def test_is_refund_ignored_when_policy_change_enabled(
+            self, mock_course_uuid, mock_get_course_runs, mock_refund_entitlement
+    ):
+        course_entitlement = CourseEntitlementFactory.create(user=self.user, mode=CourseMode.VERIFIED)
+        mock_get_course_runs.return_value = self.return_values
+        mock_course_uuid.return_value = course_entitlement.course_uuid
+
+        url = reverse(
+            self.ENTITLEMENTS_ENROLLMENT_NAMESPACE,
+            args=[str(course_entitlement.uuid)]
+        )
+        data = {'course_run_id': str(self.course.id)}
+        response = self.client.post(url, data=json.dumps(data), content_type='application/json')
+        assert response.status_code == 201
+
+        response = self.client.delete(url + '?is_refund=true', content_type='application/json')
+        assert response.status_code == 204
+
+        course_entitlement.refresh_from_db()
+        assert not mock_refund_entitlement.called
+        assert not CourseEnrollment.is_enrolled(self.user, self.course.id)
+        assert course_entitlement.enrollment_course_run is None
+        assert course_entitlement.expired_at is None
 
     @patch('common.djangoapps.entitlements.rest_api.v1.views.CourseEntitlement.is_entitlement_refundable', return_value=False)  # lint-amnesty, pylint: disable=line-too-long
     @patch('common.djangoapps.entitlements.models.refund_entitlement', return_value=True)

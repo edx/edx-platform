@@ -11,6 +11,7 @@ from django.dispatch import receiver
 from common.djangoapps.student.signals import REFUND_ORDER
 from openedx.core.djangoapps.commerce.utils import is_commerce_service_configured
 
+from .toggles import should_apply_refund_policy_change
 from .utils import refund_seat
 
 log = logging.getLogger(__name__)
@@ -25,6 +26,10 @@ def handle_refund_order(sender, course_enrollment=None, **kwargs):
     """
     if not is_commerce_service_configured():
         log.info("Commerce service not configured, skipping refund")
+        return
+
+    if should_apply_refund_policy_change():
+        log.info("Refund policy change is enabled, skipping automatic seat refund")
         return
 
     if course_enrollment and course_enrollment.refundable():
