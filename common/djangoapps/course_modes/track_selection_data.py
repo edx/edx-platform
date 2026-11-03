@@ -177,20 +177,15 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
     """
     Return the options the track selection page shows, in display order, each with its link.
 
-    A plugin can add an ``extra_offer`` dict with TrackSelectionAPIRenderStarted. A subscriber in a course
-    of its catalog (``in_catalog`` and ``is_subscriber``) upgrades to the verified mode through the
-    subscription, and a ``subscribe_url`` puts Subscribe in place of Purchase when the course has Audit.
-    Without the dict, the options are Purchase, the program and Audit. Audit and upgrade have no link: the
-    page posts the choice.
+    A plugin can add an ``extra_offer`` dict with TrackSelectionAPIRenderStarted: its ``subscribe_url`` puts
+    Subscribe in place of Purchase when the course has Audit. Without the dict, the options are Purchase, the
+    program and Audit. Audit has no link: the page posts the choice.
 
     ``upgrading`` is for an audit learner who came to upgrade: Audit is left out, and Purchase stays next
     to Subscribe.
     """
     offer = track_selection_data.get("extra_offer") or {}
     verified_mode = track_selection_data.get("verified_mode")
-    if verified_mode and offer.get("in_catalog") and offer.get("is_subscriber"):
-        return [{"slug": "upgrade", "url": None}]
-
     options = []
     audit_mode = track_selection_data.get("audit_mode")
     subscribe_url = offer.get("subscribe_url")
@@ -323,6 +318,11 @@ def get_track_selection_page_data(
         course_key=course_key,
         track_selection_data=track_selection_data,
     )
+    # a subscriber of a course of the catalog upgrades to the verified mode through the subscription: the
+    # course offers the upgrade, so there is nothing to choose here
+    offer = track_selection_data.get("extra_offer") or {}
+    if track_selection_data.get("verified_mode") and offer.get("in_catalog") and offer.get("is_subscriber"):
+        return _redirect_course_or_dashboard(course, course_key, request.user)
     # the options are set after the filter: a plugin adds facts, and core picks the options
     upgrading = intent == "upgrade" and is_active and enrollment_mode in CourseMode.UPSELL_TO_VERIFIED_MODES
     options = get_track_options(track_selection_data, upgrading=upgrading)

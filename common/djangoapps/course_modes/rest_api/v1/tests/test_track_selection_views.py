@@ -472,6 +472,37 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.status_code == 200
         assert response.data["redirect_url"].endswith(f"/course/{self.course.id}/home")
 
+    @override_settings(
+        OPEN_EDX_FILTERS_CONFIG={
+            "org.openedx.learning.course_mode.track_selection.api.rendered.started.v1": {
+                "pipeline": [
+                    TEST_OFFER_STEP_PATH,
+                ],
+                "fail_silently": False,
+            },
+        },
+    )
+    @ddt.data(
+        ({"in_catalog": True, "is_subscriber": True}, True),
+        ({"in_catalog": False, "is_subscriber": True}, False),
+        # the subscription service is down: the status is unknown
+        ({"in_catalog": True, "is_subscriber": None}, False),
+        ({"in_catalog": True, "is_subscriber": False}, False),
+    )
+    @ddt.unpack
+    def test_post_subscriber_redirects_to_the_course(self, offer, redirects):
+        """
+        A subscriber has nothing to choose, so the learner skips the page and goes to the course.
+        """
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        with mock.patch(f"{__name__}.TEST_CATALOG_OFFER", offer):
+            response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        if redirects:
+            assert response.data["redirect_url"].endswith(f"/course/{self.course.id}/home")
+        else:
+            assert [option["slug"] for option in response.data["options"]] == ["purchase", "audit"]
+
     @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=False)
     @override_settings(
         OPEN_EDX_FILTERS_CONFIG={
@@ -521,9 +552,6 @@ class GetTrackOptionsTests(SimpleTestCase):
         (None, False, False, False, ["purchase"]),
         (None, True, True, False, ["purchase", "program", "audit"]),
         (TEST_CATALOG_OFFER, True, True, False, ["subscribe", "program", "audit"]),
-        ({"in_catalog": True, "is_subscriber": True}, True, True, False, ["upgrade"]),
-        ({"in_catalog": False, "is_subscriber": True}, True, False, False, ["purchase", "audit"]),
-        ({"in_catalog": True, "is_subscriber": None}, True, False, False, ["purchase", "audit"]),
         (TEST_CATALOG_OFFER, False, False, False, ["subscribe", "purchase"]),
         (None, True, True, True, ["purchase", "program"]),
         (TEST_CATALOG_OFFER, True, False, True, ["subscribe", "purchase"]),
@@ -562,12 +590,3 @@ class GetTrackOptionsTests(SimpleTestCase):
         }
         purchase_url = "https://ecommerce.test/basket/add/?sku=ABCD1234&course_run_key=course-v1%3Aa%2Bb%2Bc"
         assert get_track_options(data) == [{"slug": "purchase", "url": purchase_url}]
-
-    def test_subscriber_upgrade_needs_the_verified_mode(self):
-        data = {
-            "course_id": "course-v1:a+b+c",
-            "verified_mode": None,
-            "audit_mode": {"slug": CourseMode.AUDIT},
-            "extra_offer": {"in_catalog": True, "is_subscriber": True},
-        }
-        assert get_track_options(data) == [{"slug": "audit", "url": None}]
