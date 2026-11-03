@@ -35,6 +35,7 @@ from openedx.features.course_duration_limits.access import (
     get_user_course_expiration_date,
 )
 from openedx.features.course_experience import course_home_url
+from openedx.features.discounts.utils import generate_offer_data
 from xmodule.modulestore.django import modulestore
 
 log = logging.getLogger(__name__)
@@ -314,6 +315,8 @@ def get_track_selection_page_data(
         return track_selection_data
 
     track_selection_data["programs"] = _get_programs(request.user, course_key)
+    # the first purchase discount of the verified mode, as the course home shows it, or None
+    track_selection_data["offer"] = generate_offer_data(request.user, CourseOverview.get_from_id(course_key))
 
     # this filter lets plugins add fields to the page data
     # .. filter_implemented_name: TrackSelectionAPIRenderStarted

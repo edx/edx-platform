@@ -27,6 +27,7 @@ from openedx.core.djangoapps.content.course_overviews.tests.factories import (
     CourseOverviewFactory,
 )
 from openedx.core.djangolib.testing.utils import skip_unless_lms
+from openedx.features.discounts.applicability import DISCOUNT_APPLICABILITY_FLAG
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
 
@@ -566,9 +567,30 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.status_code == 200
         assert response.data["verified_mode"] is not None
         assert response.data["audit_mode"] is not None
-        for key in ("plugin_field", "programs", "options"):
+        for key in ("plugin_field", "programs", "offer", "options"):
             assert key not in response.data
         mock_get_programs.assert_not_called()
+
+    def test_post_page_data_has_no_offer_without_the_discount(self):
+        """
+        Without the first purchase discount, the page data has no offer.
+        """
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        assert response.data["offer"] is None
+
+    @override_waffle_flag(DISCOUNT_APPLICABILITY_FLAG, active=True)
+    def test_post_page_data_has_the_first_purchase_offer(self):
+        """
+        An audit learner who can get the first purchase discount sees the verified price with and without it.
+        """
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        offer = response.data["offer"]
+        assert (offer["original_price"], offer["discounted_price"], offer["percentage"]) == ("$149", "$126.65", 15)
+        assert offer["code"] == "EDXWELCOME"
 
     @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=False)
     def test_post_upgrade_intent_shows_the_page_without_the_options_flag(self):
