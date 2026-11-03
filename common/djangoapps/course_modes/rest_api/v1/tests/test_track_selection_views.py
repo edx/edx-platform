@@ -503,6 +503,31 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         else:
             assert [option["slug"] for option in response.data["options"]] == ["purchase", "audit"]
 
+    @override_settings(
+        OPEN_EDX_FILTERS_CONFIG={
+            "org.openedx.learning.course_mode.track_selection.api.rendered.started.v1": {
+                "pipeline": [
+                    TEST_OFFER_STEP_PATH,
+                ],
+                "fail_silently": False,
+            },
+        },
+    )
+    def test_post_subscriber_without_the_verified_mode_gets_the_page(self):
+        """
+        The subscription upgrades to the verified mode, so a subscriber of a course without it gets the page.
+        """
+        # a course that sells another track than verified, such as a Master's course run
+        CourseMode.objects.filter(course_id=self.course.id, mode_slug=CourseMode.VERIFIED).update(
+            mode_slug=CourseMode.MASTERS
+        )
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        with mock.patch(f"{__name__}.TEST_CATALOG_OFFER", {"in_catalog": True, "is_subscriber": True}):
+            response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        assert response.data["verified_mode"] is None
+        assert response.data["options"] == [{"slug": "audit", "url": None}]
+
     @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=False)
     @override_settings(
         OPEN_EDX_FILTERS_CONFIG={

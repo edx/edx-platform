@@ -318,8 +318,12 @@ def get_track_selection_page_data(
         course_key=course_key,
         track_selection_data=track_selection_data,
     )
-    # a subscriber of a course of the catalog upgrades to the verified mode through the subscription: the
-    # course offers the upgrade, so there is nothing to choose here
+    # a subscriber goes to the course, which offers the upgrade to the verified mode through the subscription.
+    # All three must hold, else the learner gets the page:
+    # - verified_mode is set: None means the course has no verified mode to upgrade to (its paid mode is
+    #   another one, such as masters)
+    # - extra_offer["in_catalog"]: a plugin found the course in the catalog of the subscription
+    # - extra_offer["is_subscriber"]: True for a subscriber, None when the plugin could not read the subscription
     offer = track_selection_data.get("extra_offer") or {}
     if track_selection_data.get("verified_mode") and offer.get("in_catalog") and offer.get("is_subscriber"):
         return _redirect_course_or_dashboard(course, course_key, request.user)
