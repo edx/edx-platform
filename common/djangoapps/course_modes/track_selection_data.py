@@ -149,19 +149,24 @@ def _get_programs(user, course_key) -> list[dict[str, Any]]:
     """
     Return the active programs of the course run that the learner can buy in one click.
 
-    The programs are an extra option, so an error while reading them is logged and leaves out the ones
-    that were not read yet.
+    The programs are an extra option, so an error is logged and leaves out what could not be read: one
+    program, or all of them when the list cannot be read.
     """
-    programs = []
     try:
-        for program in get_programs(course=str(course_key)):
-            if program.get("status") != "active":
-                continue
+        course_programs = get_programs(course=str(course_key))
+    except Exception:  # pylint: disable=broad-except
+        log.exception("Could not read the programs to offer with course run %s", course_key)
+        return []
+    programs = []
+    for program in course_programs:
+        if program.get("status") != "active":
+            continue
+        try:
             program = ProgramDataExtender(program, user).extend()
             if program["is_learner_eligible_for_one_click_purchase"]:
                 programs.append(_serialize_program(program))
-    except Exception:  # pylint: disable=broad-except
-        log.exception("Could not read the programs to offer with course run %s", course_key)
+        except Exception:  # pylint: disable=broad-except
+            log.exception("Could not read program %s to offer with course run %s", program.get("uuid"), course_key)
     return programs
 
 

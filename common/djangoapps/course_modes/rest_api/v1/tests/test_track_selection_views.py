@@ -463,6 +463,24 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.data["programs"] == []
         assert [option["slug"] for option in response.data["options"]] == ["purchase", "audit"]
 
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.ProgramDataExtender")
+    @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs")
+    def test_post_page_data_leaves_out_only_the_programs_that_cannot_be_read(self, mock_get_programs, mock_extender):
+        """
+        A program that cannot be read is left out, and the programs after it are still listed.
+        """
+        mock_get_programs.return_value = [{"status": "active"}] * 3
+        program_without_skus = self._extended_program(TEST_OTHER_PROGRAM_UUID, "Program Without SKUs")
+        del program_without_skus["skus"]
+        mock_extender.return_value.extend.side_effect = [
+            Exception("down"),
+            program_without_skus,
+            self._extended_program(TEST_PROGRAM_UUID, "Last Program"),
+        ]
+        response = self.client.post(self.url, {}, format="json")
+        assert response.status_code == 200
+        assert [program["title"] for program in response.data["programs"]] == ["Last Program"]
+
     @mock.patch("common.djangoapps.course_modes.track_selection_data.get_track_options", return_value=[])
     def test_post_without_options_redirects_to_the_course(self, _mock_get_track_options):
         """
