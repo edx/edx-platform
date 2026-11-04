@@ -429,6 +429,38 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase):
         assert self.course.display_name_with_default == data['course_details']['course_name']
         assert CourseMode.DEFAULT_MODE_SLUG == data['mode']
         assert data['is_active']
+        assert data['is_audit_with_expiring_upgrade'] is False
+        assert data['access_expiration_date'] is None
+
+    def test_check_enrollment_with_audit_mode_and_access_expiration_date(self):
+        expiration_datetime = datetime.datetime(2026, 3, 17, 16, 12, 15, tzinfo=pytz.UTC)
+        expected_access_expiration_date = expiration_datetime.isoformat().replace('+00:00', 'Z')
+
+        CourseModeFactory.create(
+            course_id=self.course.id,
+            mode_slug=CourseMode.AUDIT,
+            mode_display_name=CourseMode.AUDIT,
+        )
+        CourseModeFactory.create(
+            course_id=self.course.id,
+            mode_slug=CourseMode.VERIFIED,
+            mode_display_name=CourseMode.VERIFIED,
+            expiration_datetime=expiration_datetime,
+        )
+
+        self.assert_enrollment_status(mode=CourseMode.AUDIT)
+        resp = self.client.get(
+            reverse(
+                'courseenrollment',
+                kwargs={'username': self.user.username, "course_id": str(self.course.id)},
+            )
+        )
+
+        assert resp.status_code == status.HTTP_200_OK
+        data = json.loads(resp.content.decode('utf-8'))
+        assert data['mode'] == CourseMode.AUDIT
+        assert data['is_audit_with_expiring_upgrade'] is True
+        assert data['access_expiration_date'] == expected_access_expiration_date
 
     @ddt.data(
         (True, "True"),
