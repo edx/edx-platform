@@ -716,7 +716,7 @@ edx-django-sites-extensions==5.1.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
-edx-django-utils==8.0.1
+edx-django-utils==8.1.0
     # via
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
