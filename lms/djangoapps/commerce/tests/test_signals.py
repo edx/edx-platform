@@ -14,6 +14,7 @@ import httpretty
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.test.utils import override_settings
+from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.keys import CourseKey
 from requests import Timeout
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
@@ -23,6 +24,7 @@ from common.djangoapps.student.signals import REFUND_ORDER
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
 
 from ..models import CommerceConfiguration
+from ..toggles import ENABLE_REFUND_POLICY_CHANGE
 from ..utils import _generate_refund_notification_body, _send_refund_notification, create_zendesk_ticket
 from . import JSON
 from .mocks import mock_create_refund, mock_process_refund
@@ -99,6 +101,15 @@ class TestRefundSignal(ModuleStoreTestCase):
         # if the course_enrollment is not refundable, we should not try to initiate a refund.
         mock_refund_seat.reset_mock()
         self.course_enrollment.refundable = mock.Mock(return_value=False)
+        self.send_signal()
+        assert not mock_refund_seat.called
+
+    @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=True)
+    @mock.patch('lms.djangoapps.commerce.signals.refund_seat')
+    def test_receiver_skips_refund_when_policy_change_enabled(self, mock_refund_seat):
+        """
+        Ensure no automatic refund is initiated while the refund policy change flag is on.
+        """
         self.send_signal()
         assert not mock_refund_seat.called
 

@@ -27,6 +27,7 @@ from common.djangoapps.entitlements.rest_api.v1.permissions import IsAdminOrSupp
 from common.djangoapps.entitlements.rest_api.v1.serializers import CourseEntitlementSerializer
 from common.djangoapps.entitlements.utils import is_course_run_entitlement_fulfillable
 from common.djangoapps.student.models import AlreadyEnrolledError, CourseEnrollment, CourseEnrollmentException
+from lms.djangoapps.commerce.toggles import should_apply_refund_policy_change
 from openedx.core.djangoapps.catalog.utils import get_course_runs_for_course, get_owners_for_course
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.cors_csrf.authentication import SessionAuthenticationCrossDomainCsrf
@@ -474,6 +475,9 @@ class EntitlementEnrollmentViewSet(viewsets.GenericViewSet):
         a refund
         """
         is_refund = request.query_params.get('is_refund', 'false') == 'true'
+        if is_refund and should_apply_refund_policy_change():
+            log.info('Refund policy change is enabled, ignoring is_refund for Course Entitlement [%s]', uuid)
+            is_refund = False
 
         # Retrieve the entitlement for the UUID belongs to the current user.
         try:
