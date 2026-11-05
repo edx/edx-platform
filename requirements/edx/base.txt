@@ -452,7 +452,7 @@ edx-django-release-util==1.5.0
     #   edxval
 edx-django-sites-extensions==5.1.0
     # via -r requirements/edx/kernel.in
-edx-django-utils==8.0.1
+edx-django-utils==8.1.0
     # via
     #   -r requirements/edx/kernel.in
     #   django-config-models
@@ -848,7 +848,7 @@ openedx-events==10.5.0
     #   edx-name-affirmation
     #   event-tracking
     #   ora2
-openedx-filters==3.14.0
+openedx-filters==3.16.0
     # via
     #   -r requirements/edx/kernel.in
     #   edx-enterprise
