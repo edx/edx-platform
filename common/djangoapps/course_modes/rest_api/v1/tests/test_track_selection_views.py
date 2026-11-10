@@ -279,14 +279,20 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
             },
         },
     )
-    def test_post_page_data_options_use_the_plugin_offer(self):
+    @ddt.data(False, True)
+    def test_post_page_data_options_use_the_plugin_offer(self, unenrolled):
         """
-        Core picks the options after the filter, from the offer a plugin adds.
+        Core picks the options after the filter, from the offer a plugin adds: Subscribe joins Purchase and Audit.
+        The learner never enrolled, or enrolled in audit and then unenrolled.
         """
+        if unenrolled:
+            CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+            CourseEnrollment.unenroll(self.user, self.course.id)
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
         assert response.data["options"] == [
             {"slug": "subscribe", "url": TEST_SUBSCRIBE_URL},
+            {"slug": "purchase", "url": None},
             {"slug": "audit", "url": None},
         ]
 
@@ -454,6 +460,42 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         assert response.status_code == 200
         assert "/basket/add/?sku=ABCD1234&course_run_key=" in response.data["redirect_url"]
 
+    @override_settings(
+        OPEN_EDX_FILTERS_CONFIG={
+            "org.openedx.learning.course_mode.track_selection.api.rendered.started.v1": {
+                "pipeline": [
+                    TEST_OFFER_STEP_PATH,
+                ],
+                "fail_silently": False,
+            },
+        },
+    )
+    @ddt.data(False, True)
+    def test_post_upgrading_learner_without_an_enrollment_chooses_subscribe_or_purchase(self, unenrolled):
+        """
+        A learner who came to upgrade a catalog course has the options of an audit learner, with no active
+        enrollment: Audit is left out. The learner never enrolled, or enrolled in audit and then unenrolled.
+        """
+        if unenrolled:
+            CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+            CourseEnrollment.unenroll(self.user, self.course.id)
+        response = self.client.post(self.url, {"intent": "upgrade"}, format="json")
+        assert response.status_code == 200
+        assert [option["slug"] for option in response.data["options"]] == ["subscribe", "purchase"]
+
+    @ddt.data(False, True)
+    def test_post_upgrading_learner_without_an_enrollment_goes_to_the_checkout(self, unenrolled):
+        """
+        A learner who came to upgrade a course outside the catalog skips the page, with no active enrollment.
+        """
+        CommerceConfiguration.objects.create(checkout_on_ecommerce_service=True)
+        if unenrolled:
+            CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+            CourseEnrollment.unenroll(self.user, self.course.id)
+        response = self.client.post(self.url, {"intent": "upgrade"}, format="json")
+        assert response.status_code == 200
+        assert "/basket/add/?sku=ABCD1234&course_run_key=" in response.data["redirect_url"]
+
     @mock.patch("common.djangoapps.course_modes.track_selection_data.get_programs", side_effect=Exception("down"))
     def test_post_page_data_leaves_out_the_programs_that_cannot_be_read(self, _mock_get_programs):
         """
@@ -616,7 +658,8 @@ class GetTrackOptionsTests(SimpleTestCase):
         (None, True, False, False, ["purchase", "audit"]),
         (None, False, False, False, ["purchase"]),
         (None, True, True, False, ["purchase", "program", "audit"]),
-        (TEST_CATALOG_OFFER, True, True, False, ["subscribe", "program", "audit"]),
+        (TEST_CATALOG_OFFER, True, False, False, ["subscribe", "purchase", "audit"]),
+        (TEST_CATALOG_OFFER, True, True, False, ["subscribe", "purchase", "program", "audit"]),
         (TEST_CATALOG_OFFER, False, False, False, ["subscribe", "purchase"]),
         (None, True, True, True, ["purchase", "program"]),
         (TEST_CATALOG_OFFER, True, False, True, ["subscribe", "purchase"]),

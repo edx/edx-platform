@@ -183,12 +183,11 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
     """
     Return the options the track selection page shows, in display order, each with its link.
 
-    A plugin can add an ``extra_offer`` dict with TrackSelectionAPIRenderStarted: its ``subscribe_url`` puts
-    Subscribe in place of Purchase when the course has Audit. Without the dict, the options are Purchase, the
-    program and Audit. Audit has no link: the page posts the choice.
+    The options are Purchase, the program and Audit. A plugin can add an ``extra_offer`` dict with
+    TrackSelectionAPIRenderStarted: its ``subscribe_url`` adds Subscribe before them. Audit has no link: the page
+    posts the choice.
 
-    ``upgrading`` is for an audit learner who came to upgrade: Audit is left out, and Purchase stays next
-    to Subscribe.
+    ``upgrading`` is for a learner who came to upgrade: Audit is left out.
     """
     offer = track_selection_data.get("extra_offer") or {}
     verified_mode = track_selection_data.get("verified_mode")
@@ -197,7 +196,7 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
     subscribe_url = offer.get("subscribe_url")
     if subscribe_url:
         options.append({"slug": "subscribe", "url": subscribe_url})
-    if verified_mode and (upgrading or not subscribe_url or not audit_mode):
+    if verified_mode:
         purchase_url = _get_purchase_url(verified_mode, track_selection_data["course_id"])
         options.append({"slug": "purchase", "url": purchase_url})
     if programs := track_selection_data.get("programs"):
@@ -214,8 +213,9 @@ def get_track_selection_page_data(
     """
     Return track selection data for the MFE, or a redirect when the LMS would not show the page.
 
-    An ``intent`` of "upgrade" comes from upgrade links. The enrollment mode alone cannot tell, because
-    ``change_enrollment`` enrolls new learners in audit before they reach this page.
+    An ``intent`` of "upgrade" comes from upgrade links, and alone says that the learner came to upgrade. The
+    enrollment cannot tell: ``change_enrollment`` enrolls new learners in audit before they reach this page, and
+    a learner who unenrolled has no active enrollment.
 
     The filter, the programs, the options and the redirects that come with them need the
     ``course_modes.track_selection_options`` flag.
@@ -336,8 +336,7 @@ def get_track_selection_page_data(
     if track_selection_data.get("verified_mode") and offer.get("in_catalog") and offer.get("is_subscriber"):
         return _redirect_course_or_dashboard(course, course_key, request.user)
     # the options are set after the filter: a plugin adds facts, and core picks the options
-    upgrading = intent == "upgrade" and is_active and enrollment_mode in CourseMode.UPSELL_TO_VERIFIED_MODES
-    options = get_track_options(track_selection_data, upgrading=upgrading)
+    options = get_track_options(track_selection_data, upgrading=intent == "upgrade")
     # never show the page with nothing to choose, or for a single option that has a link
     if not options:
         return _redirect_course_or_dashboard(course, course_key, request.user)
