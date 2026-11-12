@@ -135,10 +135,14 @@ def _regenerate_certs(certs, batch_size, sleep_seconds, count):
     for cert in certs:
         user = User.objects.get(id=cert.user_id)
         try:
-            generate_certificate_task(user, cert.course_id, generation_mode='batch', delay_seconds=0)
+            generated = generate_certificate_task(user, cert.course_id, generation_mode='batch', delay_seconds=0)
         except CertificateGenerationNotAllowed as e:
             # A CertificateCreationRequested filter step can stop the certificate of one learner. The others go on.
             log.info(f'Certificate generation not allowed for {user.id} : {cert.course_id}: {e}')
+            continue
+        if not generated:
+            # Not regenerated: the learner is not eligible, or a filter step stopped an allowlist certificate
+            # (that path returns False instead of raising).
             continue
         count += 1
         if count % batch_size == 0:

@@ -219,16 +219,17 @@ class RegenerateNoIDVCertTests(ModuleStoreTestCase):
     def test_regeneration_goes_on_after_a_certificate_that_is_not_allowed(self):
         """
         Verify that a learner whose certificate is not allowed (for example by a CertificateCreationRequested
-        filter step) is not counted and does not stop the regeneration for the others
+        filter step) is not counted and does not stop the regeneration for the others. The allowlist path
+        returns False instead of raising, and is not counted either.
         """
         self._multisetup()
         with mock.patch(
             'lms.djangoapps.certificates.management.commands.regenerate_noidv_cert.generate_certificate_task',
-            side_effect=[CertificateGenerationNotAllowed('not allowed'), True, True],
+            side_effect=[CertificateGenerationNotAllowed('not allowed'), False, True],
         ) as mock_generate:
             regenerated = call_command("regenerate_noidv_cert")
 
-        self.assertEqual('2', regenerated)
+        self.assertEqual('1', regenerated)
         assert mock_generate.call_count == 3
 
     def test_regenerate_all_with_excluded_keys(self):
