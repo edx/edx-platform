@@ -13,6 +13,7 @@ from openedx_filters import PipelineStep
 from openedx_filters.learning.filters import CoursewareAccessChecksRequested
 
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.toggles import COURSE_MODES_MFE_TRACK_SELECTION
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.roles import (
     CourseBetaTesterRole,
@@ -272,6 +273,17 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         response = self.client.get(self.url)
         assert response.status_code == 200
         assert response.data['has_course_author_access'] == has_course_author_access
+
+    @ddt.data(True, False)
+    def test_is_mfe_track_selection_enabled(self, is_enabled):
+        """
+        The response says whether the course_modes.mfe_track_selection flag is on for the course.
+        """
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        with override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=is_enabled):
+            response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert response.data['is_mfe_track_selection_enabled'] is is_enabled
 
     @override_waffle_flag(COURSE_HOME_COURSE_METADATA_RENDER_FILTER, active=True)
     @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)
