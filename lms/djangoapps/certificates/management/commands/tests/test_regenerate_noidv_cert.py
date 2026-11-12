@@ -232,6 +232,26 @@ class RegenerateNoIDVCertTests(ModuleStoreTestCase):
         self.assertEqual('1', regenerated)
         assert mock_generate.call_count == 3
 
+    def test_every_certificate_tried_counts_toward_the_batch_pause(self):
+        """
+        Verify that the pause between batches counts every certificate tried, across courses, also when none is
+        regenerated.
+        """
+        course_run_key, course_run_key2 = self._multisetup()
+        with mock.patch(
+            'lms.djangoapps.certificates.management.commands.regenerate_noidv_cert.generate_certificate_task',
+            side_effect=[CertificateGenerationNotAllowed('not allowed'), False, False],
+        ), mock.patch(
+            'lms.djangoapps.certificates.management.commands.regenerate_noidv_cert.time.sleep'
+        ) as mock_sleep:
+            # 2 certs in the first course and 1 in the second, so the third cert ends the batch
+            regenerated = call_command(
+                "regenerate_noidv_cert", "-c", course_run_key, course_run_key2, batch_size=3, sleep_seconds=5,
+            )
+
+        self.assertEqual('0', regenerated)
+        mock_sleep.assert_called_once_with(5)
+
     def test_regenerate_all_with_excluded_keys(self):
         """
         Verify that all unverified certs are regenerated except for those from courses in the excluded keys

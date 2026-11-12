@@ -73,14 +73,15 @@ class Command(BaseCommand):
         course_keys = _convert_to_course_key(courses_str)
         excluded_keys = _convert_to_course_key(excluded_str)
 
-        count = 0
+        # certs tried (they pace the batches) and certs regenerated (the result)
+        attempted = count = 0
         if len(course_keys) > 0:
             for key in course_keys:
-                # rolling count to maintain batch_size across courses
-                count = _handle_course(key, batch_size, sleep_seconds, count)
+                # rolling counts to maintain batch_size across courses
+                attempted, count = _handle_course(key, batch_size, sleep_seconds, attempted, count)
         else:
             # regenerate unverified certs for all courses with the exception of excluded keys
-            count = _handle_all_courses(batch_size, sleep_seconds, excluded_keys)
+            attempted, count = _handle_all_courses(batch_size, sleep_seconds, excluded_keys)
         return f'{count}'
 
 
@@ -99,10 +100,10 @@ def _convert_to_course_key(course_id_strings):
     return key_object_list
 
 
-def _handle_course(course_key, batch_size, sleep_seconds, count):
+def _handle_course(course_key, batch_size, sleep_seconds, attempted, count):
     """
     Regenerates unverified status certificates for the designated course with delay seconds between certs.
-    Returns how many certs were originally unverified and regenerated.
+    Returns the rolling counts of the certs tried and of the certs regenerated.
     """
 
     certs = GeneratedCertificate.objects.filter(
@@ -112,25 +113,26 @@ def _handle_course(course_key, batch_size, sleep_seconds, count):
 
     log.info(f'Regenerating {len(certs)} unverified certificates for {course_key}')
 
-    return _regenerate_certs(certs, batch_size, sleep_seconds, count)
+    return _regenerate_certs(certs, batch_size, sleep_seconds, attempted, count)
 
 
 def _handle_all_courses(batch_size, sleep_seconds, excluded_keys):
     """
     Regenerates unverified status certificates for all courses except for those designated by the excluded keys with
-    delay seconds between certs. Returns how many certs were originally unverified and regenerated.
+    delay seconds between certs. Returns how many certs were tried and how many were regenerated.
     """
     certs = GeneratedCertificate.objects\
         .filter(status=CertificateStatuses.unverified)\
         .exclude(course_id__in=excluded_keys)
     log.info(f'Regenerating {len(certs)} unverified certificates in all courses except for excluded keys')
 
-    return _regenerate_certs(certs, batch_size, sleep_seconds, 0)
+    return _regenerate_certs(certs, batch_size, sleep_seconds, 0, 0)
 
 
-def _regenerate_certs(certs, batch_size, sleep_seconds, count):
+def _regenerate_certs(certs, batch_size, sleep_seconds, attempted, count):
     """
-    Triggers generate certificate task for a given set of certificates
+    Triggers generate certificate task for a given set of certificates. Returns the rolling counts of the certs
+    tried and of the certs regenerated.
     """
     for cert in certs:
         user = User.objects.get(id=cert.user_id)
@@ -139,13 +141,17 @@ def _regenerate_certs(certs, batch_size, sleep_seconds, count):
         except CertificateGenerationNotAllowed as e:
             # A CertificateCreationRequested filter step can stop the certificate of one learner. The others go on.
             log.info(f'Certificate generation not allowed for {user.id} : {cert.course_id}: {e}')
-            continue
-        if not generated:
-            # Not regenerated: the learner is not eligible, or a filter step stopped an allowlist certificate
-            # (that path returns False instead of raising).
-            continue
-        count += 1
-        if count % batch_size == 0:
-            log.info(f'Regenerated {count} unverified certificates. Sleeping for {sleep_seconds} seconds.')
+            generated = False
+        if generated:
+            # Not counted when False: the learner is not eligible, or a filter step stopped an allowlist
+            # certificate (that path returns False instead of raising).
+            count += 1
+        # Every cert tried counts toward the batch, so the pause between batches does not depend on the result.
+        attempted += 1
+        if attempted % batch_size == 0:
+            log.info(
+                f'Tried {attempted} unverified certificates and regenerated {count}. '
+                f'Sleeping for {sleep_seconds} seconds.'
+            )
             time.sleep(sleep_seconds)
-    return count
+    return attempted, count
