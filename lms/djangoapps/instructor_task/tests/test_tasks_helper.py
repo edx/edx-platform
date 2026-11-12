@@ -31,6 +31,7 @@ from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment, CourseEnrollmentAllowed
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
 from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.certificates.generation_handler import CertificateGenerationNotAllowed
 from lms.djangoapps.certificates.models import GeneratedCertificate
 from lms.djangoapps.certificates.tests.factories import CertificateAllowlistFactory, GeneratedCertificateFactory
 from lms.djangoapps.courseware.models import StudentModule
@@ -2561,6 +2562,27 @@ class TestCertificateGeneration(InstructorTaskModuleTestCase):
         }
 
         self.assertCertificatesGenerated(task_input, expected_results)
+
+    def test_certificate_generation_goes_on_after_a_certificate_that_is_not_allowed(self):
+        """
+        Verify that a learner whose certificate is not allowed (for example by a CertificateCreationRequested
+        filter step) does not stop the generation for the other learners.
+        """
+        self._create_students(3)
+        task_input = {'student_set': None}
+        expected_results = {
+            'action_name': 'certificates generated',
+            'total': 3,
+            'attempted': 3,
+            'skipped': 0,
+        }
+        with patch(
+            'lms.djangoapps.instructor_task.tasks_helper.certs.generate_certificate_task',
+            side_effect=[True, CertificateGenerationNotAllowed('not allowed'), True],
+        ) as mock_generate:
+            self.assertCertificatesGenerated(task_input, expected_results)
+
+        assert mock_generate.call_count == 3
 
     def assertCertificatesGenerated(self, task_input, expected_results):
         """

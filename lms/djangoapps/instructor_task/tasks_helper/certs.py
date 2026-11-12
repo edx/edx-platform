@@ -17,6 +17,7 @@ from lms.djangoapps.certificates.api import (
     get_enrolled_allowlisted_not_passing_users
 )
 from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.certificates.generation_handler import CertificateGenerationNotAllowed
 
 from .runner import TaskProgress
 
@@ -73,7 +74,12 @@ def generate_students_certificates(
     for student in students_require_certs:
         task_progress.attempted += 1
         log.info(f'Attempt will be made to generate a course certificate for {student.id} : {course_id}.')
-        generate_certificate_task(student, course_id)
+        try:
+            generate_certificate_task(student, course_id)
+        except CertificateGenerationNotAllowed as e:
+            # A CertificateCreationRequested filter step can stop the certificate of one learner. The other
+            # learners still get theirs.
+            log.info(f'Certificate generation not allowed for {student.id} : {course_id}: {e}')
     return task_progress.update_task_state(extra_meta=current_step)
 
 

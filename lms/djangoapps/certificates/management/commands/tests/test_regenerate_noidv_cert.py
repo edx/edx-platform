@@ -11,6 +11,7 @@ from django.core.management import CommandError, call_command
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
 from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.certificates.generation_handler import CertificateGenerationNotAllowed
 from lms.djangoapps.certificates.models import GeneratedCertificate
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
@@ -214,6 +215,21 @@ class RegenerateNoIDVCertTests(ModuleStoreTestCase):
         self._multisetup()
         regenerated = call_command("regenerate_noidv_cert")
         self.assertEqual('3', regenerated)
+
+    def test_regeneration_goes_on_after_a_certificate_that_is_not_allowed(self):
+        """
+        Verify that a learner whose certificate is not allowed (for example by a CertificateCreationRequested
+        filter step) is not counted and does not stop the regeneration for the others
+        """
+        self._multisetup()
+        with mock.patch(
+            'lms.djangoapps.certificates.management.commands.regenerate_noidv_cert.generate_certificate_task',
+            side_effect=[CertificateGenerationNotAllowed('not allowed'), True, True],
+        ) as mock_generate:
+            regenerated = call_command("regenerate_noidv_cert")
+
+        self.assertEqual('2', regenerated)
+        assert mock_generate.call_count == 3
 
     def test_regenerate_all_with_excluded_keys(self):
         """

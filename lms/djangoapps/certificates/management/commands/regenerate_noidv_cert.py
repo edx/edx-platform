@@ -11,7 +11,7 @@ from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 
 from lms.djangoapps.certificates.data import CertificateStatuses
-from lms.djangoapps.certificates.generation_handler import generate_certificate_task
+from lms.djangoapps.certificates.generation_handler import CertificateGenerationNotAllowed, generate_certificate_task
 from lms.djangoapps.certificates.models import GeneratedCertificate
 
 log = logging.getLogger(__name__)
@@ -134,7 +134,12 @@ def _regenerate_certs(certs, batch_size, sleep_seconds, count):
     """
     for cert in certs:
         user = User.objects.get(id=cert.user_id)
-        generate_certificate_task(user, cert.course_id, generation_mode='batch', delay_seconds=0)
+        try:
+            generate_certificate_task(user, cert.course_id, generation_mode='batch', delay_seconds=0)
+        except CertificateGenerationNotAllowed as e:
+            # A CertificateCreationRequested filter step can stop the certificate of one learner. The others go on.
+            log.info(f'Certificate generation not allowed for {user.id} : {cert.course_id}: {e}')
+            continue
         count += 1
         if count % batch_size == 0:
             log.info(f'Regenerated {count} unverified certificates. Sleeping for {sleep_seconds} seconds.')
