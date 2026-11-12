@@ -19,6 +19,7 @@ from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiv
 from openedx.core.djangoapps.courseware_api.utils import get_celebrations_dict
 
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.toggles import course_modes_mfe_track_selection_is_active
 from common.djangoapps.student.auth import has_course_author_access
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.course_api.api import course_detail
@@ -66,6 +67,8 @@ class CourseHomeMetadataView(RetrieveAPIView):
         celebrations: (dict) a dict of celebration data
         user_timezone: (str) The timezone of the given user
         can_view_certificate: Flag to determine whether or not the learner can view their course certificate.
+        is_mfe_track_selection_enabled: (bool) Indicates if /course_modes/choose/ opens the track selection
+            page of the Learning MFE for this course (course_modes.mfe_track_selection flag)
 
         Plugins can add fields through the CourseHomeMetadataAPIRenderStarted filter, which needs the
         course_home.course_metadata_render_filter flag.
@@ -148,6 +151,7 @@ class CourseHomeMetadataView(RetrieveAPIView):
             'can_view_certificate': certificates_viewable_for_course(course),
             'course_modes': course_modes,
             'is_new_discussion_sidebar_view_enabled': new_discussion_sidebar_view_is_enabled(course_key),
+            'is_mfe_track_selection_enabled': course_modes_mfe_track_selection_is_active(course_key),
             # We check the course author access in the context of CMS here because this field is used
             # to determine whether the user can access the course authoring tools in the CMS.
             # This is a temporary solution until the course author role is split into "Course Author" and
