@@ -13,7 +13,6 @@ from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 from django.test import TestCase, override_settings
-from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.keys import CourseKey
 from rest_framework.test import APITestCase
 
@@ -25,7 +24,6 @@ from common.djangoapps.student.tests.factories import (
 )
 from common.djangoapps.util.course import get_encoded_course_sharing_utm_params
 from lms.djangoapps.bulk_email.models import Optout
-from lms.djangoapps.commerce.toggles import ENABLE_REFUND_POLICY_CHANGE
 from lms.djangoapps.learner_home.test_utils import (
     create_test_enrollment,
     random_string,
@@ -89,13 +87,8 @@ class TestGetPlatformSettings(TestCase):
                 "supportEmail": self.MOCK_SETTINGS["DEFAULT_FEEDBACK_EMAIL"],
                 "billingEmail": self.MOCK_SETTINGS["PAYMENT_SUPPORT_EMAIL"],
                 "courseSearchUrl": mock_search_url,
-                "refundPolicyChangeEnabled": False,
             },
         )
-
-    @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=True)
-    def test_refund_policy_change_enabled(self):
-        assert get_platform_settings()["refundPolicyChangeEnabled"] is True
 
     @ddt.data(
         (True, f'{settings.CATALOG_MICROFRONTEND_URL}/courses'),

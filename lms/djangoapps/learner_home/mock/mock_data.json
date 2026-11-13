@@ -28,6 +28,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-22T14:28:03.078Z"
             },
             "courseRun": {
@@ -97,6 +98,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-21T14:28:03.079Z"
             },
             "certificate": {
@@ -163,6 +165,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-20T14:28:03.079Z"
             },
             "certificate": {
@@ -237,6 +240,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-19T14:28:03.079Z"
             },
             "courseProvider": {
@@ -293,6 +297,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-18T14:28:03.079Z"
             },
             "courseRun": {
@@ -372,6 +377,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-17T14:28:03.079Z"
             },
             "certificate": {
@@ -426,6 +432,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-16T14:28:03.079Z"
             },
             "certificate": {
@@ -502,6 +509,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-15T14:28:03.079Z"
             },
             "certificate": {
@@ -568,6 +576,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-14T14:28:03.079Z"
             },
             "certificate": {
@@ -622,6 +631,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-13T14:28:03.080Z"
             },
             "certificate": {
@@ -701,6 +711,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-12T14:28:03.080Z"
             },
             "certificate": {
@@ -770,6 +781,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-11T14:28:03.080Z"
             },
             "certificate": {
@@ -828,6 +840,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-10T14:28:03.080Z"
             },
             "grade": {
@@ -912,6 +925,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-09T14:28:03.080Z"
             },
             "grade": {
@@ -968,6 +982,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-08T14:28:03.080Z"
             },
             "certificate": {
@@ -1035,6 +1050,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-07T14:28:03.080Z"
             },
             "certificate": {
@@ -1111,6 +1127,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-06T14:28:03.080Z"
             },
             "certificate": {
@@ -1177,6 +1194,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-05T14:28:03.080Z"
             },
             "certificate": {
@@ -1218,6 +1236,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-04T14:28:03.080Z"
             },
             "courseRun": {
@@ -1294,6 +1313,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-03T14:28:03.080Z"
             },
             "courseRun": {
@@ -1360,6 +1380,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-02T14:28:03.080Z"
             },
             "courseRun": {
@@ -1414,6 +1435,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-09-01T14:28:03.080Z"
             },
             "courseRun": {
@@ -1490,6 +1512,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-31T14:28:03.080Z"
             },
             "courseRun": {
@@ -1556,6 +1579,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-30T14:28:03.080Z"
             },
             "courseRun": {
@@ -1644,6 +1668,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-29T14:28:03.080Z"
             },
             "courseRun": {
@@ -1750,6 +1775,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-28T14:28:03.080Z"
             },
             "courseRun": {
@@ -1850,6 +1876,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-27T14:28:03.080Z"
             },
             "courseRun": {
@@ -1938,6 +1965,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-26T14:28:03.080Z"
             },
             "courseRun": {
@@ -2022,6 +2050,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-25T14:28:03.080Z"
             },
             "courseRun": {
@@ -2096,6 +2125,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-24T14:28:03.080Z"
             },
             "courseRun": {
@@ -2158,6 +2188,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-23T14:28:03.080Z"
             },
             "courseRun": {
@@ -2242,6 +2273,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": true,
                 "isVerified": true,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": "2022-08-22T14:28:03.080Z"
             },
             "courseRun": {
@@ -2304,6 +2336,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": false,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": null
             },
             "gradeData": null,
@@ -2394,6 +2427,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": false,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": null
             },
             "gradeData": null,
@@ -2474,6 +2508,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": false,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": null
             },
             "gradeData": null,
@@ -2542,6 +2577,7 @@
                 "hasOptedOutOfEmail": false,
                 "isEnrolled": false,
                 "isVerified": false,
+                "refundPolicyChangeApplies": false,
                 "lastEnrolled": null
             },
             "gradeData": null,
@@ -2601,8 +2637,7 @@
     "platformSettings": {
         "supportEmail": "support@example.com",
         "billingEmail": "billing@email.com",
-        "courseSearchUrl": "edx.com/course-search",
-        "refundPolicyChangeEnabled": false
+        "courseSearchUrl": "edx.com/course-search"
     },
     "socialShareSettings": {
         "facebook": {

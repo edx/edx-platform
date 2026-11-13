@@ -20,6 +20,7 @@ from requests import Timeout
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.student.models import CourseEnrollmentAttribute
 from common.djangoapps.student.signals import REFUND_ORDER
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
 
@@ -104,14 +105,41 @@ class TestRefundSignal(ModuleStoreTestCase):
         self.send_signal()
         assert not mock_refund_seat.called
 
+    def set_date_placed(self, date_placed):
+        """Store the order date on the enrollment, as fulfillment does."""
+        CourseEnrollmentAttribute.objects.create(
+            enrollment=self.course_enrollment, namespace='order', name='date_placed', value=date_placed
+        )
+
+    @ddt.data(
+        ('2026-12-09T23:59:59Z', True),  # One second before the cutoff (00:00 ET): refunded as before.
+        ('2026-12-10T05:00:00Z', False),  # At the cutoff: no automatic refund.
+        ('2026-12-10T05:00:01Z', False),  # After the cutoff: no automatic refund.
+        (None, True),  # Unknown order date: refunded as before.
+    )
+    @ddt.unpack
     @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=True)
+    @override_settings(REFUND_POLICY_EFFECTIVE_AT='2026-12-10T00:00:00-05:00')
     @mock.patch('lms.djangoapps.commerce.signals.refund_seat')
-    def test_receiver_skips_refund_when_policy_change_enabled(self, mock_refund_seat):
+    def test_receiver_with_policy_change_enabled(self, date_placed, expect_refund, mock_refund_seat):
         """
-        Ensure no automatic refund is initiated while the refund policy change flag is on.
+        With the flag on, only orders placed at or after the effective date skip the automatic refund.
         """
+        if date_placed:
+            self.set_date_placed(date_placed)
         self.send_signal()
-        assert not mock_refund_seat.called
+        assert mock_refund_seat.called is expect_refund
+
+    @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=False)
+    @override_settings(REFUND_POLICY_EFFECTIVE_AT='2026-12-10T00:00:00-05:00')
+    @mock.patch('lms.djangoapps.commerce.signals.refund_seat')
+    def test_receiver_refunds_new_order_when_flag_off(self, mock_refund_seat):
+        """
+        With the flag off, nothing changes: even an order after the effective date is refunded.
+        """
+        self.set_date_placed('2026-12-10T05:00:01Z')
+        self.send_signal()
+        assert mock_refund_seat.called
 
     @mock.patch('lms.djangoapps.commerce.signals.refund_seat')
     @mock.patch('lms.djangoapps.commerce.signals.get_request_user', return_value=None)

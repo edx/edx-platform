@@ -9,6 +9,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import now
 from edx_toggles.toggles.testutils import override_waffle_flag
@@ -1162,6 +1163,34 @@ class EntitlementEnrollmentViewSetTest(ModuleStoreTestCase):
         assert course_entitlement.expired_at is not None
 
     @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=True)
+    @override_settings(REFUND_POLICY_EFFECTIVE_AT='2999-01-01T00:00:00Z')
+    @patch('common.djangoapps.entitlements.models.refund_entitlement', return_value=True)
+    @patch('common.djangoapps.entitlements.rest_api.v1.views.get_course_runs_for_course')
+    @patch("common.djangoapps.entitlements.models.get_course_uuid_for_course")
+    def test_is_refund_honored_for_entitlement_created_before_policy_change(
+            self, mock_course_uuid, mock_get_course_runs, mock_refund_entitlement
+    ):
+        course_entitlement = CourseEntitlementFactory.create(user=self.user, mode=CourseMode.VERIFIED)
+        mock_get_course_runs.return_value = self.return_values
+        mock_course_uuid.return_value = course_entitlement.course_uuid
+
+        url = reverse(
+            self.ENTITLEMENTS_ENROLLMENT_NAMESPACE,
+            args=[str(course_entitlement.uuid)]
+        )
+        data = {'course_run_id': str(self.course.id)}
+        response = self.client.post(url, data=json.dumps(data), content_type='application/json')
+        assert response.status_code == 201
+
+        response = self.client.delete(url + '?is_refund=true', content_type='application/json')
+        assert response.status_code == 204
+
+        course_entitlement.refresh_from_db()
+        assert mock_refund_entitlement.called
+        assert course_entitlement.expired_at is not None
+
+    @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=True)
+    @override_settings(REFUND_POLICY_EFFECTIVE_AT='2000-01-01T00:00:00Z')
     @patch('common.djangoapps.entitlements.models.refund_entitlement', return_value=True)
     @patch('common.djangoapps.entitlements.rest_api.v1.views.get_course_runs_for_course')
     @patch("common.djangoapps.entitlements.models.get_course_uuid_for_course")
