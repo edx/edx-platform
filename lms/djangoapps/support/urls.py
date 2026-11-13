@@ -5,6 +5,7 @@ URLs for the student support app.
 from django.conf import settings
 from django.urls import path, re_path
 
+from .views.activate_account import ActivateAccountView
 from .views.certificate import CertificatesSupportView
 from .views.contact_us import ContactUsView
 from .views.course_entitlements import EntitlementSupportView
@@ -45,6 +46,11 @@ urlpatterns = [
         r'^manage_user/(?P<username_or_email>[\w.@+-]+)?$',
         ManageUserDetailView.as_view(),
         name="manage_user_detail"
+    ),
+    re_path(
+        r'^activate_account/(?P<username_or_email>[\w.@+-]+)$',
+        ActivateAccountView.as_view(),
+        name="activate_account"
     ),
     re_path(
         r'^feature_based_enrollments/?$',
