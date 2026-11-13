@@ -23,6 +23,13 @@ class Command(BaseCommand):
     Management command to regenerate unverified certificates when a course
     transitions to honor code.
     """
+    help = """
+    Regenerate the unverified certificates of the given course runs, or of all course runs except the excluded
+    ones. Prints the number of certificates regenerated: a learner who is not eligible, or whose certificate a
+    CertificateCreationRequested filter step stopped, is not counted. Every certificate tried counts toward
+    --batch_size.
+    """
+
     def add_arguments(self, parser):
         parser.add_argument(
             '-c', '--course-keys',
