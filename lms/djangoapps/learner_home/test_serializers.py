@@ -12,12 +12,15 @@ import ddt
 from django.conf import settings
 from django.urls import reverse
 from django.test import TestCase
+from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.keys import CourseKey
 
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.entitlements.tests.factories import CourseEntitlementFactory
+from common.djangoapps.student.models import CourseEnrollmentAttribute
+from lms.djangoapps.commerce.toggles import ENABLE_REFUND_POLICY_CHANGE
 from common.djangoapps.student.tests.factories import (
     CourseEnrollmentFactory,
     UserFactory,
@@ -389,6 +392,27 @@ class TestEnrollmentSerializer(LearnerDashboardBaseTest):
         # Serialization set up so all fields will have values to make testing easy
         for key in output:
             assert output[key] is not None
+
+    @ddt.data(
+        (True, "2026-12-09T23:59:59Z", False),  # Placed one second before the cutoff: legacy.
+        (True, "2026-12-10T05:00:00Z", True),  # Placed at the cutoff (00:00 ET): new policy.
+        (True, "2026-12-10T05:00:01Z", True),  # Placed after the cutoff: new policy.
+        (True, None, False),  # No order date: keep legacy behavior.
+        (False, "2026-12-10T05:00:01Z", False),  # Flag off: nothing changes.
+    )
+    @ddt.unpack
+    def test_refund_policy_change_applies(self, flag_on, date_placed, expected):
+        enrollment = self.create_test_enrollment()
+        if date_placed:
+            CourseEnrollmentAttribute.objects.create(
+                enrollment=enrollment, namespace="order", name="date_placed", value=date_placed
+            )
+        context = self.create_test_context(enrollment.course)
+
+        with override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=flag_on):
+            output = EnrollmentSerializer(enrollment, context=context).data
+
+        assert output["refundPolicyChangeApplies"] is expected
 
     @ddt.data(
         (None, False),  # No expiration date, allowed for non-audit, non-expired.

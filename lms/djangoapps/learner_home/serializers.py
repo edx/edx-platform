@@ -15,6 +15,7 @@ from openedx_filters.learning.filters import CourseEnrollmentAPIRenderStarted, C
 from common.djangoapps.course_modes.models import CourseMode
 from openedx.features.course_experience import course_home_url
 from xmodule.data import CertificatesDisplayBehaviors
+from lms.djangoapps.commerce.toggles import enrollment_follows_refund_policy_change
 from lms.djangoapps.learner_home.utils import course_progress_url
 
 
@@ -214,6 +215,7 @@ class EnrollmentSerializer(serializers.Serializer):
     hasStarted = serializers.SerializerMethodField()
     coursewareAccess = CoursewareAccessSerializer(source="*")
     isVerified = serializers.SerializerMethodField()
+    refundPolicyChangeApplies = serializers.SerializerMethodField()
     canUpgrade = serializers.SerializerMethodField()
     isAuditAccessExpired = serializers.SerializerMethodField()
     isEmailEnabled = serializers.SerializerMethodField()
@@ -237,6 +239,13 @@ class EnrollmentSerializer(serializers.Serializer):
 
     def get_isVerified(self, enrollment):
         return enrollment.is_verified_enrollment()
+
+    def get_refundPolicyChangeApplies(self, enrollment):
+        """
+        Whether unenrolling will NOT refund this enrollment's order automatically (the LP-1395 policy change).
+        Reads only the order date stored on the enrollment, so it makes no ecommerce call.
+        """
+        return enrollment_follows_refund_policy_change(enrollment)
 
     def get_canUpgrade(self, enrollment):
         """Determine if a user can upgrade this enrollment to verified track"""
@@ -518,6 +527,7 @@ class UnfulfilledEntitlementSerializer(serializers.Serializer):
             "isStaff": False,
         },
         "isVerified": False,
+        "refundPolicyChangeApplies": False,
         "canUpgrade": False,
         "isAuditAccessExpired": False,
         "isEmailEnabled": False,

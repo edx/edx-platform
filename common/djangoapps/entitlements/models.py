@@ -20,6 +20,7 @@ from common.djangoapps.student.models import CourseEnrollment, CourseEnrollmentE
 from common.djangoapps.util.date_utils import strftime_localized
 from lms.djangoapps.certificates import api as certificates_api
 from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.commerce.toggles import entitlement_follows_refund_policy_change
 from lms.djangoapps.commerce.utils import refund_entitlement
 from openedx.core.djangoapps.catalog.utils import get_course_uuid_for_course
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
@@ -436,6 +437,12 @@ class CourseEntitlement(TimeStampedModel):
         course_entitlement = cls.get_entitlement_if_active(course_enrollment.user, course_uuid)
         if course_entitlement and course_entitlement.enrollment_course_run == course_enrollment:
             course_entitlement.set_enrollment(None)
+            if entitlement_follows_refund_policy_change(course_entitlement):
+                log.info(
+                    'Entitlement follows the refund policy change, skipping automatic refund [%s]',
+                    course_entitlement.uuid
+                )
+                skip_refund = True
             if not skip_refund and course_entitlement.is_entitlement_refundable():
                 course_entitlement.expire_entitlement()
                 course_entitlement.refund()

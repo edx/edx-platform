@@ -5,8 +5,9 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils.timezone import now
+from edx_toggles.toggles.testutils import override_waffle_flag
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
@@ -15,6 +16,7 @@ from common.djangoapps.student.tests.factories import TEST_PASSWORD, CourseEnrol
 from lms.djangoapps.certificates.api import MODES
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
+from lms.djangoapps.commerce.toggles import ENABLE_REFUND_POLICY_CHANGE
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
@@ -333,3 +335,48 @@ class TestModels(TestCase):
         assert mock_refund.called
         entitlement.refresh_from_db()
         assert entitlement.expired_at < now()
+
+    @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=True)
+    @override_settings(REFUND_POLICY_EFFECTIVE_AT='2999-01-01T00:00:00Z')
+    @patch("common.djangoapps.entitlements.models.get_course_uuid_for_course")
+    @patch("common.djangoapps.entitlements.models.CourseEntitlement.refund")
+    def test_unenroll_entitlement_refunds_when_created_before_policy_change(
+            self, mock_refund, mock_get_course_uuid
+    ):
+        """
+        Test that an entitlement created before the effective date is still refunded with the flag on.
+        """
+        self.enrollment.mode = CourseMode.VERIFIED
+        self.enrollment.user = self.user
+        self.enrollment.save()
+        entitlement = CourseEntitlementFactory.create(user=self.user)
+        mock_get_course_uuid.return_value = entitlement.course_uuid
+        entitlement.enrollment_course_run = self.enrollment
+        entitlement.save()
+        CourseEnrollment.unenroll(self.user, self.course.id)
+
+        assert mock_refund.called
+        entitlement.refresh_from_db()
+        assert entitlement.expired_at < now()
+
+    @override_waffle_flag(ENABLE_REFUND_POLICY_CHANGE, active=True)
+    @override_settings(REFUND_POLICY_EFFECTIVE_AT='2000-01-01T00:00:00Z')
+    @patch("common.djangoapps.entitlements.models.get_course_uuid_for_course")
+    @patch("common.djangoapps.entitlements.models.CourseEntitlement.refund")
+    def test_unenroll_entitlement_skips_refund_when_policy_change_enabled(self, mock_refund, mock_get_course_uuid):
+        """
+        Test that un-enrolling does not refund or expire the entitlement while the refund policy change flag is on.
+        """
+        self.enrollment.mode = CourseMode.VERIFIED
+        self.enrollment.user = self.user
+        self.enrollment.save()
+        entitlement = CourseEntitlementFactory.create(user=self.user)
+        mock_get_course_uuid.return_value = entitlement.course_uuid
+        entitlement.enrollment_course_run = self.enrollment
+        entitlement.save()
+        CourseEnrollment.unenroll(self.user, self.course.id)
+
+        assert not mock_refund.called
+        entitlement.refresh_from_db()
+        assert entitlement.enrollment_course_run is None
+        assert entitlement.expired_at is None
