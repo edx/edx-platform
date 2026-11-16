@@ -18,6 +18,10 @@ from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
+from common.djangoapps.course_modes.toggles import (
+    COURSE_MODES_MFE_TRACK_SELECTION,
+    COURSE_MODES_TRACK_SELECTION_OPTIONS,
+)
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
 from lms.djangoapps.certificates.config import AUTO_CERTIFICATE_GENERATION
 from lms.djangoapps.commerce.models import CommerceConfiguration
@@ -490,6 +494,17 @@ class CourseDateSummaryTest(SharedModuleStoreTestCase):
 
         block = VerifiedUpgradeDeadlineDate(course, user)
         assert block.link == f'{configuration.basket_checkout_page}?sku={sku}'
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_upgrade_link_opens_track_selection(self):
+        """Verify the block links to the track selection page with the upgrade intent when its flags are on."""
+        course = create_course_run()
+        user = create_user()
+        CourseEnrollmentFactory(course_id=course.id, user=user, mode=CourseMode.AUDIT)
+
+        block = VerifiedUpgradeDeadlineDate(course, user)
+        assert block.link == f'{settings.LMS_ROOT_URL}/course_modes/choose/{course.id}/?intent=upgrade'
 
     ## CertificateAvailableDate
     @override_waffle_switch(AUTO_CERTIFICATE_GENERATION, True)

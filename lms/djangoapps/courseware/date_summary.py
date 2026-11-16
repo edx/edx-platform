@@ -19,7 +19,7 @@ from pytz import utc
 
 from common.djangoapps.course_modes.models import CourseMode
 from lms.djangoapps.certificates.api import get_active_web_certificate, can_show_certificate_available_date_field
-from lms.djangoapps.courseware.utils import verified_upgrade_deadline_link, can_show_verified_upgrade
+from lms.djangoapps.courseware.utils import can_show_verified_upgrade, track_selection_upgrade_link
 from lms.djangoapps.verify_student.models import VerificationDeadline
 from lms.djangoapps.verify_student.services import IDVerificationService
 from openedx.core.djangolib.markup import HTML
@@ -458,7 +458,7 @@ class VerifiedUpgradeDeadlineDate(DateSummary):
 
     @property
     def link(self):
-        return verified_upgrade_deadline_link(self.user, self.course, self.course_id)
+        return track_selection_upgrade_link(self.user, self.course, self.course_id)
 
     @cached_property
     def enrollment(self):

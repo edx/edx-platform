@@ -15,7 +15,7 @@ from common.djangoapps.util.date_utils import strftime_localized, strftime_local
 from lms.djangoapps.experiments.flags import audit_expiry_urgency_v1_enabled_for_course
 from lms.djangoapps.courseware.access_response import AccessError
 from lms.djangoapps.courseware.access_utils import ACCESS_GRANTED
-from lms.djangoapps.courseware.utils import verified_upgrade_deadline_link
+from lms.djangoapps.courseware.utils import track_selection_upgrade_link
 from lms.djangoapps.courseware.masquerade import get_course_masquerade, is_masquerading_as_specific_student
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.course_date_signals.utils import get_expected_duration
@@ -179,7 +179,7 @@ def get_access_expiration_data(user, course):
         'expiration_date': expiration_date,
         'masquerading_expired_course': masquerading_expired_course,
         'upgrade_deadline': upgrade_deadline,
-        'upgrade_url': verified_upgrade_deadline_link(user, course=course) if upgrade_deadline else None,
+        'upgrade_url': track_selection_upgrade_link(user, course=course) if upgrade_deadline else None,
         'experiment_key': experiment_key,
         'variant': variant,
         'expiry_days': expiry_days,

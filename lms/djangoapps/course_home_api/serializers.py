@@ -6,7 +6,7 @@ Course Home Serializers.
 from opaque_keys.edx.keys import CourseKey
 from rest_framework import serializers
 
-from lms.djangoapps.courseware.utils import verified_upgrade_deadline_link
+from lms.djangoapps.courseware.utils import track_selection_upgrade_link
 from openedx.core.djangoapps.courseware_api.utils import serialize_upgrade_info
 from openedx.features.content_type_gating.models import ContentTypeGatingConfig
 from openedx.features.course_experience.utils import dates_banner_should_display
@@ -48,7 +48,7 @@ class DatesBannerSerializer(ReadOnlySerializer):
                 user=request.user,
                 course_key=course_key,
             )
-            info['verified_upgrade_link'] = verified_upgrade_deadline_link(request.user, course_id=course_key)
+            info['verified_upgrade_link'] = track_selection_upgrade_link(request.user, course_id=course_key)
         return info
 
 

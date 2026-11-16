@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from django.conf import settings
 from django.http import HttpResponse, HttpResponseBadRequest
+from django.urls import reverse
 from edx_rest_api_client.client import OAuthAPIClient
 from oauth2_provider.models import Application
 from pytz import utc  # lint-amnesty, pylint: disable=wrong-import-order
@@ -17,6 +18,11 @@ from xmodule.partitions.partitions import \
 from xmodule.partitions.partitions_service import PartitionService  # lint-amnesty, pylint: disable=wrong-import-order
 
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.toggles import (
+    COURSE_MODES_TRACK_SELECTION_OPTIONS,
+    course_modes_mfe_track_selection_is_active,
+)
+from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.commerce.utils import EcommerceService
 from lms.djangoapps.courseware.config import ENABLE_NEW_FINANCIAL_ASSISTANCE_FLOW
 from lms.djangoapps.courseware.constants import (
@@ -25,6 +31,7 @@ from lms.djangoapps.courseware.constants import (
     UNEXPECTED_ERROR_IS_ELIGIBLE
 )
 from lms.djangoapps.courseware.models import FinancialAssistanceConfiguration
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.waffle_utils.models import WaffleFlagCourseOverrideModel
 
 log = logging.getLogger(__name__)
@@ -51,6 +58,30 @@ def verified_upgrade_deadline_link(user, course=None, course_id=None):
     if course is not None:
         course_id = course.id
     return EcommerceService().upgrade_url(user, course_id)
+
+
+def track_selection_upgrade_link(user, course=None, course_id=None):
+    """
+    Return the link of an upgrade button that opens the track selection page with the upgrade intent.
+
+    With the upgrade intent, the page leaves Audit out, so the learner chooses between buying the
+    certificate and the other offers of the course, such as a subscription. The page is used only when
+    the course_modes.mfe_track_selection and course_modes.track_selection_options flags are on for the
+    course, and while the learner can enroll in it: the page sends a learner who cannot to the dashboard,
+    even an enrolled one. Otherwise, this is the checkout link of verified_upgrade_deadline_link.
+
+    One of ``course`` or ``course_id`` must be supplied. If both are specified, ``course`` will take priority.
+    """
+    course_key = course.id if course is not None else course_id
+    if (
+        course_modes_mfe_track_selection_is_active(course_key)
+        and COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(course_key)
+    ):
+        courselike = course if course is not None else CourseOverview.get_from_id(course_key)
+        if not CourseEnrollment.is_enrollment_closed(user, courselike):
+            track_selection_path = reverse('course_modes_choose', kwargs={'course_id': str(course_key)})
+            return f'{settings.LMS_ROOT_URL}{track_selection_path}?intent=upgrade'
+    return verified_upgrade_deadline_link(user, course=course, course_id=course_id)
 
 
 def is_mode_upsellable(user, enrollment, course=None):
