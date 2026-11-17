@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from urllib.parse import urlencode, urljoin
 
 from django.conf import settings
+from django.http import QueryDict
 from django.urls import reverse
 from django.utils import timezone
 from opaque_keys.edx.keys import CourseKey
@@ -13,9 +14,11 @@ from rest_framework import serializers
 from openedx_filters.learning.filters import CourseEnrollmentAPIRenderStarted, CourseRunAPIRenderStarted
 
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.toggles import COURSE_MODES_TRACK_SELECTION_OPTIONS
 from openedx.features.course_experience import course_home_url
 from xmodule.data import CertificatesDisplayBehaviors
 from lms.djangoapps.learner_home.utils import course_progress_url
+from openedx.features.course_experience.url_helpers import get_learning_mfe_home_url
 
 
 class LiteralField(serializers.Field):
@@ -125,14 +128,24 @@ class CourseRunSerializer(serializers.Serializer):
         return reverse("course_run_refund_status", args=[instance.course_id])
 
     def get_upgradeUrl(self, instance):
-        """If the enrollment mode has a verified upgrade through ecommerce, return the link"""
+        """
+        If the enrollment mode has a verified upgrade, return the link.
+
+        With the course_modes.track_selection_options flag, the link is the track selection page of the
+        learning MFE, marked as an upgrade. Otherwise it is the ecommerce payment page.
+        """
         ecommerce_payment_page = self.context.get("ecommerce_payment_page")
         verified_sku = (
             self.context.get("course_mode_info", {})
             .get(instance.course_id, {})
             .get("verified_sku")
         )
-
+        if verified_sku and COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(instance.course_id):
+            return get_learning_mfe_home_url(
+                course_key=instance.course_id,
+                url_fragment="track-selection",
+                params=QueryDict("intent=upgrade"),
+            )
         if ecommerce_payment_page and verified_sku:
             query_params = {
                 'sku': verified_sku,

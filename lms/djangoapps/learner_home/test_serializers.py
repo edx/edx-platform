@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from itertools import product
 from random import randint
 from unittest import mock
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import ddt
@@ -17,6 +18,8 @@ from opaque_keys.edx.keys import CourseKey
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
+from common.djangoapps.course_modes.toggles import COURSE_MODES_TRACK_SELECTION_OPTIONS
+from edx_toggles.toggles.testutils import override_waffle_flag
 from common.djangoapps.entitlements.tests.factories import CourseEntitlementFactory
 from common.djangoapps.student.tests.factories import (
     CourseEnrollmentFactory,
@@ -227,6 +230,34 @@ class TestCourseRunSerializer(LearnerDashboardBaseTest):
 
         # Then courseUuid is None, which is allowed
         self.assertIsNone(output_data["courseUuid"])
+
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_upgrade_url_track_selection_flag_enabled(self):
+        input_data = self.create_test_enrollment()
+        input_context = self.create_test_context(input_data.course.id)
+
+        output_data = CourseRunSerializer(input_data, context=input_context).data
+
+        self.assertEqual(
+            output_data["upgradeUrl"],
+            f"{settings.LEARNING_MICROFRONTEND_URL}/course/{input_data.course.id}/track-selection?intent=upgrade",
+        )
+
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=False)
+    def test_upgrade_url_track_selection_flag_disabled(self):
+        input_data = self.create_test_enrollment()
+        input_context = self.create_test_context(input_data.course.id)
+
+        output_data = CourseRunSerializer(input_data, context=input_context).data
+
+        self.assertEqual(
+            output_data["upgradeUrl"],
+            f"{input_context['ecommerce_payment_page']}?"
+            + urlencode({
+                "sku": input_context["course_mode_info"][input_data.course.id]["verified_sku"],
+                "course_run_key": str(input_data.course.id),
+            }),
+        )
 
     def test_missing_resume_url(self):
         # Given a course run

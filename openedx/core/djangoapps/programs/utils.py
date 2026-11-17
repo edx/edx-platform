@@ -11,6 +11,7 @@ from dateutil.parser import parse
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.cache import cache
+from django.http import QueryDict
 from django.urls import reverse
 from django.utils.functional import cached_property
 from opaque_keys.edx.keys import CourseKey
@@ -19,6 +20,7 @@ from requests.exceptions import RequestException
 
 from common.djangoapps.course_modes.api import get_paid_modes_for_course
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.toggles import COURSE_MODES_TRACK_SELECTION_OPTIONS
 from common.djangoapps.entitlements.api import get_active_entitlement_list_for_user
 from common.djangoapps.entitlements.models import CourseEntitlement
 from common.djangoapps.student.models import CourseEnrollment
@@ -40,6 +42,7 @@ from openedx.core.djangoapps.enrollments.api import get_enrollments
 from openedx.core.djangoapps.enrollments.permissions import ENROLL_IN_COURSE
 from openedx.core.djangoapps.programs import ALWAYS_CALCULATE_PROGRAM_PRICE_AS_ANONYMOUS_USER
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
+from openedx.features.course_experience.url_helpers import get_learning_mfe_home_url
 from xmodule.modulestore.django import modulestore
 
 # The datetime module's strftime() methods require a year >= 1900.
@@ -626,10 +629,17 @@ class ProgramDataExtender:
         is_upgrade_required = is_mode_mismatch and CourseEnrollment.is_enrolled(self.user, self.course_run_key)
 
         if is_upgrade_required:
-            # Requires that the ecommerce service be in use.
             required_mode = CourseMode.mode_for_course(self.course_run_key, required_mode_slug)
-            ecommerce = EcommerceService()
             sku = getattr(required_mode, "sku", None)
+            if sku and COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(self.course_run_key):
+                run_mode["upgrade_url"] = get_learning_mfe_home_url(
+                    course_key=self.course_run_key,
+                    url_fragment="track-selection",
+                    params=QueryDict("intent=upgrade"),
+                )
+                return
+            # Requires that the ecommerce service be in use.
+            ecommerce = EcommerceService()
             if ecommerce.is_enabled(self.user) and sku:
                 run_mode["upgrade_url"] = ecommerce.get_checkout_page_url(
                     required_mode.sku, course_run_keys=[self.course_run_key]
