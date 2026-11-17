@@ -68,7 +68,8 @@ def track_selection_upgrade_link(user, course=None, course_id=None):
     certificate and the other offers of the course, such as a subscription. The page is used only when
     the course_modes.mfe_track_selection and course_modes.track_selection_options flags are on for the
     course, and while the learner can enroll in it: the page sends a learner who cannot to the dashboard,
-    even an enrolled one. Otherwise, this is the checkout link of verified_upgrade_deadline_link.
+    even an enrolled one. Otherwise, or if the course can't be found, this is the checkout link of
+    verified_upgrade_deadline_link.
 
     One of ``course`` or ``course_id`` must be supplied. If both are specified, ``course`` will take priority.
     """
@@ -77,8 +78,11 @@ def track_selection_upgrade_link(user, course=None, course_id=None):
         course_modes_mfe_track_selection_is_active(course_key)
         and COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(course_key)
     ):
-        courselike = course if course is not None else CourseOverview.get_from_id(course_key)
-        if not CourseEnrollment.is_enrollment_closed(user, courselike):
+        try:
+            courselike = course if course is not None else CourseOverview.get_from_id(course_key)
+        except CourseOverview.DoesNotExist:
+            courselike = None
+        if courselike is not None and not CourseEnrollment.is_enrollment_closed(user, courselike):
             track_selection_path = reverse('course_modes_choose', kwargs={'course_id': str(course_key)})
             return f'{settings.LMS_ROOT_URL}{track_selection_path}?intent=upgrade'
     return verified_upgrade_deadline_link(user, course=course, course_id=course_id)

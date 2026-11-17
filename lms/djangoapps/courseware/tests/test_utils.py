@@ -13,6 +13,7 @@ from django.utils import timezone
 from edx_rest_api_client.client import OAuthAPIClient
 from edx_toggles.toggles.testutils import override_waffle_flag
 from oauth2_provider.models import Application
+from opaque_keys.edx.locator import CourseLocator
 from requests.models import Response
 from rest_framework import status
 
@@ -31,6 +32,7 @@ from lms.djangoapps.courseware.utils import (
     track_selection_upgrade_link,
     verified_upgrade_deadline_link,
 )
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 
 
@@ -108,6 +110,26 @@ class TestTrackSelectionUpgradeLink(TestCase):
         link = track_selection_upgrade_link(self.user, course=course)
 
         assert link == verified_upgrade_deadline_link(self.user, course=course)
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_old_style_course_key(self):
+        """The track selection page isn't used for old-style course keys, so they keep checkout."""
+        course = CourseOverviewFactory(id=CourseLocator('edX', 'old', 'run', deprecated=True))
+
+        link = track_selection_upgrade_link(self.user, course=course)
+
+        assert link == verified_upgrade_deadline_link(self.user, course=course)
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_course_not_found(self):
+        """A course given by a key that can't be found keeps the checkout link."""
+        with patch.object(CourseOverview, 'get_from_id', side_effect=CourseOverview.DoesNotExist) as get_from_id:
+            link = track_selection_upgrade_link(self.user, course_id=self.course.id)
+
+        get_from_id.assert_called_once_with(self.course.id)
+        assert link == verified_upgrade_deadline_link(self.user, course_id=self.course.id)
 
 
 @ddt.ddt
