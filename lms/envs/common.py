@@ -3025,6 +3025,21 @@ ECOMMERCE_API_TIMEOUT = 5
 ECOMMERCE_ORDERS_API_CACHE_TIMEOUT = 3600
 ECOMMERCE_SERVICE_WORKER_USERNAME = 'ecommerce_worker'
 
+# A la carte checkout, used by the checkout redirect view (lms/djangoapps/commerce/alacarte_checkout.py) while the
+# commerce.redirect_to_alacarte_checkout flag is on.
+# The a la carte checkout page. When empty, LEARNER_HOME_SITE_URL + /aca-checkout.
+ALACARTE_CHECKOUT_URL = ''
+# The course modes the a la carte checkout sells.
+ALACARTE_CHECKOUT_COURSE_MODES = ['verified']
+# Whether program purchases go to the a la carte checkout (as program_uuid).
+ALACARTE_CHECKOUT_PROGRAMS_ENABLED = False
+# Whether discount codes go to the a la carte checkout (as discount_code).
+ALACARTE_CHECKOUT_FORWARD_DISCOUNT_CODES = True
+# Where purchases the a la carte checkout doesn't take go. When empty, the ecommerce checkout, as before.
+ALACARTE_CHECKOUT_FALLBACK_URL = ''
+# Per-IP rate limit of the checkout redirect view.
+ALACARTE_CHECKOUT_RATE_LIMIT = '300/m'
+
 ############## Settings for JWT token handling ##############
 TOKEN_SIGNING = {
     'JWT_ISSUER': 'http://127.0.0.1:8740',

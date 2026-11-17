@@ -11,6 +11,7 @@ from django.conf import settings
 from django.test import TestCase
 from django.test.client import RequestFactory
 from django.test.utils import override_settings
+from edx_toggles.toggles.testutils import override_waffle_flag
 from opaque_keys.edx.locator import CourseLocator
 from waffle.testutils import override_switch
 
@@ -19,7 +20,9 @@ from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import TEST_PASSWORD, UserFactory
 from lms.djangoapps.commerce.models import CommerceConfiguration
+from lms.djangoapps.commerce.toggles import REDIRECT_TO_ALACARTE_CHECKOUT
 from lms.djangoapps.commerce.utils import EcommerceService, refund_entitlement, refund_seat
+from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from openedx.core.lib.log_utils import audit_log
 from xmodule.modulestore.tests.django_utils import \
@@ -183,6 +186,82 @@ class EcommerceServiceTests(TestCase):
         )
 
         assert url == expected_url
+
+
+@skip_unless_lms
+@ddt.ddt
+@override_settings(ECOMMERCE_PUBLIC_URL_ROOT='http://ecommerce_url')
+class EcommerceServiceAlacarteCheckoutTests(TestCase):
+    """Tests of the purchase links of the EcommerceService helper class with the a la carte checkout flag."""
+
+    COURSE_RUN_KEY = 'course-v1:edX+DemoX+1T2026'
+
+    def setUp(self):
+        super().setUp()
+        self.user = UserFactory.create()
+        update_commerce_config(enabled=True)
+        self.redirect_url = f'{settings.LMS_ROOT_URL}/commerce/checkout/'
+
+    @ddt.data(
+        (True, f'{settings.LMS_ROOT_URL}/commerce/checkout/'),
+        (False, 'http://ecommerce_url/test_basket/add/'),
+    )
+    @ddt.unpack
+    def test_payment_page_url(self, flag_active, expected_url):
+        """The base of the browser-built purchase links is the checkout redirect view while the flag is on."""
+        with override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=flag_active):
+            assert EcommerceService().payment_page_url() == expected_url
+
+    @ddt.data(
+        (['SKU1'], {'course_run_keys': [COURSE_RUN_KEY]}, {'sku': ['SKU1'], 'course_run_key': [COURSE_RUN_KEY]}),
+        (['SKU1'], {}, {'sku': ['SKU1']}),
+        (
+            ['SKU1'],
+            {'catalog': 'abc', 'course_run_keys': [COURSE_RUN_KEY]},
+            {'sku': ['SKU1'], 'catalog': 'abc', 'course_run_key': [COURSE_RUN_KEY]},
+        ),
+    )
+    @ddt.unpack
+    @override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=True)
+    def test_get_checkout_page_url(self, skus, kwargs, expected_query):
+        """Server-built purchase links point at the checkout redirect view and carry the course run keys."""
+        url = EcommerceService().get_checkout_page_url(*skus, **kwargs)
+
+        assert url == f'{self.redirect_url}?{urlencode(expected_query, doseq=True)}'
+
+    @override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=True)
+    def test_get_checkout_page_url_program(self):
+        """A program purchase link keeps its bundle parameter."""
+        url = EcommerceService().get_checkout_page_url('SKU1', 'SKU2', program_uuid='1234')
+
+        assert url == f'{self.redirect_url}?sku=SKU1&sku=SKU2&bundle=1234'
+
+    def test_get_checkout_page_url_flag_off(self):
+        """With the flag off, the link is the ecommerce checkout link, without the course run keys, as before."""
+        url = EcommerceService().get_checkout_page_url('SKU1', course_run_keys=[self.COURSE_RUN_KEY])
+
+        assert url == 'http://ecommerce_url/test_basket/add/?sku=SKU1'
+
+    @override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=True)
+    def test_other_ecommerce_pages_unchanged(self):
+        """Only the checkout links change. The order dashboard and receipt pages keep their ecommerce links."""
+        ecommerce_service = EcommerceService()
+
+        assert ecommerce_service.get_order_dashboard_url() == 'http://ecommerce_url/dashboard/orders/'
+        assert ecommerce_service.get_receipt_page_url('ORDER1') == (
+            'http://ecommerce_url/checkout/receipt/?order_number=ORDER1'
+        )
+
+    @override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=True)
+    def test_upgrade_url(self):
+        """The upgrade link of a course points at the checkout redirect view with its SKU and course run key."""
+        course_key = CourseLocator.from_string(self.COURSE_RUN_KEY)
+        CourseOverviewFactory(id=course_key)
+        CourseModeFactory(course_id=course_key, mode_slug=CourseMode.VERIFIED, sku='VERIFIEDSKU')
+
+        url = EcommerceService().upgrade_url(self.user, course_key)
+
+        assert url == f"{self.redirect_url}?{urlencode({'sku': 'VERIFIEDSKU', 'course_run_key': self.COURSE_RUN_KEY})}"
 
 
 @ddt.ddt
