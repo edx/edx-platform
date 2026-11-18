@@ -17,6 +17,7 @@ from openedx.core.djangoapps.enrollments.errors import (
     CourseEnrollmentClosedError,
     CourseEnrollmentExistsError,
     CourseEnrollmentFullError,
+    InvalidEnrollmentAttribute,
     UserNotFoundError
 )
 from openedx.core.djangoapps.enrollments.serializers import CourseEnrollmentSerializer
@@ -302,6 +303,41 @@ class EnrollmentDataTest(ModuleStoreTestCase):
         data.add_or_update_enrollment_attr(self.user.username, str(self.course.id), enrollment_attributes)
         enrollment_attr = data.get_enrollment_attributes(self.user.username, str(self.course.id))
         assert enrollment_attr[0] == enrollment_attributes[0]
+
+    def test_upsert_enrollment_attributes(self):
+        """The given attributes are added or replaced, and the other attributes of the enrollment are kept."""
+        course_id = str(self.course.id)
+        data.create_course_enrollment(self.user.username, course_id, 'honor', True)
+        experiment = {'namespace': 'experiment', 'name': 'variant', 'value': 'a'}
+        old_tag = {'namespace': 'subscription', 'name': 'granted_by', 'value': 'sub-old'}
+        data.add_or_update_enrollment_attr(self.user.username, course_id, [experiment, old_tag])
+
+        new_tag = {'namespace': 'subscription', 'name': 'granted_by', 'value': 'sub-new'}
+        provider = {'namespace': 'credit', 'name': 'provider_id', 'value': 'hogwarts'}
+        data.upsert_enrollment_attributes(self.user.username, course_id, [new_tag, provider])
+
+        attributes = data.get_enrollment_attributes(self.user.username, course_id)
+        assert sorted(attributes, key=lambda attribute: attribute['namespace']) == [provider, experiment, new_tag]
+
+    def test_upsert_enrollment_attributes_without_an_enrollment(self):
+        """Nothing is saved when the user has no enrollment in the course."""
+        tag = {'namespace': 'subscription', 'name': 'granted_by', 'value': 'sub-1'}
+
+        data.upsert_enrollment_attributes(self.user.username, str(self.course.id), [tag])
+
+        assert data.get_enrollment_attributes(self.user.username, str(self.course.id)) == []
+
+    def test_upsert_enrollment_attributes_with_a_missing_key(self):
+        """An attribute without a value is rejected, and nothing is saved."""
+        course_id = str(self.course.id)
+        data.create_course_enrollment(self.user.username, course_id, 'honor', True)
+
+        with pytest.raises(InvalidEnrollmentAttribute):
+            data.upsert_enrollment_attributes(
+                self.user.username, course_id, [{'namespace': 'subscription', 'name': 'granted_by'}]
+            )
+
+        assert data.get_enrollment_attributes(self.user.username, course_id) == []
 
     def test_non_existent_course(self):
         with pytest.raises(CourseNotFoundError):

@@ -111,6 +111,21 @@ def add_or_update_enrollment_attr(user_id, course_id, attributes):
 
 
 # pylint: disable=unused-argument
+def upsert_enrollment_attributes(user_id, course_id, attributes):
+    """Add the attributes to the enrollment attribute array, replacing the ones with the same namespace and name"""
+    for attribute in attributes:
+        _ENROLLMENT_ATTRIBUTES[:] = [
+            existing for existing in _ENROLLMENT_ATTRIBUTES
+            if (existing['namespace'], existing['name']) != (attribute['namespace'], attribute['name'])
+        ]
+        _ENROLLMENT_ATTRIBUTES.append({
+            'namespace': attribute['namespace'],
+            'name': attribute['name'],
+            'value': attribute['value']
+        })
+
+
+# pylint: disable=unused-argument
 def get_enrollment_attributes(user_id, course_id):
     """Retrieve enrollment attribute array"""
     return _ENROLLMENT_ATTRIBUTES
