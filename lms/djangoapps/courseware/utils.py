@@ -31,7 +31,7 @@ from lms.djangoapps.courseware.constants import (
     UNEXPECTED_ERROR_IS_ELIGIBLE
 )
 from lms.djangoapps.courseware.models import FinancialAssistanceConfiguration
-from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from openedx.core.djangoapps.content.course_overviews.api import get_course_overview_or_none
 from openedx.core.djangoapps.waffle_utils.models import WaffleFlagCourseOverrideModel
 
 log = logging.getLogger(__name__)
@@ -78,10 +78,7 @@ def track_selection_upgrade_link(user, course=None, course_id=None):
         course_modes_mfe_track_selection_is_active(course_key)
         and COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(course_key)
     ):
-        try:
-            courselike = course if course is not None else CourseOverview.get_from_id(course_key)
-        except CourseOverview.DoesNotExist:
-            courselike = None
+        courselike = course if course is not None else get_course_overview_or_none(course_key)
         if courselike is not None and not CourseEnrollment.is_enrollment_closed(user, courselike):
             track_selection_path = reverse('course_modes_choose', kwargs={'course_id': str(course_key)})
             return f'{settings.LMS_ROOT_URL}{track_selection_path}?intent=upgrade'
