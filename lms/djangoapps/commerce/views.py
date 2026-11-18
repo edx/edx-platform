@@ -42,6 +42,9 @@ class CheckoutRedirectView(View):
     http_method_names = ['get', 'head']
 
     def get(self, request):
+        """
+        Redirect the learner to the checkout that takes this purchase.
+        """
         try:
             route = route_checkout(request.GET)
         except Exception:  # pylint: disable=broad-except
