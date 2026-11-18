@@ -18,6 +18,10 @@ from opaque_keys.edx.keys import UsageKey
 from cms.djangoapps.contentstore.outlines import update_outline_from_modulestore
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
+from common.djangoapps.course_modes.toggles import (
+    COURSE_MODES_MFE_TRACK_SELECTION,
+    COURSE_MODES_TRACK_SELECTION_OPTIONS,
+)
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.roles import CourseInstructorRole
 from common.djangoapps.student.tests.factories import UserFactory
@@ -228,6 +232,20 @@ class OutlineTabTestViews(BaseCourseHomeTests):
         # Just a quick spot check that the dictionary looks like what we expect
         deadline = enrollment.created + MIN_DURATION
         assert response.data['access_expiration']['expiration_date'] == deadline
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_upgrade_links_open_track_selection(self):
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        CourseDurationLimitConfig.objects.create(enabled=True, enabled_as_of=datetime(2018, 1, 1))
+        track_selection_url = f'{settings.LMS_ROOT_URL}/course_modes/choose/{self.course.id}/?intent=upgrade'
+
+        response = self.client.get(self.url)
+
+        assert response.data['dates_banner_info']['verified_upgrade_link'] == track_selection_url
+        assert response.data['access_expiration']['upgrade_url'] == track_selection_url
+        # The Buy buttons use the verified mode, and keep the checkout link
+        assert response.data['verified_mode']['upgrade_url'] == '/dashboard'
 
     @override_waffle_flag(ENABLE_COURSE_GOALS, active=True)
     def test_post_course_goal(self):

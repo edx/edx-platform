@@ -7,12 +7,20 @@ from datetime import date, timedelta
 from unittest.mock import patch
 
 import ddt
+from django.conf import settings
 from django.test import TestCase
+from django.utils import timezone
 from edx_rest_api_client.client import OAuthAPIClient
+from edx_toggles.toggles.testutils import override_waffle_flag
 from oauth2_provider.models import Application
+from opaque_keys.edx.locator import CourseLocator
 from requests.models import Response
 from rest_framework import status
 
+from common.djangoapps.course_modes.toggles import (
+    COURSE_MODES_MFE_TRACK_SELECTION,
+    COURSE_MODES_TRACK_SELECTION_OPTIONS,
+)
 from common.djangoapps.student.tests.factories import GlobalStaffFactory, UserFactory
 from lms.djangoapps.courseware.constants import UNEXPECTED_ERROR_IS_ELIGIBLE
 from lms.djangoapps.courseware.tests.factories import FinancialAssistanceConfigurationFactory
@@ -21,7 +29,11 @@ from lms.djangoapps.courseware.utils import (
     create_financial_assistance_application,
     get_financial_assistance_application_status,
     is_eligible_for_financial_aid,
+    track_selection_upgrade_link,
+    verified_upgrade_deadline_link,
 )
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 
 
 @ddt.ddt
@@ -52,6 +64,72 @@ class TestAccessUtils(TestCase):
             instance.has_user.return_value = is_beta_user
             adjusted_date = adjust_start_date(user, days_early_for_beta, start, course_key)
             self.assertEqual(expected, adjusted_date)
+
+
+@ddt.ddt
+class TestTrackSelectionUpgradeLink(TestCase):
+    """Tests for track_selection_upgrade_link."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = UserFactory()
+        self.course = CourseOverviewFactory()
+        self.track_selection_url = f'{settings.LMS_ROOT_URL}/course_modes/choose/{self.course.id}/?intent=upgrade'
+
+    @ddt.data(
+        # mfe_track_selection, track_selection_options, opens_track_selection
+        (True, True, True),
+        (True, False, False),
+        (False, True, False),
+        (False, False, False),
+    )
+    @ddt.unpack
+    def test_flags(self, mfe_track_selection, track_selection_options, opens_track_selection):
+        """The link opens the track selection page only when both of its flags are on."""
+        with override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=mfe_track_selection):
+            with override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=track_selection_options):
+                link = track_selection_upgrade_link(self.user, course=self.course)
+
+        if opens_track_selection:
+            assert link == self.track_selection_url
+        else:
+            assert link == verified_upgrade_deadline_link(self.user, course=self.course)
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_course_id(self):
+        """The course can be given by its key."""
+        assert track_selection_upgrade_link(self.user, course_id=self.course.id) == self.track_selection_url
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_enrollment_closed(self):
+        """The track selection page sends a learner who cannot enroll to the dashboard, so they keep checkout."""
+        course = CourseOverviewFactory(enrollment_end=timezone.now() - timedelta(days=1))
+
+        link = track_selection_upgrade_link(self.user, course=course)
+
+        assert link == verified_upgrade_deadline_link(self.user, course=course)
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_old_style_course_key(self):
+        """The track selection page isn't used for old-style course keys, so they keep checkout."""
+        course = CourseOverviewFactory(id=CourseLocator('edX', 'old', 'run', deprecated=True))
+
+        link = track_selection_upgrade_link(self.user, course=course)
+
+        assert link == verified_upgrade_deadline_link(self.user, course=course)
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_course_not_found(self):
+        """A course given by a key that can't be found keeps the checkout link."""
+        with patch.object(CourseOverview, 'get_from_id', side_effect=CourseOverview.DoesNotExist) as get_from_id:
+            link = track_selection_upgrade_link(self.user, course_id=self.course.id)
+
+        get_from_id.assert_called_once_with(self.course.id)
+        assert link == verified_upgrade_deadline_link(self.user, course_id=self.course.id)
 
 
 @ddt.ddt
