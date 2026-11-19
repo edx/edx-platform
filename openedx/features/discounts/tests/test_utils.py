@@ -4,7 +4,6 @@ Tests of the openedx.features.discounts.utils module.
 from unittest.mock import patch, Mock
 
 import ddt
-from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.test import TestCase, override_settings
 from django.utils.translation import override as override_lang
@@ -14,7 +13,6 @@ from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import UserFactory
-from lms.djangoapps.commerce.toggles import REDIRECT_TO_ALACARTE_CHECKOUT
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 from openedx.features.discounts.applicability import (
     DISCOUNT_APPLICABILITY_FLAG,
@@ -62,7 +60,6 @@ class TestStrikeoutPrice(TestCase):
         assert has_discount
 
 
-@ddt.ddt
 @override_waffle_flag(DISCOUNT_APPLICABILITY_FLAG, active=True)
 class TestOfferData(TestCase):
     """
@@ -106,26 +103,10 @@ class TestOfferData(TestCase):
     def test_no_discount(self, _mock):
         assert utils.generate_offer_data(self.user, self.overview) is None
 
-    @ddt.data(
-        # the link points at the checkout redirect view: it carries the code
-        (True, True, '/commerce/checkout/?sku=SKU1', '/commerce/checkout/?sku=SKU1&code=EDXWELCOME'),
-        # codes aren't forwarded to the a la carte checkout
-        (True, False, '/commerce/checkout/?sku=SKU1', '/commerce/checkout/?sku=SKU1'),
-        # the flag is off: the ecommerce checkout link is unchanged
-        (False, True, 'http://ecommerce/basket/add/?sku=SKU1', 'http://ecommerce/basket/add/?sku=SKU1'),
-        # the learner can't buy through the ecommerce service: the dashboard link is unchanged
-        (True, True, '/dashboard', '/dashboard'),
-    )
-    @ddt.unpack
-    def test_alacarte_checkout_upgrade_url(self, flag_active, forward_codes, upgrade_url, expected_upgrade_url):
-        """The offer link carries the discount code when it points at the checkout redirect view."""
-        if upgrade_url.startswith('/commerce/'):
-            upgrade_url = f'{settings.LMS_ROOT_URL}{upgrade_url}'
-            expected_upgrade_url = f'{settings.LMS_ROOT_URL}{expected_upgrade_url}'
+    @patch.object(utils, 'verified_upgrade_deadline_link', return_value='https://lms.example.com/upgrade')
+    def test_upgrade_url_gets_discount_code(self, mock_upgrade_link):
+        """The upgrade link gets the discount code, which it carries while it points at the a la carte checkout."""
+        offer = utils.generate_offer_data(self.user, self.overview)
 
-        with override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=flag_active):
-            with override_settings(ALACARTE_CHECKOUT_FORWARD_DISCOUNT_CODES=forward_codes):
-                with patch.object(utils, 'verified_upgrade_deadline_link', return_value=upgrade_url):
-                    offer = utils.generate_offer_data(self.user, self.overview)
-
-        assert offer['upgrade_url'] == expected_upgrade_url
+        mock_upgrade_link.assert_called_once_with(self.user, course=self.overview, discount_code='EDXWELCOME')
+        assert offer['upgrade_url'] == 'https://lms.example.com/upgrade'

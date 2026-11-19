@@ -3,7 +3,8 @@
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from common.djangoapps.student.tests.factories import TEST_PASSWORD, UserFactory
@@ -58,16 +59,42 @@ class CheckoutRedirectViewTests(TestCase):
         assert 'sku%3DSKU1' in response['Location']
         mock_route_checkout.assert_not_called()
 
+    @override_settings(
+        ALACARTE_CHECKOUT_RATE_LIMIT='2/m',
+        # the rate limit counts in the default cache, which is a DummyCache in tests
+        CACHES={
+            'default': {
+                'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                'LOCATION': 'checkout_redirect',
+            }
+        },
+    )
+    @patch('lms.djangoapps.commerce.views.route_checkout', return_value=Route(CHECKOUT_URL, 'course'))
+    def test_rate_limit(self, _mock_route_checkout):
+        """A client over the per-IP rate limit gets the rate limit page."""
+        cache.clear()
+
+        for _ in range(2):
+            assert self.client.get(self.url, {'sku': 'SKU1'}).status_code == 302
+        assert self.client.get(self.url, {'sku': 'SKU1'}).status_code == 429
+
+    @patch('lms.djangoapps.commerce.views.log')
     @patch('lms.djangoapps.commerce.views.set_custom_attribute')
     @patch('lms.djangoapps.commerce.views.unsupported_url', return_value='https://help.example.com/buy')
     @patch('lms.djangoapps.commerce.views.route_checkout', side_effect=Exception('unexpected'))
-    def test_error(self, _mock_route_checkout, _mock_unsupported_url, mock_set_custom_attribute):
-        """The view never shows an error page: an unexpected error sends the learner to the fallback."""
-        response = self.client.get(self.url, {'sku': 'SKU1'})
+    def test_error(self, _mock_route_checkout, _mock_unsupported_url, mock_set_custom_attribute, mock_log):
+        """The view shows no error page: an unexpected error sends the learner to the fallback."""
+        response = self.client.get(
+            self.url, {'sku': 'SKU1', 'course_run_key': 'course-v1:edX+DemoX+1T2026', 'code': 'SECRETCODE'}
+        )
 
         assert response.status_code == 302
         assert response['Location'] == 'https://help.example.com/buy'
         mock_set_custom_attribute.assert_called_once_with('alacarte_checkout_route', 'error')
+        # the log names the product, but not the discount code
+        mock_log.exception.assert_called_once_with(
+            'Failed to route the checkout link %s', {'sku': ['SKU1'], 'course_run_key': ['course-v1:edX+DemoX+1T2026']}
+        )
 
     @patch('lms.djangoapps.commerce.views.unsupported_url', side_effect=Exception('unexpected'))
     @patch('lms.djangoapps.commerce.views.route_checkout', side_effect=Exception('unexpected'))

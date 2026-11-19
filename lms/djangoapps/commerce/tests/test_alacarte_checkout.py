@@ -1,7 +1,7 @@
 """Tests of the routing of LMS purchase links to the a la carte checkout."""
 
 from datetime import timedelta
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 from urllib.parse import urlencode
 
 import ddt
@@ -27,6 +27,7 @@ COURSE_RUN_KEY = 'course-v1:edX+DemoX+1T2026'
 COURSE_UUID = '11111111-2222-3333-4444-555555555555'
 CHECKOUT_URL = 'https://learner-home.example.com/aca-checkout'
 LEGACY_CHECKOUT_URL = 'http://ecommerce_url/basket/add/'
+MAX_CODE_LENGTH = alacarte_checkout.MAX_DISCOUNT_CODE_LENGTH
 
 
 def alacarte_url(**params):
@@ -120,10 +121,16 @@ class RouteCheckoutTests(TestCase):
 
         assert route.url == alacarte_url(course_uuid=COURSE_UUID, course_run_key=COURSE_RUN_KEY, **expected_params)
 
-    def test_long_discount_code(self):
-        route = self.route({'course_run_key': COURSE_RUN_KEY, 'code': 'A' * 100})
+    @ddt.data(
+        ('A' * MAX_CODE_LENGTH, {'discount_code': 'A' * MAX_CODE_LENGTH}),
+        # a longer code is dropped, not cut: a cut code would be another code
+        ('A' * (MAX_CODE_LENGTH + 1), {}),
+    )
+    @ddt.unpack
+    def test_long_discount_code(self, code, expected_params):
+        route = self.route({'course_run_key': COURSE_RUN_KEY, 'code': code})
 
-        assert route.url == alacarte_url(course_uuid=COURSE_UUID, course_run_key=COURSE_RUN_KEY, discount_code='A' * 64)
+        assert route.url == alacarte_url(course_uuid=COURSE_UUID, course_run_key=COURSE_RUN_KEY, **expected_params)
 
     def test_utm_parameters(self):
         route = self.route({'course_run_key': COURSE_RUN_KEY, 'utm_source': 'email', 'other': 'dropped'})
@@ -145,6 +152,24 @@ class RouteCheckoutTests(TestCase):
     def test_unsupported(self, query, reason):
         """Purchases the a la carte checkout doesn't take go to the ecommerce checkout while no fallback page is set."""
         assert self.route(query) == self.legacy_route(query, reason)
+
+    def test_sku_of_another_course_run(self):
+        """A link with the SKU of one course run and the key of another doesn't say which one the learner wants."""
+        create_course_modes('course-v1:edX+Other+1T2026', {'mode_slug': CourseMode.VERIFIED, 'sku': 'OTHERSKU'})
+        query = {'sku': 'OTHERSKU', 'course_run_key': COURSE_RUN_KEY}
+
+        assert self.route(query) == self.legacy_route(query, 'sku_mismatch')
+
+    def test_sku_lookup_is_cached(self):
+        """The SKU columns have no index, so the course run of a SKU is looked up once."""
+        course_key = CourseKey.from_string(COURSE_RUN_KEY)
+        get_course_key_for_sku = alacarte_checkout._get_course_key_for_sku  # pylint: disable=protected-access
+
+        assert get_course_key_for_sku('VERIFIEDSKU') == course_key
+        assert get_course_key_for_sku('UNKNOWNSKU') is None
+        with self.assertNumQueries(0):
+            assert get_course_key_for_sku('VERIFIEDSKU') == course_key
+            assert get_course_key_for_sku('UNKNOWNSKU') is None
 
     def test_professional(self):
         course_run_key = 'course-v1:edX+Professional+1T2026'
@@ -219,10 +244,14 @@ class CourseUuidTests(TestCase):
         mock_fetch.assert_called_once_with(self.course_key)
 
     @patch.object(alacarte_checkout, '_fetch_course_uuid', side_effect=Exception('Discovery is down'))
-    def test_error_is_not_cached(self, mock_fetch):
-        assert alacarte_checkout.get_cached_course_uuid(self.course_key) is None
-        assert alacarte_checkout.get_cached_course_uuid(self.course_key) is None
-        assert mock_fetch.call_count == 2
+    def test_error_is_cached_briefly(self, mock_fetch):
+        """During a Discovery outage, clicks go to the fallback without waiting for the timeout each time."""
+        with patch.object(TieredCache, 'set_all_tiers', wraps=TieredCache.set_all_tiers) as mock_set_all_tiers:
+            assert alacarte_checkout.get_cached_course_uuid(self.course_key) is None
+            assert alacarte_checkout.get_cached_course_uuid(self.course_key) is None
+
+        mock_fetch.assert_called_once_with(self.course_key)
+        mock_set_all_tiers.assert_called_once_with(ANY, '', alacarte_checkout.COURSE_UUID_ERROR_CACHE_TIMEOUT)
 
     def _mock_discovery(self, status_code, data=None):
         """Patch the catalog client to answer the course run request."""

@@ -22,8 +22,20 @@ def _get_rate_limit(group, request):  # pylint: disable=unused-argument
     return settings.ALACARTE_CHECKOUT_RATE_LIMIT
 
 
+def _describe_link(query):
+    """
+    Return the parameters of a checkout link that are safe to log: the product, not the discount code or the rest.
+    """
+    return {name: query.getlist(name) for name in ('sku', 'course_run_key', 'bundle') if name in query}
+
+
 @method_decorator(
-    ratelimit(key='openedx.core.djangoapps.util.ratelimit.real_ip', rate=_get_rate_limit, method=['GET', 'HEAD']),
+    ratelimit(
+        key='openedx.core.djangoapps.util.ratelimit.real_ip',
+        rate=_get_rate_limit,
+        method=['GET', 'HEAD'],
+        block=True,
+    ),
     name='dispatch',
 )
 @method_decorator(login_required, name='dispatch')
@@ -35,8 +47,9 @@ class CheckoutRedirectView(View):
     the parameters it used to send to the ecommerce checkout (sku, course_run_key, bundle, catalog, code). A learner
     who isn't signed in signs in first and comes back here.
 
-    The view always redirects, and never returns an error page: whatever goes wrong, the learner goes to the fallback
-    page, or to the ecommerce checkout while no fallback page is configured.
+    The view always redirects: whatever goes wrong, the learner goes to the fallback page, or to the ecommerce checkout
+    while no fallback page is configured. The one exception is a client over the per-IP rate limit
+    (ALACARTE_CHECKOUT_RATE_LIMIT), which gets the LMS rate limit page (429).
     """
 
     http_method_names = ['get', 'head']
@@ -48,7 +61,7 @@ class CheckoutRedirectView(View):
         try:
             route = route_checkout(request.GET)
         except Exception:  # pylint: disable=broad-except
-            log.exception('Failed to route the checkout link %s', request.GET.urlencode())
+            log.exception('Failed to route the checkout link %s', _describe_link(request.GET))
             route = Route(self._get_error_url(request), 'error')
 
         set_custom_attribute('alacarte_checkout_route', route.reason)
@@ -62,5 +75,5 @@ class CheckoutRedirectView(View):
         try:
             return unsupported_url(request.GET)
         except Exception:  # pylint: disable=broad-except
-            log.exception('Failed to get the fallback of the checkout link %s', request.GET.urlencode())
+            log.exception('Failed to get the fallback of the checkout link %s', _describe_link(request.GET))
             return reverse('dashboard')

@@ -6,9 +6,9 @@ redirect view (see EcommerceService.payment_page_url and get_checkout_page_url).
 calls route_checkout, which turns the parameters of the link into the a la carte checkout URL. That checkout needs
 the Discovery course UUID, which the LMS doesn't store, so it is looked up here, once per click and cached.
 
-Purchases the a la carte checkout doesn't take (enterprise, bulk, several products, modes other than
-ALACARTE_CHECKOUT_COURSE_MODES, programs while ALACARTE_CHECKOUT_PROGRAMS_ENABLED is off, courses Discovery doesn't
-know) go to ALACARTE_CHECKOUT_FALLBACK_URL, or to the ecommerce checkout while it isn't set.
+Purchases the a la carte checkout doesn't take (enterprise, bulk, several products, a SKU of another course run, modes
+other than ALACARTE_CHECKOUT_COURSE_MODES, programs while ALACARTE_CHECKOUT_PROGRAMS_ENABLED is off, courses Discovery
+doesn't know) go to ALACARTE_CHECKOUT_FALLBACK_URL, or to the ecommerce checkout while it isn't set.
 """
 
 import logging
@@ -42,6 +42,10 @@ ALACARTE_CHECKOUT_PATH = '/aca-checkout'
 DISCOVERY_TIMEOUT_SECONDS = 5
 COURSE_UUID_CACHE_TIMEOUT = 24 * 60 * 60
 COURSE_UUID_NOT_FOUND_CACHE_TIMEOUT = 15 * 60
+# A failed Discovery call is remembered briefly, so an outage doesn't hold every click for the whole timeout
+COURSE_UUID_ERROR_CACHE_TIMEOUT = 60
+SKU_COURSE_RUN_CACHE_TIMEOUT = 24 * 60 * 60
+SKU_COURSE_RUN_NOT_FOUND_CACHE_TIMEOUT = 15 * 60
 MAX_DISCOUNT_CODE_LENGTH = 64
 
 
@@ -129,11 +133,24 @@ def _distinct(values):
 def _get_course_key_for_sku(sku):
     """
     Return the course run key of the course mode with the SKU, or None.
+
+    The SKU columns have no index, so the answer is cached: a found course run for a day, an unknown SKU for 15 minutes.
+    The lowest id wins when several modes have the SKU, as ecommerce gives each mode its own.
     """
     if not sku:
         return None
-    course_mode = CourseMode.objects.filter(Q(sku=sku) | Q(bulk_sku=sku)).first()
-    return course_mode.course_id if course_mode else None
+
+    cache_key = get_cache_key(resource='alacarte_checkout.sku_course_run', sku=sku)
+    cached_response = TieredCache.get_cached_response(cache_key)
+    if cached_response.is_found:
+        return CourseKey.from_string(cached_response.value) if cached_response.value else None
+
+    course_mode = CourseMode.objects.filter(Q(sku=sku) | Q(bulk_sku=sku)).order_by('id').first()
+    if course_mode:
+        TieredCache.set_all_tiers(cache_key, str(course_mode.course_id), SKU_COURSE_RUN_CACHE_TIMEOUT)
+        return course_mode.course_id
+    TieredCache.set_all_tiers(cache_key, '', SKU_COURSE_RUN_NOT_FOUND_CACHE_TIMEOUT)
+    return None
 
 
 def _check_course_modes(course_key, sku):
@@ -141,7 +158,8 @@ def _check_course_modes(course_key, sku):
     Return the reason the a la carte checkout can't sell the course run, or None if it can.
 
     The SKU only tells which mode the link is for. The a la carte checkout doesn't need it, so a missing or unknown SKU
-    is fine for a course run with a current mode of ALACARTE_CHECKOUT_COURSE_MODES.
+    is fine for a course run with a current mode of ALACARTE_CHECKOUT_COURSE_MODES. A SKU of another course run is not:
+    the link doesn't say which course run the learner wants.
     """
     modes = CourseMode.modes_for_course(course_id=course_key, include_expired=True, only_selectable=False)
     supported_modes = settings.ALACARTE_CHECKOUT_COURSE_MODES
@@ -150,6 +168,10 @@ def _check_course_modes(course_key, sku):
         return 'bulk'
     if sku and any(mode.sku == sku and mode.slug not in supported_modes for mode in modes):
         return 'mode_not_supported'
+    if sku and not any(mode.sku == sku for mode in modes):
+        sku_course_key = _get_course_key_for_sku(sku)
+        if sku_course_key is not None and sku_course_key != course_key:
+            return 'sku_mismatch'
 
     current_time = now()
     if not any(
@@ -180,8 +202,8 @@ def get_cached_course_uuid(course_key):
     """
     Return the Discovery UUID of the course of the course run, or None.
 
-    A found UUID is cached for a day, and a course run Discovery doesn't know for 15 minutes. Errors aren't cached, so
-    the next click tries again.
+    A found UUID is cached for a day, a course run Discovery doesn't know for 15 minutes, and an error for a minute, so
+    clicks during a Discovery outage go to the fallback without waiting for the timeout.
     """
     cache_key = get_cache_key(resource='alacarte_checkout.course_uuid', course_run_key=str(course_key))
     cached_response = TieredCache.get_cached_response(cache_key)
@@ -192,6 +214,7 @@ def get_cached_course_uuid(course_key):
         course_uuid = _fetch_course_uuid(course_key)
     except Exception:  # pylint: disable=broad-except
         log.exception('Failed to get the course UUID of course run %s from Discovery', course_key)
+        TieredCache.set_all_tiers(cache_key, '', COURSE_UUID_ERROR_CACHE_TIMEOUT)
         return None
 
     if course_uuid:
@@ -222,13 +245,18 @@ def _fetch_course_uuid(course_key):
 def _get_discount_params(query):
     """
     Return the discount code of the link as the a la carte checkout parameter, if discount codes are forwarded.
+
+    A code longer than MAX_DISCOUNT_CODE_LENGTH is dropped, not cut: a shorter code would be another code.
     """
     if not settings.ALACARTE_CHECKOUT_FORWARD_DISCOUNT_CODES:
         return {}
     codes = _distinct(query.getlist('code'))
     if not codes:
         return {}
-    return {'discount_code': codes[0][:MAX_DISCOUNT_CODE_LENGTH]}
+    if len(codes[0]) > MAX_DISCOUNT_CODE_LENGTH:
+        log.warning('Dropped a discount code of %d characters from a checkout link', len(codes[0]))
+        return {}
+    return {'discount_code': codes[0]}
 
 
 def _build_url(checkout_url, params, query):
@@ -246,11 +274,11 @@ def legacy_destination(query):
     """
     Return the ecommerce checkout link of the query, as the LMS built it before the a la carte checkout.
 
-    get_absolute_ecommerce_url isn't changed by the a la carte checkout flag, so this never points back at the redirect
-    view. A plugin that overrides it (OVERRIDE_GET_ABSOLUTE_ECOMMERCE_URL) can send this link to its own checkout.
+    get_checkout_page_url and payment_page_url can't be used: while the flag is on they return the redirect view, which
+    would send the learner back here. get_ecommerce_checkout_page_url isn't changed by the flag. A plugin that
+    overrides get_absolute_ecommerce_url (OVERRIDE_GET_ABSOLUTE_ECOMMERCE_URL) can send this link to its own checkout.
     """
-    ecommerce_service = EcommerceService()
-    checkout_page_url = ecommerce_service.get_absolute_ecommerce_url(ecommerce_service.config.basket_checkout_page)
+    checkout_page_url = EcommerceService().get_ecommerce_checkout_page_url()
     if not query:
         return checkout_page_url
     return f'{checkout_page_url}?{query.urlencode()}'

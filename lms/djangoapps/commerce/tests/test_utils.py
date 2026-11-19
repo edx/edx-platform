@@ -220,6 +220,11 @@ class EcommerceServiceAlacarteCheckoutTests(TestCase):
             {'catalog': 'abc', 'course_run_keys': [COURSE_RUN_KEY]},
             {'sku': ['SKU1'], 'catalog': 'abc', 'course_run_key': [COURSE_RUN_KEY]},
         ),
+        (
+            ['SKU1'],
+            {'course_run_keys': [COURSE_RUN_KEY], 'code': 'EDXWELCOME'},
+            {'sku': ['SKU1'], 'course_run_key': [COURSE_RUN_KEY], 'code': 'EDXWELCOME'},
+        ),
     )
     @ddt.unpack
     @override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=True)
@@ -237,10 +242,18 @@ class EcommerceServiceAlacarteCheckoutTests(TestCase):
         assert url == f'{self.redirect_url}?sku=SKU1&sku=SKU2&bundle=1234'
 
     def test_get_checkout_page_url_flag_off(self):
-        """With the flag off, the link is the ecommerce checkout link, without the course run keys, as before."""
-        url = EcommerceService().get_checkout_page_url('SKU1', course_run_keys=[self.COURSE_RUN_KEY])
+        """With the flag off, the link is the ecommerce checkout link, without course run keys or code, as before."""
+        url = EcommerceService().get_checkout_page_url(
+            'SKU1', course_run_keys=[self.COURSE_RUN_KEY], code='EDXWELCOME'
+        )
 
         assert url == 'http://ecommerce_url/test_basket/add/?sku=SKU1'
+
+    @ddt.data(True, False)
+    def test_get_ecommerce_checkout_page_url(self, flag_active):
+        """The ecommerce checkout page doesn't follow the flag: the redirect view sends unsupported purchases there."""
+        with override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=flag_active):
+            assert EcommerceService().get_ecommerce_checkout_page_url() == 'http://ecommerce_url/test_basket/add/'
 
     @override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=True)
     def test_other_ecommerce_pages_unchanged(self):
@@ -262,6 +275,23 @@ class EcommerceServiceAlacarteCheckoutTests(TestCase):
         url = EcommerceService().upgrade_url(self.user, course_key)
 
         assert url == f"{self.redirect_url}?{urlencode({'sku': 'VERIFIEDSKU', 'course_run_key': self.COURSE_RUN_KEY})}"
+
+    @ddt.data(
+        (True, {'sku': 'VERIFIEDSKU', 'course_run_key': COURSE_RUN_KEY, 'code': 'EDXWELCOME'}),
+        (False, {'sku': 'VERIFIEDSKU'}),
+    )
+    @ddt.unpack
+    def test_upgrade_url_discount_code(self, flag_active, expected_query):
+        """The upgrade link carries the discount code only while it points at the checkout redirect view."""
+        course_key = CourseLocator.from_string(self.COURSE_RUN_KEY)
+        CourseOverviewFactory(id=course_key)
+        CourseModeFactory(course_id=course_key, mode_slug=CourseMode.VERIFIED, sku='VERIFIEDSKU')
+
+        with override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=flag_active):
+            url = EcommerceService().upgrade_url(self.user, course_key, discount_code='EDXWELCOME')
+
+        checkout_page_url = self.redirect_url if flag_active else 'http://ecommerce_url/test_basket/add/'
+        assert url == f'{checkout_page_url}?{urlencode(expected_query)}'
 
 
 @ddt.ddt

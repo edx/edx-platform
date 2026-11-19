@@ -3,7 +3,6 @@ Utility functions for working with discounts and discounted pricing.
 """
 
 from datetime import datetime
-from urllib.parse import urlencode
 
 from zoneinfo import ZoneInfo
 from django.conf import settings
@@ -12,8 +11,6 @@ from django.utils.translation import gettext as _
 from edx_django_utils.plugins import pluggable_override
 
 from common.djangoapps.course_modes.models import format_course_price, get_course_prices
-from lms.djangoapps.commerce.toggles import should_redirect_to_alacarte_checkout
-from lms.djangoapps.commerce.utils import get_checkout_redirect_url
 from lms.djangoapps.experiments.models import ExperimentData
 from lms.djangoapps.courseware.utils import verified_upgrade_deadline_link
 from openedx.core.djangolib.markup import HTML
@@ -120,27 +117,9 @@ def generate_offer_data(user, course):
         'original_price': original,
         'discounted_price': discounted,
         'percentage': percentage,
-        'upgrade_url': _get_offer_upgrade_url(user, course, first_purchase_discount_code),
+        # the link carries the code only while it points at the LMS checkout redirect view (the a la carte checkout)
+        'upgrade_url': verified_upgrade_deadline_link(user, course=course, discount_code=first_purchase_discount_code),
     }
-
-
-def _get_offer_upgrade_url(user, course, code):
-    """
-    Return the upgrade link of the offer.
-
-    When the link points at the LMS checkout redirect view (the commerce.redirect_to_alacarte_checkout flag is on), it
-    carries the discount code, which the view hands to the a la carte checkout.
-    """
-    upgrade_url = verified_upgrade_deadline_link(user, course=course)
-    if (
-        upgrade_url
-        and should_redirect_to_alacarte_checkout()
-        and getattr(settings, 'ALACARTE_CHECKOUT_FORWARD_DISCOUNT_CODES', True)
-        and upgrade_url.startswith(get_checkout_redirect_url())
-    ):
-        separator = '&' if '?' in upgrade_url else '?'
-        upgrade_url = f"{upgrade_url}{separator}{urlencode({'code': code})}"
-    return upgrade_url
 
 
 def _format_discounted_price(original_price, discount_price):

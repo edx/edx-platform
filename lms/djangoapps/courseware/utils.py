@@ -30,7 +30,7 @@ from openedx.core.djangoapps.waffle_utils.models import WaffleFlagCourseOverride
 log = logging.getLogger(__name__)
 
 
-def verified_upgrade_deadline_link(user, course=None, course_id=None):
+def verified_upgrade_deadline_link(user, course=None, course_id=None, discount_code=None):
     """
     Format the correct verified upgrade link for the specified ``user``
     in a course.
@@ -43,6 +43,7 @@ def verified_upgrade_deadline_link(user, course=None, course_id=None):
             the link for.
         course (:class:`.CourseOverview`): The course to render a link for.
         course_id (:class:`.CourseKey`): The course_id of the course to render for.
+        discount_code (str): A discount code for the link. See EcommerceService.upgrade_url.
 
     Returns:
         The formatted link that will allow the user to upgrade to verified
@@ -50,7 +51,7 @@ def verified_upgrade_deadline_link(user, course=None, course_id=None):
     """
     if course is not None:
         course_id = course.id
-    return EcommerceService().upgrade_url(user, course_id)
+    return EcommerceService().upgrade_url(user, course_id, discount_code=discount_code)
 
 
 def is_mode_upsellable(user, enrollment, course=None):
