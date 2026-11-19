@@ -3027,7 +3027,7 @@ ECOMMERCE_SERVICE_WORKER_USERNAME = 'ecommerce_worker'
 
 # A la carte checkout, used by the checkout redirect view (lms/djangoapps/commerce/alacarte_checkout.py) while the
 # commerce.redirect_to_alacarte_checkout flag is on.
-# The a la carte checkout page. When empty, LEARNER_HOME_SITE_URL + /aca-checkout.
+# The a la carte checkout page, set per environment. When empty, every purchase goes to the fallback.
 ALACARTE_CHECKOUT_URL = ''
 # The course modes the a la carte checkout sells.
 ALACARTE_CHECKOUT_COURSE_MODES = ['verified']

@@ -28,7 +28,6 @@ from openedx.core.djangoapps.catalog.utils import (
     get_catalog_api_base_url,
     get_catalog_api_client
 )
-from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 
 from .toggles import should_redirect_to_alacarte_checkout
 from .utils import EcommerceService
@@ -38,7 +37,6 @@ log = logging.getLogger(__name__)
 # The destination of a checkout link, and the reason it was chosen (sent to monitoring)
 Route = namedtuple('Route', ['url', 'reason'])
 
-ALACARTE_CHECKOUT_PATH = '/aca-checkout'
 DISCOVERY_TIMEOUT_SECONDS = 5
 COURSE_UUID_CACHE_TIMEOUT = 24 * 60 * 60
 COURSE_UUID_NOT_FOUND_CACHE_TIMEOUT = 15 * 60
@@ -69,7 +67,7 @@ def _route_to_checkout(query):
     """
     checkout_url = get_checkout_base_url()
     if not checkout_url:
-        log.error('The a la carte checkout URL is not configured (ALACARTE_CHECKOUT_URL or LEARNER_HOME_SITE_URL)')
+        log.error('The a la carte checkout URL is not configured (ALACARTE_CHECKOUT_URL)')
         return Route(None, 'no_checkout_url')
 
     if query.get('catalog'):
@@ -184,18 +182,9 @@ def _check_course_modes(course_key, sku):
 
 def get_checkout_base_url():
     """
-    Return the URL of the a la carte checkout page, or None.
+    Return the URL of the a la carte checkout page (the ALACARTE_CHECKOUT_URL setting), or None when it isn't set.
     """
-    if settings.ALACARTE_CHECKOUT_URL:
-        return settings.ALACARTE_CHECKOUT_URL
-
-    learner_home_site_url = configuration_helpers.get_value(
-        'LEARNER_HOME_SITE_URL',
-        getattr(settings, 'LEARNER_HOME_SITE_URL', None),
-    )
-    if not learner_home_site_url:
-        return None
-    return f"{learner_home_site_url.rstrip('/')}{ALACARTE_CHECKOUT_PATH}"
+    return settings.ALACARTE_CHECKOUT_URL or None
 
 
 def get_cached_course_uuid(course_key):

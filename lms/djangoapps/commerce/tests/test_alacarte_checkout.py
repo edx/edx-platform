@@ -47,7 +47,7 @@ def create_course_modes(course_run_key, *modes):
 @skip_unless_lms
 @ddt.ddt
 @override_settings(
-    LEARNER_HOME_SITE_URL='https://learner-home.example.com',
+    ALACARTE_CHECKOUT_URL=CHECKOUT_URL,
     ECOMMERCE_PUBLIC_URL_ROOT='http://ecommerce_url',
 )
 @override_waffle_flag(REDIRECT_TO_ALACARTE_CHECKOUT, active=True)
@@ -204,11 +204,7 @@ class RouteCheckoutTests(TestCase):
 
         assert route == Route(alacarte_url(program_uuid='program-uuid', discount_code='CODE'), 'program')
 
-    @override_settings(ALACARTE_CHECKOUT_URL='https://checkout.example.com/buy')
-    def test_checkout_url_setting(self):
-        assert self.route({'course_run_key': COURSE_RUN_KEY}).url.startswith('https://checkout.example.com/buy?')
-
-    @override_settings(LEARNER_HOME_SITE_URL=None)
+    @override_settings(ALACARTE_CHECKOUT_URL='')
     def test_no_checkout_url(self):
         query = {'course_run_key': COURSE_RUN_KEY}
 
