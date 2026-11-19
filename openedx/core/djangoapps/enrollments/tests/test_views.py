@@ -28,6 +28,7 @@ from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.roles import CourseStaffRole
+from common.djangoapps.student.signals import ENROLLMENT_TRACK_UPDATED
 from common.djangoapps.student.tests.factories import AdminFactory, SuperuserFactory, UserFactory
 from common.djangoapps.util.models import RateLimitConfiguration
 from common.djangoapps.util.testing import UrlResetMixin
@@ -1310,6 +1311,55 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase):
         assert enrollment.is_active
         assert enrollment.mode == mode
         assert enrollment.attributes.get(namespace='order', name='order_number').value == order_number
+
+    def test_enrollment_attributes_saved_before_the_mode_change(self):
+        """
+        When a server changes the mode with enrollment attributes, the attributes are saved before the mode change,
+        so the receivers of the mode change (such as the certificate generation) can read them. The other attributes
+        are kept during the mode change, then replaced by the given ones, as before.
+        """
+        for mode in [CourseMode.AUDIT, CourseMode.VERIFIED]:
+            CourseModeFactory.create(course_id=self.course.id, mode_slug=mode, mode_display_name=mode)
+        course_id = str(self.course.id)
+        self.assert_enrollment_status(as_server=True, mode=CourseMode.AUDIT)
+        experiment = {'namespace': 'experiment', 'name': 'variant', 'value': 'a'}
+        data.add_or_update_enrollment_attr(self.user.username, course_id, [experiment])
+
+        seen_during_the_mode_change = []
+
+        def record_attributes(sender, user, course_key, **kwargs):  # pylint: disable=unused-argument
+            seen_during_the_mode_change.extend(data.get_enrollment_attributes(user.username, str(course_key)))
+
+        ENROLLMENT_TRACK_UPDATED.connect(record_attributes)
+        self.addCleanup(ENROLLMENT_TRACK_UPDATED.disconnect, record_attributes)
+
+        tag = {'namespace': 'subscription', 'name': 'granted_by', 'value': 'sub-1'}
+        self.assert_enrollment_status(as_server=True, mode=CourseMode.VERIFIED, enrollment_attributes=[tag])
+
+        assert tag in seen_during_the_mode_change
+        assert experiment in seen_during_the_mode_change
+        enrollment = CourseEnrollment.objects.get(user=self.user, course_id=self.course.id)
+        assert enrollment.mode == CourseMode.VERIFIED
+        assert enrollment.is_active
+        assert data.get_enrollment_attributes(self.user.username, course_id) == [tag]
+
+    def test_invalid_enrollment_attributes_leave_the_mode_unchanged(self):
+        """An enrollment attribute without a value is rejected before the mode change, so the mode stays as it was."""
+        for mode in [CourseMode.AUDIT, CourseMode.VERIFIED]:
+            CourseModeFactory.create(course_id=self.course.id, mode_slug=mode, mode_display_name=mode)
+        self.assert_enrollment_status(as_server=True, mode=CourseMode.AUDIT)
+
+        self.assert_enrollment_status(
+            as_server=True,
+            mode=CourseMode.VERIFIED,
+            expected_status=status.HTTP_400_BAD_REQUEST,
+            enrollment_attributes=[{'namespace': 'subscription', 'name': 'granted_by'}],
+        )
+
+        enrollment = CourseEnrollment.objects.get(user=self.user, course_id=self.course.id)
+        assert enrollment.mode == CourseMode.AUDIT
+        assert enrollment.is_active
+        assert data.get_enrollment_attributes(self.user.username, str(self.course.id)) == []
 
 
 @skip_unless_lms

@@ -286,7 +286,8 @@ def update_enrollment(
     Keyword Arguments:
         mode (str): The new course mode for this enrollment.
         is_active (bool): Sets whether the enrollment is active or not.
-        enrollment_attributes (list): Attributes to be set the enrollment.
+        enrollment_attributes (list): Attributes to be set the enrollment. They are added before the mode
+            change, then they replace all the attributes of the enrollment.
         include_expired (bool): Boolean denoting whether expired course modes should be included.
 
     Returns:
@@ -331,6 +332,12 @@ def update_enrollment(
     ))
     if mode is not None:
         validate_course_mode(course_id, mode, is_active=is_active, include_expired=include_expired)
+    if enrollment_attributes:
+        # Save the given attributes before the mode change: the mode change runs the certificate
+        # generation in this request, and its checks may read them (e.g. the attribute of the
+        # subscription that unlocked the course). The other attributes are kept until the
+        # replacement below, as the receivers of the mode change may read them too.
+        _data_api().upsert_enrollment_attributes(username, course_id, enrollment_attributes)
     enrollment = _data_api().update_course_enrollment(username, course_id, mode=mode, is_active=is_active)
     if enrollment is None:  # lint-amnesty, pylint: disable=no-else-raise
         msg = f"Course Enrollment not found for user {username} in course {course_id}"

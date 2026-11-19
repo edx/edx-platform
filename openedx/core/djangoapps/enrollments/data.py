@@ -223,6 +223,36 @@ def add_or_update_enrollment_attr(username, course_id, attributes):
         CourseEnrollmentAttribute.add_enrollment_attr(enrollment, attributes)
 
 
+def upsert_enrollment_attributes(username, course_id, attributes):
+    """Add the given attributes to the enrollment of the user in the course, and keep its other attributes.
+
+    An attribute with the same namespace and name as a given one is replaced. Unlike
+    add_or_update_enrollment_attr, the other attributes of the enrollment are not deleted.
+
+    Args:
+        username: The user to set enrollment attributes for.
+        course_id (str): The course to set enrollment attributes for.
+        attributes (list): Attributes to add, each a dict with namespace, name and value.
+
+    Raises:
+        InvalidEnrollmentAttribute: when an attribute misses its namespace, name or value.
+    """
+    course_key = CourseKey.from_string(course_id)
+    user = _get_user(username)
+    enrollment = CourseEnrollment.get_enrollment(user, course_key)
+    if not _invalid_attribute(attributes) and enrollment is not None:
+        for attribute in attributes:
+            CourseEnrollmentAttribute.objects.filter(
+                enrollment=enrollment, namespace=attribute['namespace'], name=attribute['name']
+            ).delete()
+            CourseEnrollmentAttribute.objects.create(
+                enrollment=enrollment,
+                namespace=attribute['namespace'],
+                name=attribute['name'],
+                value=attribute['value'],
+            )
+
+
 def get_enrollment_attributes(username, course_id):
     """Retrieve enrollment attributes for given user for provided course.
 

@@ -224,6 +224,42 @@ class EnrollmentTest(CacheIsolationTestCase):
         attributes = api.get_enrollment_attributes(self.USERNAME, self.COURSE_ID)
         assert enrollment_attributes[0] == attributes[0]
 
+    def test_update_enrollment_saves_the_attributes_before_the_mode_change(self):
+        """The given attributes are saved before the mode change, as its receivers may read them."""
+        fake_data_api.add_course(self.COURSE_ID, course_modes=['audit', 'verified'])
+        api.add_enrollment(self.USERNAME, self.COURSE_ID, mode='audit')
+        enrollment_attributes = [{"namespace": "subscription", "name": "granted_by", "value": "sub-1"}]
+        calls = Mock()
+
+        with patch.object(
+            fake_data_api, 'upsert_enrollment_attributes', wraps=fake_data_api.upsert_enrollment_attributes
+        ) as upsert, patch.object(
+            fake_data_api, 'update_course_enrollment', wraps=fake_data_api.update_course_enrollment
+        ) as update:
+            calls.attach_mock(upsert, 'upsert')
+            calls.attach_mock(update, 'update')
+            result = api.update_enrollment(
+                self.USERNAME, self.COURSE_ID, mode='verified', enrollment_attributes=enrollment_attributes
+            )
+
+        assert 'verified' == result['mode']
+        assert [name for name, _args, _kwargs in calls.mock_calls] == ['upsert', 'update']
+        upsert.assert_called_once_with(self.USERNAME, self.COURSE_ID, enrollment_attributes)
+
+    @ddt.data(None, [])
+    def test_update_enrollment_without_attributes_saves_none_before_the_mode_change(self, enrollment_attributes):
+        """Without attributes, nothing is saved before the mode change."""
+        fake_data_api.add_course(self.COURSE_ID, course_modes=['audit', 'verified'])
+        api.add_enrollment(self.USERNAME, self.COURSE_ID, mode='audit')
+
+        with patch.object(fake_data_api, 'upsert_enrollment_attributes') as upsert:
+            result = api.update_enrollment(
+                self.USERNAME, self.COURSE_ID, mode='verified', enrollment_attributes=enrollment_attributes
+            )
+
+        assert 'verified' == result['mode']
+        upsert.assert_not_called()
+
     def test_get_course_details(self):
         # Add a fake course enrollment information to the fake data API
         fake_data_api.add_course(self.COURSE_ID, course_modes=['honor', 'verified', 'audit'])
