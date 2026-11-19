@@ -117,7 +117,8 @@ def generate_offer_data(user, course):
         'original_price': original,
         'discounted_price': discounted,
         'percentage': percentage,
-        'upgrade_url': verified_upgrade_deadline_link(user, course=course),
+        # the link carries the code only while it points at the LMS checkout redirect view (the a la carte checkout)
+        'upgrade_url': verified_upgrade_deadline_link(user, course=course, discount_code=first_purchase_discount_code),
     }
 
 

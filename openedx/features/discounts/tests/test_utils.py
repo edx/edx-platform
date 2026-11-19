@@ -102,3 +102,11 @@ class TestOfferData(TestCase):
     @patch('openedx.features.discounts.utils.can_receive_discount', return_value=False)
     def test_no_discount(self, _mock):
         assert utils.generate_offer_data(self.user, self.overview) is None
+
+    @patch.object(utils, 'verified_upgrade_deadline_link', return_value='https://lms.example.com/upgrade')
+    def test_upgrade_url_gets_discount_code(self, mock_upgrade_link):
+        """The upgrade link gets the discount code, which it carries while it points at the a la carte checkout."""
+        offer = utils.generate_offer_data(self.user, self.overview)
+
+        mock_upgrade_link.assert_called_once_with(self.user, course=self.overview, discount_code='EDXWELCOME')
+        assert offer['upgrade_url'] == 'https://lms.example.com/upgrade'

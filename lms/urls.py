@@ -17,6 +17,7 @@ from edx_django_utils.plugins import get_plugin_url_patterns
 from common.djangoapps.student import views as student_views
 from common.djangoapps.util import views as util_views
 from lms.djangoapps.branding import views as branding_views
+from lms.djangoapps.commerce.views import CheckoutRedirectView
 from lms.djangoapps.courseware.masquerade import MasqueradeView
 from lms.djangoapps.courseware.block_render import (
     handle_xblock_callback,
@@ -155,6 +156,8 @@ urlpatterns = [
             namespace='commerce_api',
         ),
     ),
+    # The purchase links of the LMS point here while the commerce.redirect_to_alacarte_checkout flag is on
+    path('commerce/checkout/', CheckoutRedirectView.as_view(), name='commerce_checkout_redirect'),
     path('api/credit/', include('openedx.core.djangoapps.credit.urls')),
     path('api/toggles/', include('openedx.core.djangoapps.waffle_utils.urls')),
     path('rss_proxy/', include('lms.djangoapps.rss_proxy.urls')),

@@ -22,9 +22,17 @@ from openedx.core.djangoapps.site_configuration import helpers as configuration_
 from openedx.core.djangoapps.theming import helpers as theming_helpers
 
 from .models import CommerceConfiguration
+from .toggles import should_redirect_to_alacarte_checkout
 from edx_django_utils.plugins import pluggable_override
 
 log = logging.getLogger(__name__)
+
+
+def get_checkout_redirect_url():
+    """
+    Return the absolute URL of the LMS checkout redirect view, which sends purchase links to the a la carte checkout.
+    """
+    return f"{settings.LMS_ROOT_URL}{reverse('commerce_checkout_redirect')}"
 
 
 def is_account_activation_requirement_disabled():
@@ -102,6 +110,19 @@ class EcommerceService:
 
         Example:
             http://localhost:8002/basket/add/
+
+        With the commerce.redirect_to_alacarte_checkout flag on, this is the LMS checkout redirect view instead.
+        """
+        if should_redirect_to_alacarte_checkout():
+            return get_checkout_redirect_url()
+        return self.get_ecommerce_checkout_page_url()
+
+    def get_ecommerce_checkout_page_url(self):
+        """
+        Return the URL of the ecommerce checkout page, whatever the commerce.redirect_to_alacarte_checkout flag.
+
+        Example:
+            http://localhost:8002/basket/add/
         """
         return self.get_absolute_ecommerce_url(self.config.basket_checkout_page)
 
@@ -113,6 +134,7 @@ class EcommerceService:
             skus (list): List of SKUs associated with products to be added to basket
             program_uuid (string): The UUID of the program, if applicable
             course_run_keys (list): The course run keys of the products to be added to basket.
+            code (string): A discount code. Only links to the checkout redirect view carry it.
 
         Returns:
             Absolute path to the ecommerce checkout page showing basket that contains specified products.
@@ -120,6 +142,10 @@ class EcommerceService:
         Example:
             http://localhost:8002/basket/add/?sku=5H3HG5&sku=57FHHD
             http://localhost:8002/basket/add/?sku=5H3HG5&sku=57FHHD&bundle=3bdf1dd1-49be-4a15-9145-38901f578c5a
+
+        With the commerce.redirect_to_alacarte_checkout flag on, the link points at the LMS checkout redirect view and
+        also carries the course run keys, which the a la carte checkout needs, and the discount code. The view decides
+        whether the code goes on to that checkout (ALACARTE_CHECKOUT_FORWARD_DISCOUNT_CODES).
         """
         program_uuid = kwargs.get('program_uuid')
         enterprise_catalog_uuid = kwargs.get('catalog')
@@ -127,8 +153,19 @@ class EcommerceService:
         if enterprise_catalog_uuid:
             query_params.update({'catalog': enterprise_catalog_uuid})
 
+        if should_redirect_to_alacarte_checkout():
+            checkout_page_path = get_checkout_redirect_url()
+            course_run_keys = kwargs.get('course_run_keys')
+            if course_run_keys:
+                query_params['course_run_key'] = course_run_keys
+            code = kwargs.get('code')
+            if code:
+                query_params['code'] = code
+        else:
+            checkout_page_path = self.get_ecommerce_checkout_page_url()
+
         url = '{checkout_page_path}?{query_params}'.format(
-            checkout_page_path=self.get_absolute_ecommerce_url(self.config.basket_checkout_page),
+            checkout_page_path=checkout_page_path,
             query_params=urlencode(query_params, doseq=True),
         )
         if program_uuid:
@@ -138,16 +175,22 @@ class EcommerceService:
             )
         return url
 
-    def upgrade_url(self, user, course_key):
+    def upgrade_url(self, user, course_key, discount_code=None):
         """
         Returns the URL for the user to upgrade, or None if not applicable.
+
+        discount_code goes into the link only while it points at the LMS checkout redirect view (see
+        get_checkout_page_url).
         """
         course_run_key = str(course_key)
 
         verified_mode = CourseMode.verified_mode_for_course(course_key)
         if verified_mode:
             if self.is_enabled(user):
-                return self.get_checkout_page_url(verified_mode.sku, course_run_keys=[course_run_key])
+                checkout_kwargs = {'course_run_keys': [course_run_key]}
+                if discount_code:
+                    checkout_kwargs['code'] = discount_code
+                return self.get_checkout_page_url(verified_mode.sku, **checkout_kwargs)
             else:
                 return reverse('dashboard')
         return None
