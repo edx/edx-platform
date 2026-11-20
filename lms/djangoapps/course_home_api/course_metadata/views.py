@@ -11,7 +11,6 @@ from rest_framework.response import Response
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from lms.djangoapps.certificates.api import certificates_viewable_for_course
-from lms.djangoapps.learner_home.waffle import DISABLE_RV
 from lms.djangoapps.course_home_api.toggles import new_discussion_sidebar_view_is_enabled
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.core.djangoapps.courseware_api.utils import get_celebrations_dict
@@ -32,6 +31,7 @@ from lms.djangoapps.courseware.context_processor import user_timezone_locale_pre
 from lms.djangoapps.courseware.courses import check_course_access
 from lms.djangoapps.courseware.masquerade import setup_masquerade
 from lms.djangoapps.courseware.tabs import get_course_tab_list
+from lms.djangoapps.learner_home.waffle import DISABLE_RV
 
 
 @method_decorator(transaction.non_atomic_requests, name='dispatch')
