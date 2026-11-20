@@ -26,6 +26,7 @@ from common.djangoapps.student.roles import (
 )
 from common.djangoapps.student.tests.factories import UserFactory
 from lms.djangoapps.course_home_api.tests.utils import BaseCourseHomeTests
+from lms.djangoapps.learner_home.waffle import DISABLE_RV
 from lms.djangoapps.courseware.toggles import (
     COURSEWARE_MFE_MILESTONES_STREAK_DISCOUNT,
     COURSEWARE_MICROFRONTEND_PROGRESS_MILESTONES,
@@ -288,15 +289,15 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         assert response.data['is_mfe_track_selection_enabled'] is is_enabled
 
     @ddt.data(True, False)
-    def test_is_track_selection_options_enabled(self, is_enabled):
+    def test_is_rv_disabled(self, is_disabled):
         """
-        The response says whether the course_modes.track_selection_options flag is on for the course.
+        The response says whether the rv_plugins.disable_rv flag is on.
         """
         CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
-        with override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=is_enabled):
+        with override_waffle_flag(DISABLE_RV, active=is_disabled):
             response = self.client.get(self.url)
         assert response.status_code == 200
-        assert response.data['is_track_selection_options_enabled'] is is_enabled
+        assert response.data['is_rv_disabled'] is is_disabled
 
     @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
     @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)

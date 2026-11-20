@@ -23,17 +23,14 @@ COURSE_MODES_MFE_TRACK_SELECTION = CourseWaffleFlag(
 # .. toggle_implementation: CourseWaffleFlag
 # .. toggle_default: False
 # .. toggle_description: When enabled, the course home metadata API runs the CourseHomeMetadataAPIRenderStarted
-#   filter, so plugins can add fields to the metadata, and returns the state of this flag as
-#   is_track_selection_options_enabled, so the MFE can turn on the parts that use those fields together with them.
-#   Where course_modes.mfe_track_selection is also enabled, the track selection API runs the
-#   TrackSelectionAPIRenderStarted filter and picks the options of the page: it adds the options and the programs
-#   to the page data, reads the upgrade intent, and redirects when one option or none is left, and the upgrade
-#   links of the course dates, the dates banner and the access expiration message open the track selection page.
-#   When disabled, both APIs return their data as they did before these were added.
+#   filter, so plugins can add fields to the metadata. Where course_modes.mfe_track_selection is also enabled,
+#   the track selection API runs the TrackSelectionAPIRenderStarted filter and picks the options of the page:
+#   it adds the options and the program to the page data, reads the upgrade intent, and redirects when one
+#   option or none is left. When disabled, both APIs return their data as they did before these were added.
 # .. toggle_use_cases: temporary
 # .. toggle_creation_date: 2026-11-02
 # .. toggle_target_removal_date: 2027-01-27
-# .. toggle_tickets: LP-1447, LP-1415
+# .. toggle_tickets: LP-1447, LP-1415, LP-1582
 COURSE_MODES_TRACK_SELECTION_OPTIONS = CourseWaffleFlag(
     f"{WAFFLE_FLAG_NAMESPACE}.track_selection_options", __name__
 )

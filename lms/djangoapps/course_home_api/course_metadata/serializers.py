@@ -60,5 +60,5 @@ class CourseHomeMetadataSerializer(VerifiedModeSerializer):
     course_modes = CourseModeSerrializer(many=True)
     is_new_discussion_sidebar_view_enabled = serializers.BooleanField()
     is_mfe_track_selection_enabled = serializers.BooleanField()
-    is_track_selection_options_enabled = serializers.BooleanField()
+    is_rv_disabled = serializers.BooleanField()
     has_course_author_access = serializers.BooleanField()

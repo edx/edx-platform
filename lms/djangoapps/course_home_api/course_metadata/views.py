@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.auth.session.authentication import SessionAuthenticationAllowInactiveUser
 from lms.djangoapps.certificates.api import certificates_viewable_for_course
+from lms.djangoapps.learner_home.waffle import DISABLE_RV
 from lms.djangoapps.course_home_api.toggles import new_discussion_sidebar_view_is_enabled
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.core.djangoapps.courseware_api.utils import get_celebrations_dict
@@ -69,9 +70,8 @@ class CourseHomeMetadataView(RetrieveAPIView):
         can_view_certificate: Flag to determine whether or not the learner can view their course certificate.
         is_mfe_track_selection_enabled: (bool) Indicates if /course_modes/choose/ opens the track selection
             page of the Learning MFE for this course (course_modes.mfe_track_selection flag)
-        is_track_selection_options_enabled: (bool) Indicates if the course_modes.track_selection_options flag is
-            on for this course, which also makes this API run the CourseHomeMetadataAPIRenderStarted filter, so the
-            MFE can tell whether the fields that plugins add are switched on
+        is_rv_disabled: (bool) Indicates if the rv_plugins.disable_rv flag is on for the user, so the MFE
+            shows its own upsells instead of the Red Ventures ones
 
         Plugins can add fields through the CourseHomeMetadataAPIRenderStarted filter, which needs the
         course_modes.track_selection_options flag.
@@ -155,7 +155,7 @@ class CourseHomeMetadataView(RetrieveAPIView):
             'course_modes': course_modes,
             'is_new_discussion_sidebar_view_enabled': new_discussion_sidebar_view_is_enabled(course_key),
             'is_mfe_track_selection_enabled': course_modes_mfe_track_selection_is_active(course_key),
-            'is_track_selection_options_enabled': COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(course_key),
+            'is_rv_disabled': DISABLE_RV.is_enabled(),
             # We check the course author access in the context of CMS here because this field is used
             # to determine whether the user can access the course authoring tools in the CMS.
             # This is a temporary solution until the course author role is split into "Course Author" and
@@ -170,7 +170,7 @@ class CourseHomeMetadataView(RetrieveAPIView):
         serializer = self.get_serializer_class()(data, context=context)
         course_home_metadata = serializer.data
         # temporary guard: without the flag, the metadata is returned without running the filter
-        if data['is_track_selection_options_enabled']:
+        if COURSE_MODES_TRACK_SELECTION_OPTIONS.is_enabled(course_key):
             # this filter lets plugins add fields to the serialized data
             # .. filter_implemented_name: CourseHomeMetadataAPIRenderStarted
             # .. filter_type: org.openedx.learning.course_home.metadata.api.rendered.started.v1
