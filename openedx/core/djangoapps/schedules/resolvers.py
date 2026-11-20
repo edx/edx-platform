@@ -16,7 +16,7 @@ from edx_ace.recipient_resolver import RecipientResolver
 from edx_django_utils.monitoring import function_trace, set_custom_attribute
 from openedx_filters.learning.filters import ScheduleQuerySetRequested
 
-from lms.djangoapps.courseware.utils import verified_upgrade_deadline_link, can_show_verified_upgrade
+from lms.djangoapps.courseware.utils import can_show_verified_upgrade, track_selection_upgrade_link
 from lms.djangoapps.discussion.notification_prefs.views import UsernameCipher
 from openedx.core.djangoapps.ace_common.template_context import get_base_template_context
 from openedx.core.djangoapps.course_date_signals.utils import get_expected_duration
@@ -357,7 +357,8 @@ def _get_upsell_information_for_schedule(user, schedule):  # lint-amnesty, pylin
 def _get_verified_upgrade_link(user, schedule):
     enrollment = schedule.enrollment
     if enrollment.dynamic_upgrade_deadline is not None and can_show_verified_upgrade(user, enrollment):
-        return verified_upgrade_deadline_link(user, enrollment.course)
+        # Built in celery: the track selection flags follow only their course overrides and Everyone setting.
+        return track_selection_upgrade_link(user, course=enrollment.course)
 
 
 class CourseUpdateResolver(BinnedSchedulesBaseResolver):

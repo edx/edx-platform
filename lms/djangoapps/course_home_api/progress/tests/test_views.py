@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import dateutil
 import ddt
+from django.conf import settings
 from django.urls import reverse
 from django.utils.timezone import now
 from edx_toggles.toggles.testutils import override_waffle_flag
@@ -14,6 +15,10 @@ from pytz import UTC
 from xmodule.modulestore.tests.factories import BlockFactory
 
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.toggles import (
+    COURSE_MODES_MFE_TRACK_SELECTION,
+    COURSE_MODES_TRACK_SELECTION_OPTIONS,
+)
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import UserFactory
 from lms.djangoapps.course_home_api.tests.utils import BaseCourseHomeTests
@@ -152,7 +157,21 @@ class ProgressTabTestViews(BaseCourseHomeTests):
         assert response.status_code == 200
         assert response.data['verified_mode'] == {'access_expiration_date': (enrollment.created + MIN_DURATION),
                                                   'currency': 'USD', 'currency_symbol': '$', 'price': 149,
-                                                  'sku': 'ABCD1234', 'upgrade_url': '/dashboard'}
+                                                  'sku': 'ABCD1234', 'upgrade_url': '/dashboard',
+                                                  'checkout_url': '/dashboard'}
+
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
+    def test_verified_mode_upgrade_opens_track_selection(self):
+        """With the track selection flags, Upgrade Now opens track selection; the checkout link stays."""
+        CourseEnrollment.enroll(self.user, self.course.id)
+        CourseDurationLimitConfig.objects.create(enabled=True, enabled_as_of=datetime(2018, 1, 1))
+
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        track_selection_url = f'{settings.LMS_ROOT_URL}/course_modes/choose/{self.course.id}/?intent=upgrade'
+        assert response.data['verified_mode']['upgrade_url'] == track_selection_url
+        assert response.data['verified_mode']['checkout_url'] == '/dashboard'
 
     def test_page_respects_stacked_config(self):
         CourseEnrollment.enroll(self.user, self.course.id)

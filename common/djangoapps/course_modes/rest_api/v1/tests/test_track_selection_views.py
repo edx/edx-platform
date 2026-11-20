@@ -698,3 +698,28 @@ class GetTrackOptionsTests(SimpleTestCase):
         }
         purchase_url = "https://ecommerce.test/basket/add/?sku=ABCD1234&course_run_key=course-v1%3Aa%2Bb%2Bc"
         assert get_track_options(data) == [{"slug": "purchase", "url": purchase_url}]
+
+    def test_purchase_link_with_the_first_purchase_discount(self):
+        """With the first purchase discount, Purchase is the offer's link, which carries the discount code."""
+        offer_url = "https://ecommerce.test/basket/add/?sku=ABCD1234&code=EDXWELCOME"
+        data = {
+            "course_id": "course-v1:a+b+c",
+            "verified_mode": {
+                "sku": "ABCD1234",
+                "use_ecommerce_payment_flow": True,
+                "ecommerce_payment_page": "https://ecommerce.test/basket/add/",
+            },
+            "audit_mode": None,
+            "offer": {"code": "EDXWELCOME", "upgrade_url": offer_url},
+        }
+        assert get_track_options(data) == [{"slug": "purchase", "url": offer_url}]
+
+    def test_purchase_link_without_the_ecommerce_flow_ignores_the_offer(self):
+        """Without the ecommerce flow there is no Purchase link, even with the first purchase discount."""
+        data = {
+            "course_id": "course-v1:a+b+c",
+            "verified_mode": {"use_ecommerce_payment_flow": False},
+            "audit_mode": None,
+            "offer": {"code": "EDXWELCOME", "upgrade_url": "https://ecommerce.test/basket/add/?code=EDXWELCOME"},
+        }
+        assert get_track_options(data) == [{"slug": "purchase", "url": None}]
