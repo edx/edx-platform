@@ -4,22 +4,30 @@ Tests for schedules resolvers
 
 
 import datetime
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import crum
 import ddt
 from zoneinfo import ZoneInfo
+from django.conf import settings
 from django.test import TestCase
 from django.test.client import RequestFactory
 from django.test.utils import override_settings
-from edx_toggles.toggles.testutils import override_waffle_switch
+from edx_toggles.toggles.testutils import override_waffle_flag, override_waffle_switch
 from testfixtures import LogCapture
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory
 
+from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.tests.factories import CourseModeFactory
+from common.djangoapps.course_modes.toggles import (
+    COURSE_MODES_MFE_TRACK_SELECTION,
+    COURSE_MODES_TRACK_SELECTION_OPTIONS,
+)
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import CourseEnrollmentFactory, UserFactory
 from lms.djangoapps.experiments.testutils import override_experiment_waffle_flag
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
 from openedx.core.djangoapps.schedules.config import (
     _EXTERNAL_COURSE_UPDATES_FLAG,
@@ -31,6 +39,7 @@ from openedx.core.djangoapps.schedules.resolvers import (
     BinnedSchedulesBaseResolver,
     CourseNextSectionUpdate,
     CourseUpdateResolver,
+    _get_verified_upgrade_link,
 )
 from openedx.core.djangoapps.schedules.tests.factories import ScheduleConfigFactory
 from openedx.core.djangoapps.site_configuration.tests.factories import SiteConfigurationFactory, SiteFactory
@@ -345,3 +354,43 @@ class TestCourseNextSectionUpdateResolver(SchedulesResolverTestMixin, ModuleStor
         resolver = self.create_resolver()
         schedules = list(resolver.get_schedules())
         self.assertListEqual(schedules, [])
+
+
+@ddt.ddt
+@skip_unless_lms
+class TestVerifiedUpgradeLink(ModuleStoreTestCase):
+    """
+    Tests for the upgrade link of the schedule emails (upgrade reminder, recurring nudge, course update).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.course = CourseFactory.create(self_paced=True)
+        CourseModeFactory.create(course_id=self.course.id, mode_slug=CourseMode.AUDIT)
+        CourseModeFactory.create(course_id=self.course.id, mode_slug=CourseMode.VERIFIED, sku='ABCD1234')
+        self.user = UserFactory.create()
+        self.schedule = Mock(enrollment=Mock(
+            dynamic_upgrade_deadline=datetime.datetime.now(ZoneInfo('UTC')) + datetime.timedelta(days=7),
+            course=CourseOverview.get_from_id(self.course.id),
+        ))
+
+    @ddt.data(
+        (True, 'track_selection'),
+        (False, '/dashboard'),
+    )
+    @ddt.unpack
+    @patch('openedx.core.djangoapps.schedules.resolvers.can_show_verified_upgrade', return_value=True)
+    def test_upgrade_link(self, flags_on, expected, _mock_can_show_verified_upgrade):
+        """With the track selection flags on for the course, the email links to track selection, else checkout."""
+        if expected == 'track_selection':
+            expected = f'{settings.LMS_ROOT_URL}/course_modes/choose/{self.course.id}/?intent=upgrade'
+        with override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=flags_on):
+            with override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=flags_on):
+                assert _get_verified_upgrade_link(self.user, self.schedule) == expected
+
+    @patch('openedx.core.djangoapps.schedules.resolvers.can_show_verified_upgrade', return_value=False)
+    def test_no_upgrade_link_when_the_learner_cannot_upgrade(self, _mock_can_show_verified_upgrade):
+        """A learner who can't upgrade gets no link, whatever the flags."""
+        with override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True):
+            with override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True):
+                assert _get_verified_upgrade_link(self.user, self.schedule) is None

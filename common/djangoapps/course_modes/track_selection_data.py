@@ -171,10 +171,17 @@ def _get_programs(user, course_key) -> list[dict[str, Any]]:
     return programs
 
 
-def _get_purchase_url(verified_mode, course_id) -> str | None:
-    """Return the ecommerce checkout link of the verified mode, as the Learning MFE builds it, or None."""
+def _get_purchase_url(verified_mode, course_id, discount_offer=None) -> str | None:
+    """
+    Return the ecommerce checkout link of the verified mode, as the Learning MFE builds it, or None.
+
+    With the first purchase discount (``discount_offer``, from generate_offer_data), the link is the offer's, which
+    carries the discount code, so a learner who saw the discounted price gets it at checkout.
+    """
     if not verified_mode["use_ecommerce_payment_flow"]:
         return None
+    if discount_offer and discount_offer.get("upgrade_url"):
+        return discount_offer["upgrade_url"]
     query = urlencode({"sku": verified_mode["sku"], "course_run_key": course_id})
     return f"{verified_mode['ecommerce_payment_page']}?{query}"
 
@@ -197,7 +204,9 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
     if subscribe_url:
         options.append({"slug": "subscribe", "url": subscribe_url})
     if verified_mode:
-        purchase_url = _get_purchase_url(verified_mode, track_selection_data["course_id"])
+        purchase_url = _get_purchase_url(
+            verified_mode, track_selection_data["course_id"], track_selection_data.get("offer")
+        )
         options.append({"slug": "purchase", "url": purchase_url})
     if programs := track_selection_data.get("programs"):
         # with several programs the learner chooses on the page, so only a single program has a link

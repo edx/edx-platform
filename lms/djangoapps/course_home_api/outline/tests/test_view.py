@@ -244,8 +244,9 @@ class OutlineTabTestViews(BaseCourseHomeTests):
 
         assert response.data['dates_banner_info']['verified_upgrade_link'] == track_selection_url
         assert response.data['access_expiration']['upgrade_url'] == track_selection_url
-        # The Buy buttons use the verified mode, and keep the checkout link
-        assert response.data['verified_mode']['upgrade_url'] == '/dashboard'
+        assert response.data['verified_mode']['upgrade_url'] == track_selection_url
+        # The Buy buttons use the checkout link of the verified mode
+        assert response.data['verified_mode']['checkout_url'] == '/dashboard'
 
     @override_waffle_flag(ENABLE_COURSE_GOALS, active=True)
     def test_post_course_goal(self):
@@ -396,7 +397,8 @@ class OutlineTabTestViews(BaseCourseHomeTests):
             'currency_symbol': '$',
             'price': 149,
             'sku': 'ABCD1234',
-            'upgrade_url': '/dashboard'
+            'upgrade_url': '/dashboard',
+            'checkout_url': '/dashboard',
         }
 
     def test_hide_learning_sequences(self):

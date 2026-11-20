@@ -6,7 +6,11 @@ from babel.numbers import get_currency_symbol
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollmentCelebration, UserCelebration
-from lms.djangoapps.courseware.utils import can_show_verified_upgrade, verified_upgrade_deadline_link
+from lms.djangoapps.courseware.utils import (
+    can_show_verified_upgrade,
+    track_selection_upgrade_link,
+    verified_upgrade_deadline_link,
+)
 from openedx.features.course_duration_limits.access import get_user_course_expiration_date
 from openedx.features.discounts.applicability import can_show_streak_discount_coupon
 
@@ -53,6 +57,10 @@ def serialize_upgrade_info(user, course_overview, enrollment):
     Return verified mode upgrade information, or None.
 
     This is used in a few API views to provide consistent upgrade info to frontends.
+
+    ``upgrade_url`` is the link of the Upgrade buttons: the track selection page with the upgrade intent when the
+    track selection flags are on for the course (see track_selection_upgrade_link), else the checkout.
+    ``checkout_url`` is always the checkout, for the buttons that buy the certificate straight away (Buy).
     """
     if not can_show_verified_upgrade(user, enrollment):
         return None
@@ -64,5 +72,6 @@ def serialize_upgrade_info(user, course_overview, enrollment):
         'currency_symbol': get_currency_symbol(mode.currency.upper()),
         'price': mode.min_price,
         'sku': mode.sku,
-        'upgrade_url': verified_upgrade_deadline_link(user, course_overview),
+        'upgrade_url': track_selection_upgrade_link(user, course=course_overview),
+        'checkout_url': verified_upgrade_deadline_link(user, course_overview),
     }
