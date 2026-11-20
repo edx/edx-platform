@@ -279,20 +279,21 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
             },
         },
     )
-    @ddt.data(False, True)
-    def test_post_page_data_options_use_the_plugin_offer(self, unenrolled):
+    @ddt.data("never_enrolled", "unenrolled", "audit")
+    def test_post_page_data_options_use_the_plugin_offer(self, enrollment):
         """
-        Core picks the options after the filter, from the offer a plugin adds: Subscribe joins Purchase and Audit.
-        The learner never enrolled, or enrolled in audit and then unenrolled.
+        Core picks the options after the filter, from the offer a plugin adds: Subscribe takes the place of Purchase
+        next to Audit, for a learner who did not come to upgrade. The learner never enrolled, enrolled in audit and
+        then unenrolled, or is enrolled in audit (the enroll button enrolls in audit before opening the page).
         """
-        if unenrolled:
+        if enrollment != "never_enrolled":
             CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        if enrollment == "unenrolled":
             CourseEnrollment.unenroll(self.user, self.course.id)
         response = self.client.post(self.url, {}, format="json")
         assert response.status_code == 200
         assert response.data["options"] == [
             {"slug": "subscribe", "url": TEST_SUBSCRIBE_URL},
-            {"slug": "purchase", "url": None},
             {"slug": "audit", "url": None},
         ]
 
@@ -658,11 +659,17 @@ class GetTrackOptionsTests(SimpleTestCase):
         (None, True, False, False, ["purchase", "audit"]),
         (None, False, False, False, ["purchase"]),
         (None, True, True, False, ["purchase", "program", "audit"]),
-        (TEST_CATALOG_OFFER, True, False, False, ["subscribe", "purchase", "audit"]),
-        (TEST_CATALOG_OFFER, True, True, False, ["subscribe", "purchase", "program", "audit"]),
+        # with Subscribe and Audit, Purchase is left out
+        (TEST_CATALOG_OFFER, True, False, False, ["subscribe", "audit"]),
+        (TEST_CATALOG_OFFER, True, True, False, ["subscribe", "program", "audit"]),
+        # without Audit, Purchase stays next to Subscribe
         (TEST_CATALOG_OFFER, False, False, False, ["subscribe", "purchase"]),
+        # without a Subscribe link (subscription status unknown), Purchase stays next to Audit
+        ({"in_catalog": True}, True, False, False, ["purchase", "audit"]),
         (None, True, True, True, ["purchase", "program"]),
+        # a learner who came to upgrade chooses between Subscribe and Purchase
         (TEST_CATALOG_OFFER, True, False, True, ["subscribe", "purchase"]),
+        (TEST_CATALOG_OFFER, True, True, True, ["subscribe", "purchase", "program"]),
     )
     @ddt.unpack
     def test_options(self, extra_offer, has_audit_mode, has_program, upgrading, expected):

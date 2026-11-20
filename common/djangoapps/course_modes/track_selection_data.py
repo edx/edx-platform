@@ -195,15 +195,20 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
     posts the choice.
 
     ``upgrading`` is for a learner who came to upgrade: Audit is left out.
+
+    With Subscribe and Audit, Purchase is left out unless the learner came to upgrade: the learner chooses between
+    subscribing and auditing, and the upgrade links (``intent=upgrade``) offer Purchase next to Subscribe later. A
+    course without Audit keeps Purchase, so the learner can still buy the certificate.
     """
     offer = track_selection_data.get("extra_offer") or {}
     verified_mode = track_selection_data.get("verified_mode")
     options = []
     audit_mode = track_selection_data.get("audit_mode")
+    offers_audit = bool(audit_mode) and not upgrading
     subscribe_url = offer.get("subscribe_url")
     if subscribe_url:
         options.append({"slug": "subscribe", "url": subscribe_url})
-    if verified_mode:
+    if verified_mode and not (subscribe_url and offers_audit):
         purchase_url = _get_purchase_url(
             verified_mode, track_selection_data["course_id"], track_selection_data.get("offer")
         )
@@ -211,7 +216,7 @@ def get_track_options(track_selection_data: dict[str, Any], upgrading: bool = Fa
     if programs := track_selection_data.get("programs"):
         # with several programs the learner chooses on the page, so only a single program has a link
         options.append({"slug": "program", "url": programs[0]["url"] if len(programs) == 1 else None})
-    if audit_mode and not upgrading:
+    if offers_audit:
         options.append({"slug": "audit", "url": None})
     return options
 
