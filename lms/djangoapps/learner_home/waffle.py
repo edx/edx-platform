@@ -37,11 +37,12 @@ RV_PLUGINS_NAMESPACE = "rv_plugins"
 # .. toggle_name: rv_plugins.disable_rv
 # .. toggle_implementation: WaffleFlag
 # .. toggle_default: False
-# .. toggle_description: Disable all RV plugin experiences.
+# .. toggle_description: Disable all RV plugin experiences. The Learning MFE reads it from the
+#   is_rv_disabled field of the course home metadata API.
 # .. toggle_use_cases: temporary
 # .. toggle_creation_date: 2026-10-30
 # .. toggle_target_removal_date: YYYY-MM-DD
-# .. toggle_tickets: SUBS-1181
+# .. toggle_tickets: SUBS-1181, LP-1582
 DISABLE_RV = WaffleFlag(
     f"{RV_PLUGINS_NAMESPACE}.disable_rv",
     __name__,

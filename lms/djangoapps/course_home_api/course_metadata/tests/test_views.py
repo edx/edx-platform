@@ -13,7 +13,10 @@ from openedx_filters import PipelineStep
 from openedx_filters.learning.filters import CoursewareAccessChecksRequested
 
 from common.djangoapps.course_modes.models import CourseMode
-from common.djangoapps.course_modes.toggles import COURSE_MODES_MFE_TRACK_SELECTION
+from common.djangoapps.course_modes.toggles import (
+    COURSE_MODES_MFE_TRACK_SELECTION,
+    COURSE_MODES_TRACK_SELECTION_OPTIONS,
+)
 from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.roles import (
     CourseBetaTesterRole,
@@ -23,7 +26,7 @@ from common.djangoapps.student.roles import (
 )
 from common.djangoapps.student.tests.factories import UserFactory
 from lms.djangoapps.course_home_api.tests.utils import BaseCourseHomeTests
-from lms.djangoapps.course_home_api.toggles import COURSE_HOME_COURSE_METADATA_RENDER_FILTER
+from lms.djangoapps.learner_home.waffle import DISABLE_RV
 from lms.djangoapps.courseware.toggles import (
     COURSEWARE_MFE_MILESTONES_STREAK_DISCOUNT,
     COURSEWARE_MICROFRONTEND_PROGRESS_MILESTONES,
@@ -285,7 +288,18 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         assert response.status_code == 200
         assert response.data['is_mfe_track_selection_enabled'] is is_enabled
 
-    @override_waffle_flag(COURSE_HOME_COURSE_METADATA_RENDER_FILTER, active=True)
+    @ddt.data(True, False)
+    def test_is_rv_disabled(self, is_disabled):
+        """
+        The response says whether the rv_plugins.disable_rv flag is on.
+        """
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        with override_waffle_flag(DISABLE_RV, active=is_disabled):
+            response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert response.data['is_rv_disabled'] is is_disabled
+
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
     @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)
     def test_course_home_metadata_render_filter(self):
         """
@@ -309,7 +323,20 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         assert 'plugin_field' not in response.data
         assert response.data['course_id'] == str(self.course.id)
 
-    @override_waffle_flag(COURSE_HOME_COURSE_METADATA_RENDER_FILTER, active=True)
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=False)
+    @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)
+    def test_course_home_metadata_render_filter_ignores_mfe_track_selection(self):
+        """
+        The CourseHomeMetadataAPIRenderStarted filter needs course_modes.track_selection_options,
+        course_modes.mfe_track_selection alone does not run it.
+        """
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert 'plugin_field' not in response.data
+        assert response.data['course_id'] == str(self.course.id)
+
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
     @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)
     def test_course_home_metadata_render_filter_gets_masqueraded_user(self):
         """
