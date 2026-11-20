@@ -1321,6 +1321,16 @@ ROOT_URLCONF = 'lms.urls'
 EMAIL_FILE_PATH = Derived(lambda settings: path(settings.DATA_DIR) / "emails" / "lms")
 DEFAULT_FROM_EMAIL = 'registration@example.com'
 DEFAULT_FEEDBACK_EMAIL = 'feedback@example.com'
+
+# .. setting_name: REFUND_POLICY_EFFECTIVE_AT
+# .. setting_default: 2026-12-10T00:00:00-05:00
+# .. setting_description: When the LP-1395 refund policy change takes effect, as an ISO 8601 datetime. Orders
+#   placed at or after this moment are not refunded automatically on unenroll, once
+#   commerce.enable_refund_policy_change is on. Earlier orders keep automatic refunds. A value without a UTC
+#   offset is read as America/New_York time.
+# .. setting_warning: Override in the LMS YAML config to move the date. Changing it needs an LMS restart.
+# .. setting_tickets: LP-1395
+REFUND_POLICY_EFFECTIVE_AT = '2026-12-10T00:00:00-05:00'
 SERVER_EMAIL = 'devops@example.com'
 TECH_SUPPORT_EMAIL = 'technical@example.com'
 CONTACT_EMAIL = 'info@example.com'
