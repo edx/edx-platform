@@ -323,6 +323,19 @@ class CourseHomeMetadataTests(BaseCourseHomeTests):
         assert 'plugin_field' not in response.data
         assert response.data['course_id'] == str(self.course.id)
 
+    @override_waffle_flag(COURSE_MODES_MFE_TRACK_SELECTION, active=True)
+    @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=False)
+    @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)
+    def test_course_home_metadata_render_filter_ignores_mfe_track_selection(self):
+        """
+        The CourseHomeMetadataAPIRenderStarted filter needs course_modes.track_selection_options,
+        course_modes.mfe_track_selection alone does not run it.
+        """
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert 'plugin_field' not in response.data
+        assert response.data['course_id'] == str(self.course.id)
+
     @override_waffle_flag(COURSE_MODES_TRACK_SELECTION_OPTIONS, active=True)
     @override_settings(OPEN_EDX_FILTERS_CONFIG=TEST_RENDER_FILTERS_CONFIG)
     def test_course_home_metadata_render_filter_gets_masqueraded_user(self):
