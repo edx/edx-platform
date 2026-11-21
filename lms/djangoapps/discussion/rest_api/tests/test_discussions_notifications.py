@@ -51,10 +51,11 @@ class TestDiscussionNotificationSender(unittest.TestCase):
             'email_content': 'Thread body',
         })
         self.assertEqual(audience_filters, {
-            'discussion_roles': ['Administrator', 'Moderator', 'Community TA']
+            'discussion_roles': ['Administrator', 'Moderator', 'Community TA'],
+            'cohort_for_group_tas': [1],
         })
-        self.assertEqual(len(audience_filters), 1)
-        self.assertEqual(list(audience_filters.keys()), ['discussion_roles'])
+        self.assertEqual(len(audience_filters), 2)
+        self.assertEqual(list(audience_filters.keys()), ['discussion_roles', 'cohort_for_group_tas'])
 
     def test_send_reported_content_notification_for_response(self, mock_send_notification, mock_create_audience):
         """
