@@ -2540,7 +2540,7 @@ class SplitMongoModuleStore(SplitBulkWriteMixin, ModuleStoreWriteBase):
             parent_block_keys = self._get_parents_from_structure(block_key, original_structure)
             for parent_block_key in parent_block_keys:
                 parent_block = new_blocks[parent_block_key]
-                parent_block.fields['children'].remove(block_key)
+                parent_block.fields['children'] = [c for c in parent_block.fields['children'] if c != block_key]
                 parent_block.edit_info.edited_on = datetime.datetime.now(UTC)
                 parent_block.edit_info.edited_by = user_id
                 parent_block.edit_info.previous_version = parent_block.edit_info.update_version

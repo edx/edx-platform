@@ -163,7 +163,7 @@ class ModuleStoreDraftAndPublished(BranchSettingMixin, BulkOperationsMixin, meta
 
         # Remove item from the list of children of old parent.
         if source_item.location in old_parent_item.children:
-            old_parent_item.children.remove(source_item.location)
+            old_parent_item.children = [c for c in old_parent_item.children if c != source_item.location]
             self.update_item(old_parent_item, user_id)  # pylint: disable=no-member
             log.info(
                 '%s removed from %s children',
