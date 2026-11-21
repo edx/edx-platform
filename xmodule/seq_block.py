@@ -348,22 +348,31 @@ class SequenceBlock(
         prereq_met = True
         prereq_meta_info = {}
         banner_text = None
-        children = self.get_children()
         course = self._get_course()
         is_hidden_after_due = False
+        children = list(self.get_children())
 
+        if not children and getattr(self, "children", None) and context.get("user_is_audit", False):
+            all_children = []
+            for child_locator in self.children:
+                try:
+                    child_block = self.runtime.modulestore.get_item(child_locator)
+                    setattr(child_block, "access_restricted", True)
+                    all_children.append(child_block)
+                except Exception as e:
+                    continue
+            if all_children:
+                children = all_children
         if self._required_prereq():
             if self.runtime.service(self, 'user').get_current_user().opt_attrs.get(ATTR_KEY_USER_IS_STAFF):
                 banner_text = _(
                     'This subsection is unlocked for learners when they meet the prerequisite requirements.'
                 )
             else:
-                # check if prerequisite has been met
                 prereq_met, prereq_meta_info = self._compute_is_prereq_met(True)
 
         if prereq_met and view == STUDENT_VIEW and not self._can_user_view_content(course):
             if context.get('specific_masquerade', False):
-                # Still show the content, but flag to the staff user that the learner wouldn't be able to see it
                 banner_text = self._hidden_content_banner_text(course)
             else:
                 is_hidden_after_due = True
@@ -570,6 +579,14 @@ class SequenceBlock(
                     'is_gated': True,  # Mark as blocked
                     'content': '',  # Real content not included
                 })
+        for block in blocks:
+            for child in children:
+                # Match block by usage ID
+                if str(child.scope_ids.usage_id) == str(block.get('id')):
+                    # Check if child has the flag
+                    if getattr(child, "access_restricted", False):
+                        block['access_restricted'] = True
+                    break  # stop inner loop once matched
 
         params = {
             'items': blocks,

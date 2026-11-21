@@ -8,7 +8,8 @@ from rest_framework import serializers
 from lms.djangoapps.course_home_api.dates.serializers import DateSummarySerializer
 from lms.djangoapps.course_home_api.progress.serializers import CertificateDataSerializer
 from lms.djangoapps.course_home_api.serializers import DatesBannerSerializer, VerifiedModeSerializer
-
+from lms.djangoapps.course_blocks.api import get_course_blocks
+from opaque_keys.edx.keys import UsageKey
 
 class CourseBlockSerializer(serializers.Serializer):
     """
@@ -28,6 +29,7 @@ class CourseBlockSerializer(serializers.Serializer):
         icon = None
         num_graded_problems = block.get('num_graded_problems', 0)
         scored = block.get('scored')
+        block_data = set(get_course_blocks(self.context['request'].user, UsageKey.from_string(block_key)).get_block_keys())
 
         if num_graded_problems and block_type == 'sequential':
             questions = ngettext('({number} Question)', '({number} Questions)', num_graded_problems)
@@ -37,7 +39,7 @@ class CourseBlockSerializer(serializers.Serializer):
             icon = 'fa-pencil-square-o'
 
         if block_type == 'vertical':
-            icon = self.get_vertical_icon_class(block)
+            icon = self.get_vertical_icon_class(block, block_data)
 
         if 'special_exam_info' in block:
             description = block['special_exam_info'].get('short_description')
@@ -75,7 +77,7 @@ class CourseBlockSerializer(serializers.Serializer):
         return serialized
 
     @staticmethod
-    def get_vertical_icon_class(block):
+    def get_vertical_icon_class(block, block_data):
         """
         Get the icon class for a vertical block based priority of child blocks types.
         Currently, the priority for the icon is as follows:
@@ -88,6 +90,8 @@ class CourseBlockSerializer(serializers.Serializer):
             for child in children
             for value in (child.get('type'), child.get('icon_class'))
         }
+        if not block_data:
+            return 'lock'
         if 'problem' in child_classes:
             return 'problem'
         if 'video' in child_classes:
