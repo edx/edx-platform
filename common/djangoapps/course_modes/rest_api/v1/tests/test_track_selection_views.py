@@ -601,6 +601,20 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
         )
         assert redirect.url == reverse("dashboard")
 
+    def test_redirect_to_the_course_keeps_the_query_of_the_course_home_url(self):
+        """
+        The request to upgrade is added to a course home URL that already has a query string.
+        """
+        course = mock.Mock(**{"has_started.return_value": True})
+        with mock.patch(
+            "common.djangoapps.course_modes.track_selection_data.course_home_url",
+            return_value="https://learning.example.com/home?a=1",
+        ):
+            redirect = _redirect_course_or_dashboard(
+                course, self.course.id, mock.Mock(is_staff=False), upgrade_with_subscription=True
+            )
+        assert redirect.url == "https://learning.example.com/home?a=1&upgrade_with_subscription=1"
+
     @override_settings(
         OPEN_EDX_FILTERS_CONFIG={
             "org.openedx.learning.course_mode.track_selection.api.rendered.started.v1": {
