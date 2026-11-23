@@ -19,7 +19,7 @@ from common.djangoapps.course_modes.toggles import (
     COURSE_MODES_MFE_TRACK_SELECTION,
     COURSE_MODES_TRACK_SELECTION_OPTIONS,
 )
-from common.djangoapps.course_modes.track_selection_data import get_track_options
+from common.djangoapps.course_modes.track_selection_data import _redirect_course_or_dashboard, get_track_options
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.commerce.models import CommerceConfiguration
 from lms.djangoapps.verify_student.models import VerificationDeadline
@@ -564,6 +564,56 @@ class TrackSelectionTestViews(ModuleStoreTestCase, APITestCase):
             assert response.data["redirect_url"].endswith(f"/course/{self.course.id}/home")
         else:
             assert [option["slug"] for option in response.data["options"]] == ["purchase", "audit"]
+
+    @override_settings(
+        OPEN_EDX_FILTERS_CONFIG={
+            "org.openedx.learning.course_mode.track_selection.api.rendered.started.v1": {
+                "pipeline": [
+                    TEST_OFFER_STEP_PATH,
+                ],
+                "fail_silently": False,
+            },
+        },
+    )
+    @ddt.data(
+        (None, "/home"),
+        ("upgrade", "/home?upgrade_with_subscription=1"),
+    )
+    @ddt.unpack
+    def test_post_subscriber_is_asked_to_upgrade_only_with_the_upgrade_intent(self, intent, url_end):
+        """
+        A subscriber who clicked an upgrade link goes to the course home with the request to upgrade with the
+        subscription. Without the upgrade intent (the Enroll button, a bookmark), the URL is the plain course home.
+        """
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        with mock.patch(f"{__name__}.TEST_CATALOG_OFFER", {"in_catalog": True, "is_subscriber": True}):
+            response = self.client.post(self.url, {"intent": intent} if intent else {}, format="json")
+        assert response.status_code == 200
+        assert response.data["redirect_url"].endswith(f"/course/{self.course.id}{url_end}")
+
+    def test_redirect_to_the_dashboard_never_asks_to_upgrade(self):
+        """
+        A course that has not started sends the learner to the dashboard, which has no request to upgrade.
+        """
+        course = mock.Mock(**{"has_started.return_value": False})
+        redirect = _redirect_course_or_dashboard(
+            course, self.course.id, mock.Mock(is_staff=False), upgrade_with_subscription=True
+        )
+        assert redirect.url == reverse("dashboard")
+
+    def test_redirect_to_the_course_keeps_the_query_of_the_course_home_url(self):
+        """
+        The request to upgrade is added to a course home URL that already has a query string.
+        """
+        course = mock.Mock(**{"has_started.return_value": True})
+        with mock.patch(
+            "common.djangoapps.course_modes.track_selection_data.course_home_url",
+            return_value="https://learning.example.com/home?a=1",
+        ):
+            redirect = _redirect_course_or_dashboard(
+                course, self.course.id, mock.Mock(is_staff=False), upgrade_with_subscription=True
+            )
+        assert redirect.url == "https://learning.example.com/home?a=1&upgrade_with_subscription=1"
 
     @override_settings(
         OPEN_EDX_FILTERS_CONFIG={

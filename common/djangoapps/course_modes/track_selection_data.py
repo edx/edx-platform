@@ -40,6 +40,9 @@ from xmodule.modulestore.django import modulestore
 
 log = logging.getLogger(__name__)
 
+# Query parameter of the course home URL that asks the learning MFE to upgrade the learner with their subscription
+UPGRADE_WITH_SUBSCRIPTION_PARAM = "upgrade_with_subscription"
+
 
 @dataclass
 class TrackSelectionRedirect:
@@ -99,12 +102,20 @@ def get_professional_mode_redirect(
     return TrackSelectionRedirect(url=redirect_url)
 
 
-def _redirect_course_or_dashboard(course, course_key, user) -> TrackSelectionRedirect:
-    """Match ChooseModeView._redirect_to_course_or_dashboard for the MFE API."""
+def _redirect_course_or_dashboard(course, course_key, user, upgrade_with_subscription=False) -> TrackSelectionRedirect:
+    """
+    Match ChooseModeView._redirect_to_course_or_dashboard for the MFE API.
+
+    With ``upgrade_with_subscription``, the course home URL carries UPGRADE_WITH_SUBSCRIPTION_PARAM, which tells
+    the course home to upgrade the learner with their subscription. The dashboard URL never carries it.
+    """
     if course is None:
         return TrackSelectionRedirect(url=reverse("dashboard"))
     if course.has_started() or user.is_staff:
-        return TrackSelectionRedirect(url=course_home_url(course_key))
+        url = course_home_url(course_key)
+        if upgrade_with_subscription:
+            url += ("&" if "?" in url else "?") + urlencode({UPGRADE_WITH_SUBSCRIPTION_PARAM: 1})
+        return TrackSelectionRedirect(url=url)
     return TrackSelectionRedirect(url=reverse("dashboard"))
 
 
@@ -341,6 +352,8 @@ def get_track_selection_page_data(
         track_selection_data=track_selection_data,
     )
     # a subscriber goes to the course, which offers the upgrade to the verified mode through the subscription.
+    # With the upgrade intent, the course home URL also asks the course home to run that upgrade, since the learner
+    # clicked an upgrade link and would otherwise land back with nothing done.
     # All three must hold, else the learner gets the page:
     # - verified_mode is set: None means the course has no verified mode to upgrade to (its paid mode is
     #   another one, such as masters)
@@ -348,7 +361,9 @@ def get_track_selection_page_data(
     # - extra_offer["is_subscriber"]: True for a subscriber, None when the plugin could not read the subscription
     offer = track_selection_data.get("extra_offer") or {}
     if track_selection_data.get("verified_mode") and offer.get("in_catalog") and offer.get("is_subscriber"):
-        return _redirect_course_or_dashboard(course, course_key, request.user)
+        return _redirect_course_or_dashboard(
+            course, course_key, request.user, upgrade_with_subscription=intent == "upgrade"
+        )
     # the options are set after the filter: a plugin adds facts, and core picks the options
     options = get_track_options(track_selection_data, upgrading=intent == "upgrade")
     # never show the page with nothing to choose, or for a single option that has a link
