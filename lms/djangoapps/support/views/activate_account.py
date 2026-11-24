@@ -6,7 +6,6 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Q
 from django.utils.decorators import method_decorator
 from rest_framework.generics import GenericAPIView
 
@@ -40,9 +39,10 @@ class ActivateAccountView(GenericAPIView):
     @method_decorator(require_support_permission)
     def post(self, request, username_or_email):
         """Confirm the given user's account."""
-        user = get_user_model().objects.filter(
-            Q(username=username_or_email) | Q(email=username_or_email)
-        ).first()
+        # An exact username match wins; only then fall back to email, so a username that looks like an email
+        # address can never resolve to a different account.
+        users = get_user_model().objects
+        user = users.filter(username=username_or_email).first() or users.filter(email=username_or_email).first()
         if user is None:
             return JsonResponse({'error': 'user_not_found'}, status=404)
 

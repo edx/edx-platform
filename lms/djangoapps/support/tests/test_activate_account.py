@@ -77,6 +77,21 @@ class ActivateAccountViewTests(TestCase):
         response = self._post(self.support_staff, self.learner.username)
         assert self.registration.activation_key not in response.content.decode()
 
+    def test_username_match_wins_over_email(self):
+        """A username that looks like an email address resolves to that user, not to whoever has that email."""
+        lookalike = UserFactory(username='lookalike@example.com', email='lookalike-owner@example.com', is_active=False)
+        RegistrationFactory(user=lookalike, activation_key=uuid4().hex)
+        other = UserFactory(username='someone_else', email='lookalike@example.com', is_active=False)
+        RegistrationFactory(user=other, activation_key=uuid4().hex)
+
+        response = self._post(self.support_staff, 'lookalike@example.com')
+
+        assert response.status_code == 200
+        lookalike.refresh_from_db()
+        other.refresh_from_db()
+        assert lookalike.is_active
+        assert not other.is_active
+
     def test_already_active(self):
         active = UserFactory(is_active=True)
         RegistrationFactory(user=active, activation_key=uuid4().hex)
