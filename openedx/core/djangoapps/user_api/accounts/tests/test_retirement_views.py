@@ -61,6 +61,7 @@ from openedx.core.djangoapps.credit.models import (
 from openedx.core.djangoapps.external_user_ids.models import ExternalIdType
 from openedx.core.djangoapps.oauth_dispatch.jwt import create_jwt_for_user
 from openedx.core.djangoapps.oauth_dispatch.tests.factories import ApplicationFactory, AccessTokenFactory
+from openedx.core.djangoapps.user_api.accounts.utils import create_retirement_request_and_deactivate_account
 from openedx.core.djangoapps.user_api.accounts.views import AccountRetirementPartnerReportView
 from openedx.core.djangoapps.user_api.models import (
     RetirementState,
@@ -1504,7 +1505,7 @@ class TestAccountRetirementPost(RetirementTestCase):
     @mock.patch('openedx.core.djangoapps.user_api.accounts.views.USER_RETIRE_LMS_CRITICAL')
     def test_retirement_sends_critical_signal_with_retirement_data(self, mock_signal):
         """
-        USER_RETIRE_LMS_CRITICAL is sent with retired_username and retired_email kwargs.
+        USER_RETIRE_LMS_CRITICAL is sent with the retired and original username and email kwargs.
         """
         data = {'username': self.original_username}
         self.post_and_assert_status(data)
@@ -1514,7 +1515,38 @@ class TestAccountRetirementPost(RetirementTestCase):
             user=mock_signal.send.call_args[1]['user'],
             retired_username=self.retired_username,
             retired_email=self.retired_email,
+            original_username=self.original_username,
+            original_email=self.original_email,
         )
+
+    @mock.patch('openedx.core.djangoapps.user_api.accounts.views.USER_RETIRE_LMS_CRITICAL')
+    def test_critical_signal_carries_original_identity_after_day_0_deactivation(self, mock_signal):
+        """
+        Runs the real Day-0 flow (deactivation hashes ``auth_user.email``) before the LMS retirement
+        step, and checks that receivers still get the learner's original email and username, which
+        ``user.email`` no longer holds by the time the signal is sent.
+        """
+        learner = UserFactory()
+        original_username = learner.username
+        original_email = learner.email
+        create_retirement_request_and_deactivate_account(learner)
+
+        retirement = UserRetirementStatus.objects.get(user=learner)
+        retirement_state = RetirementState.objects.get(state_name='RETIRING_LMS')
+        retirement.current_state = retirement_state
+        retirement.last_state = retirement_state
+        retirement.save()
+
+        learner.refresh_from_db()
+        assert learner.email == get_retired_email_by_email(original_email)
+
+        self.post_and_assert_status({'username': original_username})
+
+        signal_kwargs = mock_signal.send.call_args[1]
+        assert signal_kwargs['original_email'] == original_email
+        assert signal_kwargs['original_username'] == original_username
+        assert signal_kwargs['retired_email'] == get_retired_email_by_email(original_email)
+        assert signal_kwargs['retired_username'] == get_retired_username_by_username(original_username)
 
     def test_deletes_pii_from_user_profile(self):
         for model_field, value_to_assign in USER_PROFILE_PII.items():
