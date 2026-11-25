@@ -50,4 +50,5 @@ class DatesTabSerializer(DatesBannerSerializer):
     course_date_blocks = DateSummarySerializer(many=True)
     has_ended = serializers.BooleanField()
     learner_is_full_access = serializers.BooleanField()
+    offer = serializers.DictField()
     user_timezone = serializers.CharField()
