@@ -6,11 +6,13 @@ from datetime import datetime
 
 import ddt
 from django.urls import reverse
+from edx_toggles.toggles.testutils import override_waffle_flag
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment
 from lms.djangoapps.course_home_api.tests.utils import BaseCourseHomeTests
 from openedx.features.content_type_gating.models import ContentTypeGatingConfig
+from openedx.features.discounts.applicability import DISCOUNT_APPLICABILITY_FLAG
 
 
 @ddt.ddt
@@ -61,6 +63,26 @@ class DatesTabTestViews(BaseCourseHomeTests):
         self.assertContains(response, 'missed_gated_content')
         self.assertContains(response, 'content_type_gating_enabled')
         self.assertContains(response, 'verified_upgrade_link')
+
+    def test_offer_is_none_without_discount(self):
+        CourseEnrollment.enroll(self.user, self.course.id)
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        assert response.data['offer'] is None
+
+    def test_offer_is_returned_with_first_purchase_discount(self):
+        CourseEnrollment.enroll(self.user, self.course.id)
+        with override_waffle_flag(DISCOUNT_APPLICABILITY_FLAG, active=True):
+            response = self.client.get(self.url)
+            outline_response = self.client.get(reverse('course-home:outline-tab', args=[self.course.id]))
+        assert response.status_code == 200
+
+        offer = response.data['offer']
+        assert offer['original_price'] == '$149'
+        assert offer['discounted_price'] == '$126.65'
+        assert offer['percentage'] == 15
+        # Every placement that shows the upgrade price gets the same offer, whichever tab it loads.
+        assert offer == outline_response.data['offer']
 
     def test_masquerade(self):
         self.switch_to_staff()

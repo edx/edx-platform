@@ -19,8 +19,10 @@ from lms.djangoapps.courseware.context_processor import user_timezone_locale_pre
 from lms.djangoapps.courseware.courses import get_course_date_blocks
 from lms.djangoapps.courseware.date_summary import TodaysDate
 from lms.djangoapps.courseware.masquerade import setup_masquerade
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.features.content_type_gating.models import ContentTypeGatingConfig
+from openedx.features.discounts.utils import generate_offer_data
 
 
 class DatesTabView(RetrieveAPIView):
@@ -54,6 +56,13 @@ class DatesTabView(RetrieveAPIView):
             verified_upgrade_link: (str) The link for upgrading to the Verified track in a course
         has_ended: (bool) Indicates whether course has ended
         learner_is_full_access: (bool) Indicates if the user is verified in the course
+        offer: An object detailing upgrade discount information. Null if the learner has no discount offer.
+            code: (str) Checkout code
+            expiration_date: (str) Expiration of offer, in ISO 8601 notation
+            original_price: (str) Full upgrade price without checkout code; includes currency symbol
+            discounted_price: (str) Upgrade price with checkout code; includes currency symbol
+            percentage: (int) Amount of discount
+            upgrade_url: (str) Checkout URL
         user_timezone: (str) The user's preferred timezone
 
     **Returns**
@@ -118,6 +127,7 @@ class DatesTabView(RetrieveAPIView):
             'has_ended': course.has_ended(),
             'course_date_blocks': [block for block in blocks if not isinstance(block, TodaysDate)],
             'learner_is_full_access': learner_is_full_access,
+            'offer': generate_offer_data(request.user, CourseOverview.get_from_id(course_key)),
             'user_timezone': user_timezone,
         }
         context = self.get_serializer_context()
