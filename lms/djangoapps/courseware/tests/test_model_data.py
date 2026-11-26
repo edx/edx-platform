@@ -565,6 +565,16 @@ class TestFieldDataCacheDynamicChildren(TestCase):
         parent.get_children.assert_called_once()
         parent.get_child.assert_not_called()
 
+
+class TestFieldDataCacheBatchDescendents(TestCase):
+    """
+    Tests for FieldDataCache.add_block_descendents_batch.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.user = UserFactory()
+
     def test_batch_descendent_prefetch_populates_the_cache_once(self):
         """
         Sibling lazy children share one user-state lookup instead of triggering one
