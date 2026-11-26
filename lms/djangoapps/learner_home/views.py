@@ -133,7 +133,7 @@ def get_enrollments(user, org_allow_list, org_block_list, course_limit=None):
 
     # Retrieve the course modes for each course
     enrolled_course_ids = [enrollment.course_id for enrollment in course_enrollments]
-    __, unexpired_course_modes = CourseMode.all_and_unexpired_modes_for_courses(
+    all_course_modes, unexpired_course_modes = CourseMode.all_and_unexpired_modes_for_courses(
         enrolled_course_ids
     )
     course_modes_by_course = {
@@ -145,11 +145,19 @@ def get_enrollments(user, org_allow_list, org_block_list, course_limit=None):
     # used to render the course list.  We re-use the course modes dict
     # we loaded earlier to avoid hitting the database.
     course_mode_info = {
-        enrollment.course_id: complete_course_mode_info(
-            enrollment.course_id,
-            enrollment,
-            modes=course_modes_by_course[enrollment.course_id],
-        )
+        enrollment.course_id: {
+            **complete_course_mode_info(
+                enrollment.course_id,
+                enrollment,
+                modes=course_modes_by_course[enrollment.course_id],
+            ),
+            # Whether the course has a verified track at all, even one whose upgrade deadline has passed.
+            # Expired modes are left out above, so without this an audit-only course looks the same as a
+            # course past its upgrade deadline (LP-1561).
+            "has_verified_mode": any(
+                mode.slug == CourseMode.VERIFIED for mode in all_course_modes[enrollment.course_id]
+            ),
+        }
         for enrollment in course_enrollments
     }
 

@@ -89,10 +89,12 @@ class CourseRunSerializer(serializers.Serializer):
     - "course_mode_info" (dict) keyed by course ID, with sub info:
         - "verified_sku" (uid, optional) if the course has an upgrade identifier
         - "days_for_upsell" (int, optional) days before audit student loses access
+        - "has_verified_mode" (bool, optional) if the course has a verified track, even an expired one
     """
 
     requires_context = True
 
+    hasVerifiedMode = serializers.SerializerMethodField()
     isStarted = serializers.SerializerMethodField()
     isArchived = serializers.SerializerMethodField()
     courseId = serializers.CharField(source="course_id")
@@ -111,6 +113,19 @@ class CourseRunSerializer(serializers.Serializer):
     unenrollUrl = serializers.SerializerMethodField()
     upgradeUrl = serializers.SerializerMethodField()
     resumeUrl = serializers.SerializerMethodField()
+
+    def get_hasVerifiedMode(self, instance):
+        """
+        Whether the course has a verified track, even one whose upgrade deadline has passed.
+
+        False for audit-only courses, which have nothing to upgrade to, so the dashboard shows them no upgrade
+        prompts. canUpgrade alone cannot tell them apart from a course past its upgrade deadline (LP-1561).
+        """
+        return bool(
+            self.context.get("course_mode_info", {})
+            .get(instance.course_id, {})
+            .get("has_verified_mode", False)
+        )
 
     def get_isStarted(self, instance):
         return instance.course_overview.has_started()

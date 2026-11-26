@@ -3,6 +3,7 @@ Test for Learner Home views and related functions
 """
 
 from contextlib import contextmanager
+from datetime import timedelta
 import json
 from unittest.mock import Mock, patch
 from urllib.parse import urlencode
@@ -17,6 +18,7 @@ from opaque_keys.edx.keys import CourseKey
 from rest_framework.test import APITestCase
 
 from common.djangoapps.course_modes.models import CourseMode
+from common.djangoapps.course_modes.tests.factories import CourseModeFactory
 from common.djangoapps.entitlements.tests.factories import CourseEntitlementFactory
 from common.djangoapps.student.tests.factories import (
     CourseEnrollmentFactory,
@@ -195,6 +197,34 @@ class TestGetEnrollments(SharedModuleStoreTestCase):
         # Then I return an empty list and dict
         self.assertEqual(returned_enrollments, [])
         self.assertEqual(course_mode_info, {})
+
+    def test_has_verified_mode(self):
+        # Given an audit-only course, a course with an open verified track,
+        # and a course whose verified upgrade deadline has passed
+        audit_only = create_test_enrollment(self.user)
+        verified_open = create_test_enrollment(self.user)
+        CourseModeFactory(
+            course_id=verified_open.course_id,
+            mode_slug=CourseMode.VERIFIED,
+            expiration_datetime=timezone.now() + timedelta(days=30),
+        )
+        verified_expired = create_test_enrollment(self.user)
+        CourseModeFactory(
+            course_id=verified_expired.course_id,
+            mode_slug=CourseMode.VERIFIED,
+            expiration_datetime=timezone.now() - timedelta(days=1),
+        )
+
+        # When I request my enrollments
+        __, course_mode_info = get_enrollments(self.user, None, None)
+
+        # Then only the audit-only course has no verified mode, even though
+        # neither it nor the expired course can be upgraded
+        assert course_mode_info[audit_only.course_id]["has_verified_mode"] is False
+        assert course_mode_info[verified_open.course_id]["has_verified_mode"] is True
+        assert course_mode_info[verified_expired.course_id]["has_verified_mode"] is True
+        assert course_mode_info[verified_open.course_id]["show_upsell"] is True
+        assert course_mode_info[verified_expired.course_id]["show_upsell"] is False
 
 
 class TestGetEntitlements(SharedModuleStoreTestCase):
