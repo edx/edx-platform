@@ -1185,6 +1185,7 @@ class AccountRetirementView(ViewSet):
             retired_username = retirement_status.retired_username or get_retired_username_by_username(username)
             retired_email = retirement_status.retired_email or get_retired_email_by_email(user.email)
             original_email = retirement_status.original_email
+            original_username = retirement_status.original_username
 
             # Retire core user/profile information
             self.clear_pii_from_userprofile(user)
@@ -1206,12 +1207,18 @@ class AccountRetirementView(ViewSet):
             CourseEnrollmentAllowed.delete_by_user_value(original_email, field="email")
             UnregisteredLearnerCohortAssignments.delete_by_user_value(original_email, field="email")
 
-            # This signal allows code in higher points of LMS to retire the user as necessary
+            # This signal allows code in higher points of LMS to retire the user as necessary.
+            # In production flows ``user.email`` already holds the retired (hashed) value by this point,
+            # set when the account was deactivated, so receivers that need to match records stored under
+            # the learner's original email or username (e.g. enterprise invites) must use the
+            # ``original_*`` kwargs. Receivers must use these only for matching, never store or log them.
             USER_RETIRE_LMS_CRITICAL.send(
                 sender=self.__class__,
                 user=user,
                 retired_email=retired_email,
                 retired_username=retired_username,
+                original_email=original_email,
+                original_username=original_username,
             )
 
             user.first_name = ""

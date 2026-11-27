@@ -26,7 +26,9 @@ def get_redacted_social_auth_uid(pk):
 USER_RETIRE_MAILINGS = Signal()
 
 # Signal to retire LMS critical information
-# providing_args=["user"]
+# providing_args=["user", "retired_username", "retired_email", "original_username", "original_email"]
+# In production flows ``user.email`` is already the retired value when this is sent; use ``original_*``
+# only to match records.
 USER_RETIRE_LMS_CRITICAL = Signal()
 
 # Signal to retire LMS misc information
