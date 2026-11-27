@@ -203,9 +203,38 @@ class TestCourseRunSerializer(LearnerDashboardBaseTest):
                 course_id: {
                     "verified_sku": str(uuid4()),
                     "days_for_upsell": randint(0, 14),
+                    "has_verified_mode": True,
                 }
             },
         }
+
+    def test_has_verified_mode(self):
+        input_data = self.create_test_enrollment()
+        input_context = self.create_test_context(input_data.course.id)
+
+        output_data = CourseRunSerializer(input_data, context=input_context).data
+
+        assert output_data["hasVerifiedMode"] is True
+
+    def test_has_verified_mode_audit_only(self):
+        # Given an audit-only course, which get_enrollments marks as having no verified mode
+        input_data = self.create_test_enrollment()
+        input_context = self.create_test_context(input_data.course.id)
+        input_context["course_mode_info"][input_data.course.id] = {"has_verified_mode": False}
+
+        output_data = CourseRunSerializer(input_data, context=input_context).data
+
+        assert output_data["hasVerifiedMode"] is False
+
+    def test_has_verified_mode_missing_info(self):
+        # Given no course mode info for the course
+        input_data = self.create_test_enrollment()
+        input_context = self.create_test_context(input_data.course.id)
+        input_context["course_mode_info"] = {}
+
+        output_data = CourseRunSerializer(input_data, context=input_context).data
+
+        assert output_data["hasVerifiedMode"] is False
 
     def test_with_data(self):
         input_data = self.create_test_enrollment()
